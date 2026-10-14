@@ -30,3 +30,11 @@ async def init_db() -> None:
     # Auto-create tables on startup (convenient for initial setup and prototyping)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed initial petrol pump data if empty
+    from app.db.seed import seed_initial_data
+    async with AsyncSessionLocal() as session:
+        try:
+            await seed_initial_data(session)
+        except Exception as exc:
+            print(f"Seed note: {exc}")

@@ -1,4 +1,41 @@
 from app.db.base import Base
 from app.models.item import Item
+from app.models.petrol_pump import (
+    BankAccount,
+    CreditSale,
+    Customer,
+    Employee,
+    Expense,
+    FuelProduct,
+    Nozzle,
+    PaymentReceipt,
+    PurchaseEntry,
+    RateHistory,
+    Shift,
+    ShiftMeterReading,
+    ShiftSettlement,
+    Tank,
+    TankDipEntry,
+    Vehicle,
+)
 
-__all__ = ["Base", "Item"]
+__all__ = [
+    "Base",
+    "Item",
+    "FuelProduct",
+    "RateHistory",
+    "Tank",
+    "Nozzle",
+    "Employee",
+    "Customer",
+    "Vehicle",
+    "Shift",
+    "ShiftMeterReading",
+    "CreditSale",
+    "PaymentReceipt",
+    "Expense",
+    "ShiftSettlement",
+    "TankDipEntry",
+    "PurchaseEntry",
+    "BankAccount",
+]
