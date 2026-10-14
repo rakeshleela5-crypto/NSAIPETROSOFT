@@ -1,3 +1,4 @@
+import io
 import gzip
 import hashlib
 import json
@@ -10,6 +11,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+import openpyxl
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -341,3 +345,224 @@ def list_all_backups() -> List[Dict[str, Any]]:
 
     combined.sort(key=lambda x: x.get("last_modified", ""), reverse=True)
     return combined
+
+
+# ---------------------------------------------------------------------------
+# Multi-Tab Master Excel (.xlsx) Generator for Accountants & CA Audits
+# ---------------------------------------------------------------------------
+def _style_excel_sheet(ws, title: str, headers: List[str], rows: List[List[Any]], number_columns: Optional[List[int]] = None):
+    """Styles an openpyxl worksheet with petroleum ERP dark-navy theme, borders, and auto widths."""
+    ws.title = title[:31]  # Excel max sheet title length is 31 chars
+    try:
+        ws.views.sheetView[0].showGridLines = True
+    except Exception:
+        pass
+
+    header_fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")  # Deep Navy
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    thin_border = Border(
+        left=Side(style="thin", color="CBD5E0"),
+        right=Side(style="thin", color="CBD5E0"),
+        top=Side(style="thin", color="CBD5E0"),
+        bottom=Side(style="thin", color="CBD5E0"),
+    )
+
+    ws.append(headers)
+    for col_num in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = thin_border
+    ws.row_dimensions[1].height = 26
+
+    even_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    odd_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+
+    for r_idx, row_data in enumerate(rows, start=2):
+        ws.append(row_data)
+        fill = even_fill if r_idx % 2 == 0 else odd_fill
+        for c_idx in range(1, len(row_data) + 1):
+            cell = ws.cell(row=r_idx, column=c_idx)
+            cell.fill = fill
+            cell.border = thin_border
+            cell.font = Font(name="Calibri", size=10)
+            if number_columns and c_idx in number_columns:
+                cell.number_format = "#,##0.00"
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            else:
+                cell.alignment = Alignment(vertical="center")
+        ws.row_dimensions[r_idx].height = 20
+
+    # Auto-adjust column widths
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            val_str = str(cell.value or "")
+            if len(val_str) > max_len:
+                max_len = len(val_str)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+
+async def generate_excel_workbook(db: AsyncSession) -> Tuple[str, bytes]:
+    """
+    Builds a complete, multi-tab Microsoft Excel (.xlsx) workbook
+    containing all station data formatted for Accountants and CAs.
+    """
+    now = datetime.now(timezone.utc)
+    now_str = now.strftime("%Y-%m-%d_%H%M")
+    filename = f"NSAIPETROSOFT_Full_Books_{now_str}.xlsx"
+
+    wb = openpyxl.Workbook()
+    # Remove default sheet
+    default_sheet = wb.active
+
+    # 1. Summary Sheet
+    ws_summary = wb.create_sheet(title="Station_Summary")
+    summary_headers = ["Domain / Table", "Module Description", "Total Database Records", "Status"]
+    ws_summary.append(["NSAIPETROSOFT PETROLEUM ERP — COMPLETE STATION AUDIT EXPORT"])
+    ws_summary.merge_cells("A1:D1")
+    title_cell = ws_summary["A1"]
+    title_cell.font = Font(name="Calibri", size=14, bold=True, color="1A365D")
+    title_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws_summary.append([f"Generated On: {now.strftime('%d-%b-%Y %H:%M:%S UTC')} | Financial Year: 2026-27"])
+    ws_summary.merge_cells("A2:D2")
+    ws_summary.append([])  # blank row
+
+    # Fetch all data in parallel or sequence
+    expenses = (await db.execute(select(Expense))).scalars().all()
+    credit_sales = (await db.execute(select(CreditSale))).scalars().all()
+    customers = (await db.execute(select(Customer))).scalars().all()
+    meters = (await db.execute(select(ShiftMeterReading))).scalars().all()
+    payments = (await db.execute(select(PaymentReceipt))).scalars().all()
+    dips = (await db.execute(select(TankDipEntry))).scalars().all()
+    purchases = (await db.execute(select(PurchaseEntry))).scalars().all()
+    banks = (await db.execute(select(BankAccount))).scalars().all()
+    products = (await db.execute(select(FuelProduct))).scalars().all()
+    tanks = (await db.execute(select(Tank))).scalars().all()
+
+    summary_rows = [
+        ["Expenses Cash Book", "Daily petty cash and station expenses vouchers", len(expenses), "Active"],
+        ["Credit Customer Sales", "Credit bills issued to transport & fleet vehicles", len(credit_sales), "Active"],
+        ["Customer Directory", "Customer account master with limits and outstanding", len(customers), "Active"],
+        ["Shift Meter Readings", "Pump nozzle opening/closing totalizer sales", len(meters), "Active"],
+        ["Payment Receipts", "Customer collection receipts (Cash/Cheque/Bank)", len(payments), "Active"],
+        ["Tank DIP Register", "Daily underground tank dip readings and sales variation", len(dips), "Active"],
+        ["Purchases Decanting", "Inward fuel tanker deliveries and density tests", len(purchases), "Active"],
+        ["Bank & Ledger Accounts", "Station bank accounts, cash in hand, and POS machines", len(banks), "Active"],
+        ["Fuel Products", "Product rates, VAT %, Cess %, and density standards", len(products), "Active"],
+        ["Underground Tanks", "Tank storage capacities and safe filling limits", len(tanks), "Active"],
+    ]
+
+    # Append summary table
+    ws_summary.append(summary_headers)
+    for col_idx in range(1, len(summary_headers) + 1):
+        cell = ws_summary.cell(row=4, column=col_idx)
+        cell.fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
+        cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for r_idx, srow in enumerate(summary_rows, start=5):
+        ws_summary.append(srow)
+        fill = PatternFill(start_color="F8FAFC", fill_type="solid") if r_idx % 2 == 0 else PatternFill(start_color="FFFFFF", fill_type="solid")
+        for c_idx in range(1, len(srow) + 1):
+            c = ws_summary.cell(row=r_idx, column=c_idx)
+            c.fill = fill
+            c.font = Font(name="Calibri", size=10)
+
+    for col in ws_summary.columns:
+        col_letter = get_column_letter(col[0].column)
+        max_l = max(len(str(c.value or "")) for c in col)
+        ws_summary.column_dimensions[col_letter].width = max(max_l + 4, 16)
+
+    # 2. Expenses Sheet
+    ws_exp = wb.create_sheet()
+    exp_headers = ["Voucher ID", "Voucher Date", "Expense Category", "Amount (₹)", "Paid To / Beneficiary", "Narration"]
+    exp_rows = [
+        [e.id, str(e.date), e.category, e.amount, e.paid_to or "-", e.narration or "-"]
+        for e in expenses
+    ]
+    _style_excel_sheet(ws_exp, "Expenses_CashBook", exp_headers, exp_rows, number_columns=[4])
+
+    # 3. Credit Sales Sheet
+    ws_credit = wb.create_sheet()
+    credit_headers = ["Bill No", "Date", "Slip No", "Customer ID", "Vehicle No", "Product ID", "Rate (₹/L)", "Liters", "Amount (₹)", "Cash Paid (₹)", "Net Credit (₹)", "Remarks"]
+    credit_rows = [
+        [cs.bill_no, str(cs.date), cs.slip_no, cs.customer_id, cs.vehicle_no, cs.product_id, cs.rate, cs.qty, cs.amount, cs.cash_paid, cs.credit_amount, cs.remarks or "-"]
+        for cs in credit_sales
+    ]
+    _style_excel_sheet(ws_credit, "Credit_Sales", credit_headers, credit_rows, number_columns=[7, 8, 9, 10, 11])
+
+    # 4. Customer Directory Sheet
+    ws_cust = wb.create_sheet()
+    cust_headers = ["Customer ID", "Account Name", "Mobile", "City", "Credit Limit (₹)", "Current Balance (₹)", "Bill Cycle", "Status"]
+    cust_rows = [
+        [c.id, c.name, c.mobile, c.city or "SURAT", c.credit_limit, c.current_outstanding, c.bill_period, "BLOCKED" if c.is_blocked else "ACTIVE"]
+        for c in customers
+    ]
+    _style_excel_sheet(ws_cust, "Customer_Directory", cust_headers, cust_rows, number_columns=[5, 6])
+
+    # 5. Shift Meter Readings Sheet
+    ws_meters = wb.create_sheet()
+    meter_headers = ["Reading ID", "Shift ID", "Nozzle ID", "Opening Meter", "Closing Meter", "Testing Qty (L)", "Sale Qty (L)", "Rate (₹)", "Amount (₹)"]
+    meter_rows = [
+        [m.id, m.shift_id, m.nozzle_id, m.opening_meter, m.closing_meter, m.testing_qty, m.sale_qty, m.rate, m.total_amount]
+        for m in meters
+    ]
+    _style_excel_sheet(ws_meters, "Shift_Meters", meter_headers, meter_rows, number_columns=[4, 5, 6, 7, 8, 9])
+
+    # 6. Payment Receipts Sheet
+    ws_pay = wb.create_sheet()
+    pay_headers = ["Receipt No", "Date", "Customer ID", "Amount (₹)", "Payment Mode", "Bank / Cheque Ref", "Remarks"]
+    pay_rows = [
+        [p.receipt_no, str(p.date), p.customer_id, p.amount, p.payment_mode, p.cheque_no or p.bank_name or "-", p.remarks or "-"]
+        for p in payments
+    ]
+    _style_excel_sheet(ws_pay, "Payment_Receipts", pay_headers, pay_rows, number_columns=[4])
+
+    # 7. Tank DIP Register Sheet
+    ws_dip = wb.create_sheet()
+    dip_headers = ["Record ID", "Date", "Tank ID", "Opening Dip (cm)", "Opening Stock (L)", "Closing Dip (cm)", "Closing Stock (L)", "Dip Sale (L)", "Meter Sale (L)", "Variation (L)"]
+    dip_rows = [
+        [d.id, str(d.date), d.tank_id, d.opening_dip, d.opening_stock, d.closing_dip, d.closing_stock, d.dip_wise_sale, d.meter_wise_sale, d.variation_liters]
+        for d in dips
+    ]
+    _style_excel_sheet(ws_dip, "Tank_DIP_Register", dip_headers, dip_rows, number_columns=[4, 5, 6, 7, 8, 9, 10])
+
+    # 8. Purchases Decanting Sheet
+    ws_pur = wb.create_sheet()
+    pur_headers = ["Invoice No", "Date", "Dealer", "Tanker Vehicle", "Product ID", "Qty Liters", "Rate/KL (₹)", "Gross Amount (₹)", "VAT Amount (₹)", "Final Invoice Amount (₹)"]
+    pur_rows = [
+        [pu.invoice_no, str(pu.date), pu.dealer_name, pu.tanker_vehicle_no, pu.product_id, pu.qty_liters, pu.rate_per_kl, pu.gross_amount, pu.vat_amount, pu.final_amount]
+        for pu in purchases
+    ]
+    _style_excel_sheet(ws_pur, "Purchases_Decanting", pur_headers, pur_rows, number_columns=[6, 7, 8, 9, 10])
+
+    # 9. Bank Accounts Sheet
+    ws_bank = wb.create_sheet()
+    bank_headers = ["Account ID", "Account Name", "Account Type", "Current Balance (₹)"]
+    bank_rows = [
+        [b.id, b.account_name, b.account_type, b.balance]
+        for b in banks
+    ]
+    _style_excel_sheet(ws_bank, "Bank_Accounts", bank_headers, bank_rows, number_columns=[4])
+
+    # 10. Fuel Rates Sheet
+    ws_prod = wb.create_sheet()
+    prod_headers = ["Product ID", "Product Code", "Product Name", "Current Rate (₹)", "VAT %", "Cess %", "Standard Density"]
+    prod_rows = [
+        [pr.id, pr.code, pr.name, pr.current_rate, pr.vat_percent, pr.cess_percent, pr.density_standard]
+        for pr in products
+    ]
+    _style_excel_sheet(ws_prod, "Fuel_Rate_Master", prod_headers, prod_rows, number_columns=[4, 5, 6, 7])
+
+    # Remove the default sheet created by openpyxl
+    if default_sheet in wb.worksheets:
+        wb.remove(default_sheet)
+
+    # Save to buffer
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_bytes = excel_buffer.getvalue()
+
+    return filename, excel_bytes

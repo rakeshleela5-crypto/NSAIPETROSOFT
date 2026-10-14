@@ -35,11 +35,13 @@ import {
   fetchTdsSummary,
   fetchVatSummary,
   getBackupDownloadUrl,
+  getMasterExcelDownloadUrl,
   saveShiftMeters,
   saveShiftSettlement,
   triggerCreateBackup,
   updateRate,
 } from './api/client';
+import { exportToCsv } from './utils/exportCsv';
 import type {
   BackupItem,
   BackupStatusResponse,
@@ -180,6 +182,7 @@ export default function App() {
   const [dipReceipt, setDipReceipt] = useState<number>(4000.0);
   const [dipCloseCm, setDipCloseCm] = useState<number>(186.0);
   const [dipCloseStock, setDipCloseStock] = useState<number>(16890.0);
+  const [dipsList, setDipsList] = useState<any[]>([]);
 
   // Purchase Decanting State
   const [purInvoiceNo, setPurInvoiceNo] = useState<string>('3215788');
@@ -663,7 +666,11 @@ export default function App() {
     setActiveDialog('dip');
     setOpenDropdown(null);
     try {
-      await Promise.all([fetchDips(), loadData()]);
+      const data = await fetchDips();
+      if (data && data.length > 0) {
+        setDipsList(data);
+      }
+      await loadData();
     } catch {
       // Offline fallback
     }
@@ -1500,9 +1507,19 @@ export default function App() {
                     value={custFilter}
                     onChange={(e) => setCustFilter(e.target.value)}
                   />
-                  <span style={{ marginLeft: 'auto', color: '#555', fontSize: '10px' }}>
-                    Click row for Frame 0300 Statement
-                  </span>
+                  <button
+                    type="button"
+                    className="win-btn-classic"
+                    style={{ marginLeft: 'auto', background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontSize: '10px', height: '20px', padding: '0 6px', fontWeight: 700 }}
+                    onClick={() => exportToCsv(
+                      `NSAIPETROSOFT_CustomerOutstanding_${new Date().toISOString().split('T')[0]}`,
+                      ['Customer Name', 'Outstanding Balance (INR)'],
+                      customersList.map(c => [c.name, c.outstanding])
+                    )}
+                    title="Export all customer balances to Microsoft Excel or CSV"
+                  >
+                    📥 Export Excel
+                  </button>
                 </div>
                 <div className="win-grid-scroll" style={{ maxHeight: '145px' }}>
                   <table className="win-datagrid">
@@ -1725,6 +1742,19 @@ export default function App() {
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit | F2=Save | F1=New | CTRL+A=Add To List</span>
               <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_ShiftReadings_${new Date().toISOString().split('T')[0]}`,
+                    ['Nozzle Name', 'Product', 'Opening Meter', 'Closing Meter', 'Testing (Ltrs)', 'Sale Qty (Ltrs)', 'Rate (INR)', 'Total Amount (INR)'],
+                    salesReadings.map(s => [s.nozzle_name, s.product, s.opening, s.closing, s.testing, s.qty, s.rate, s.amount])
+                  )}
+                  title="Export nozzle meter readings to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
                 <button className="win-btn-classic win-btn-primary" onClick={handleSaveShiftMeters}>Save (F2)</button>
                 <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
               </div>
@@ -1923,7 +1953,22 @@ export default function App() {
 
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit | F2=Save | F1=New</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_CreditBills_${new Date().toISOString().split('T')[0]}`,
+                    ['Bill No', 'Date', 'Customer Name', 'Vehicle No', 'Quantity (Ltrs)', 'Total Amount (INR)'],
+                    creditBillsList.map(b => [b.bill, b.date, b.cust, b.vehicle, b.qty, b.total])
+                  )}
+                  title="Export credit sales register to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
 
             {/* Frame 0050: Are you Sure? Do you want to Print this Receipt..?? */}
@@ -2114,7 +2159,22 @@ export default function App() {
 
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit | F2=Save | F1=New</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_PaymentReceipts_${new Date().toISOString().split('T')[0]}`,
+                    ['Shift', 'Receipt Date', 'Customer Name', 'Payment Mode', 'Amount (INR)'],
+                    payReceiptsHistory.map(h => [h.shift, h.date, h.cust, h.mode, h.amt])
+                  )}
+                  title="Export customer receipts to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2202,7 +2262,22 @@ export default function App() {
             </div>
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit | F2=Save</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_Expenses_${new Date().toISOString().split('T')[0]}`,
+                    ['Voucher ID', 'Date', 'Category', 'Amount (INR)', 'Paid To', 'Narration'],
+                    expensesList.map(e => [e.id, e.date, e.category, e.amount, e.paid_to || '', e.narration || ''])
+                  )}
+                  title="Export this expenses register to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2408,7 +2483,24 @@ export default function App() {
             </div>
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit | F2=Save</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_TankDips_${new Date().toISOString().split('T')[0]}`,
+                    ['Date', 'Tank ID', 'Open Dip (cm)', 'Open Stock (L)', 'Close Dip (cm)', 'Close Stock (L)', 'Dip Sales (L)', 'Meter Sales (L)', 'Variation (L)'],
+                    dipsList.length > 0
+                      ? dipsList.map((d: any) => [d.date, d.tank_id, d.opening_dip, d.opening_stock, d.closing_dip, d.closing_stock, d.dip_wise_sale, d.meter_wise_sale, d.variation_liters])
+                      : [[new Date().toISOString().split('T')[0], dipTankId, dipOpenCm, dipOpenStock, dipCloseCm, dipCloseStock, (dipOpenStock + dipReceipt - dipCloseStock), (dipOpenStock + dipReceipt - dipCloseStock), 0]]
+                  )}
+                  title="Export underground tank dip audit to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2651,6 +2743,19 @@ export default function App() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
                   <span style={{ fontSize: '11px', color: '#666' }}>Sample Hydrometer Density verified: {purSampleDensity} kg/m³</span>
                   <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                      onClick={() => exportToCsv(
+                        `NSAIPETROSOFT_InwardPurchases_${new Date().toISOString().split('T')[0]}`,
+                        ['PO No', 'Date', 'Invoice No', 'Oil Company / Dealer', 'Total Amount (INR)'],
+                        purPoHistory.map(p => [p.po_no, p.date, p.inv_no, p.dealer, p.amount])
+                      )}
+                      title="Export tanker decanting purchases to Microsoft Excel or CSV"
+                    >
+                      📥 Export to Excel (CSV)
+                    </button>
                     <button type="submit" className="win-btn-classic win-btn-primary">Save (F2)</button>
                     <button type="button" className="win-btn-classic" onClick={() => { setPurQtyKl(4.0); setPurInvoiceNo('3215' + Math.floor(100 + Math.random() * 900)); showToast('New Purchase Slip ready'); }}>Reset (F1)</button>
                     <button type="button" className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
@@ -2850,6 +2955,19 @@ export default function App() {
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit</span>
               <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_Statement_${(selectedStatement?.header?.name || 'Customer').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`,
+                    ['Date', 'Particulars', 'Debit (INR)', 'Credit (INR)', 'Balance (INR)'],
+                    (selectedStatement?.entries || []).map((e: any) => [e.date, e.particulars, e.debit || 0, e.credit || 0, e.balance || 0])
+                  )}
+                  title="Export this customer statement directly to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
                 <button className="win-btn-classic win-btn-primary" onClick={() => window.print()}>🖨️ Print Statement</button>
                 <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
               </div>
@@ -4673,7 +4791,22 @@ export default function App() {
             </div>
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_BankAccounts_${new Date().toISOString().split('T')[0]}`,
+                    ['Account Name', 'Type', 'Current Balance (INR)'],
+                    accountsList.map(a => [a.name, a.type, a.balance])
+                  )}
+                  title="Export bank and ledger accounts to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -4828,7 +4961,22 @@ export default function App() {
             </div>
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_CardBatches_${new Date().toISOString().split('T')[0]}`,
+                    ['EDC Machine', 'Batch No', 'Slips Count', 'Amount (INR)', 'Status'],
+                    cardSettlements.map(c => [c.machine, c.batch, c.slips, c.amount, c.status])
+                  )}
+                  title="Export POS EDC card settlements to Microsoft Excel or CSV"
+                >
+                  📥 Export to Excel (CSV)
+                </button>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -5032,10 +5180,35 @@ export default function App() {
                     onClick={handleTriggerBackup}
                     disabled={isBackingUp}
                   >
-                    {isBackingUp ? '⏳ Generating Compressed Snapshot...' : '📦 Take Instant PostgreSQL Backup & Archive'}
+                    {isBackingUp ? '⏳ Generating Compressed Snapshot...' : '📦 Take Instant Cloud Backup (.json.gz)'}
                   </button>
+
+                  <a
+                    href={getMasterExcelDownloadUrl()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="win-btn-classic"
+                    style={{
+                      height: '34px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: 'linear-gradient(180deg, #1d6f42 0%, #155724 100%)',
+                      color: '#fff',
+                      border: '1px solid #0e3d19',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      textDecoration: 'none',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                    }}
+                    title="Download complete multi-sheet Excel workbook formatted for Accountants & CAs"
+                  >
+                    📊 Download Master Excel Workbook (.xlsx)
+                  </a>
+
                   <div style={{ fontSize: '10px', color: '#777', textAlign: 'center' }}>
-                    Auto-schedules daily at 23:59 IST with 99.999999999% durability
+                    Multi-tab Excel for CAs & Accountants | Daily Cloudflare R2 Cloud Archive
                   </div>
                 </div>
               </div>

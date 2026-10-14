@@ -674,3 +674,7 @@ export function getBackupDownloadUrl(filename: string): string {
   return `${API_BASE_URL}/api/v1/pump/backups/download/${encodeURIComponent(filename)}`;
 }
 
+export function getMasterExcelDownloadUrl(): string {
+  return `${API_BASE_URL}/api/v1/pump/backups/export-excel`;
+}
+

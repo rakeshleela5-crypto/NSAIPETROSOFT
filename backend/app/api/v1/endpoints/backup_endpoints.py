@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.services.backup_service import (
     LOCAL_BACKUP_DIR,
     create_and_store_backup,
+    generate_excel_workbook,
     list_all_backups,
     r2_service,
 )
@@ -91,3 +92,24 @@ async def download_backup(filename: str):
         )
 
     raise HTTPException(status_code=404, detail=f"Backup file '{filename}' not found.")
+
+
+@router.get("/export-excel", summary="Export Multi-Tab Master Excel (.xlsx) Workbook for Accountants & CAs")
+async def export_master_excel(db: AsyncSession = Depends(get_db)):
+    """
+    Generates a live, fully-styled multi-sheet Microsoft Excel (.xlsx) file
+    containing all 10+ station ledgers, cash books, credit sales, meter readings,
+    and tank dips with formatted currency columns, auto-width headers, and clean gridlines.
+    """
+    try:
+        filename, excel_bytes = await generate_excel_workbook(db)
+        return Response(
+            content=excel_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate Excel workbook: {str(e)}")
