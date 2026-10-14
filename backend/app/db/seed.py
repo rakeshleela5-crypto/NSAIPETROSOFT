@@ -180,27 +180,17 @@ async def seed_initial_data(db: AsyncSession) -> None:
     ]
     db.add_all(accounts)
 
-    # 7. Initial Shift & Meter Readings
+    # 7. Initial Clean Shift #00001 (Zero Starting Base)
     shift = Shift(
-        so_number="00017",
+        so_number="00001",
         date=date.today(),
         shift_name="First",
-        status="Closed",
-        total_sale_amount=664908.18,
-        total_cash=237659.88,
-        total_credit=54091.46,
-        total_digital=373156.84,
+        status="Open",
+        total_sale_amount=0.0,
+        total_cash=0.0,
+        total_credit=0.0,
+        total_digital=0.0,
     )
     db.add(shift)
-    await db.flush()
-
-    readings = [
-        ShiftMeterReading(shift_id=shift.id, nozzle_id=nozzles[0].id, employee_id=emp1.id, opening_meter=5268.0, closing_meter=6254.0, testing_qty=0.0, sale_qty=986.0, rate=90.21, total_amount=88947.06, vat_amount=11534.48),
-        ShiftMeterReading(shift_id=shift.id, nozzle_id=nozzles[1].id, employee_id=emp1.id, opening_meter=10254.0, closing_meter=11254.0, testing_qty=0.0, sale_qty=1000.0, rate=90.21, total_amount=90210.00, vat_amount=11698.25),
-        ShiftMeterReading(shift_id=shift.id, nozzle_id=nozzles[2].id, employee_id=emp1.id, opening_meter=10474.0, closing_meter=11256.0, testing_qty=0.0, sale_qty=782.0, rate=90.21, total_amount=70544.22, vat_amount=9148.03),
-        ShiftMeterReading(shift_id=shift.id, nozzle_id=nozzles[3].id, employee_id=emp1.id, opening_meter=12478.0, closing_meter=13256.0, testing_qty=0.0, sale_qty=778.0, rate=90.21, total_amount=70183.38, vat_amount=9101.24),
-        ShiftMeterReading(shift_id=shift.id, nozzle_id=nozzles[4].id, employee_id=emp1.id, opening_meter=1859.0, closing_meter=2014.0, testing_qty=0.0, sale_qty=155.0, rate=94.25, total_amount=14608.75, vat_amount=1760.25),
-    ]
-    db.add_all(readings)
 
     await db.commit()

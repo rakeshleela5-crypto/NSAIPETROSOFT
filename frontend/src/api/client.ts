@@ -724,3 +724,11 @@ export function getMasterExcelDownloadUrl(): string {
   return `${API_BASE_URL}/api/v1/pump/backups/export-excel`;
 }
 
+export async function resetOperationsToCleanSlate(): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/system/reset-operations?confirm=CONFIRM_CLEAN_SLATE`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Reset operations failed: ${res.status}`);
+  return res.json();
+}
+

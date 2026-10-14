@@ -3,7 +3,7 @@ import json
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import desc, func, select
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -66,15 +66,61 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
             "is_low": t.current_stock <= t.min_alert_level,
         })
 
-    # 4. Latest Shift / Today's Collections
+    # 4. Today's Collections & Sales strictly computed from live PostgreSQL tables
+    today = date.today()
     latest_shift_res = await db.execute(
-        select(Shift).order_by(desc(Shift.id)).limit(1)
+        select(Shift).order_by(desc(Shift.date), desc(Shift.id)).limit(1)
     )
     latest_shift = latest_shift_res.scalar_one_or_none()
-    today_sale = latest_shift.total_sale_amount if latest_shift else 664908.18
-    cash_col = latest_shift.total_cash if latest_shift else 237659.88
-    credit_col = latest_shift.total_credit if latest_shift else 54091.46
-    digital_col = latest_shift.total_digital if latest_shift else 373156.84
+
+    # Sum today's shift meter readings if available
+    today_readings_res = await db.execute(
+        select(func.coalesce(func.sum(ShiftMeterReading.total_amount), 0.0))
+        .join(Shift, ShiftMeterReading.shift_id == Shift.id)
+        .where(Shift.date == today)
+    )
+    today_meter_sales = float(today_readings_res.scalar() or 0.0)
+
+    # Sum today's credit sales
+    credit_res = await db.execute(
+        select(func.coalesce(func.sum(CreditSale.amount), 0.0))
+        .where(CreditSale.date == today)
+    )
+    today_credit_sales = float(credit_res.scalar() or 0.0)
+
+    # Sum today's payment receipts
+    cash_pay_res = await db.execute(
+        select(func.coalesce(func.sum(PaymentReceipt.amount), 0.0))
+        .where(PaymentReceipt.date == today, PaymentReceipt.payment_mode == "CASH")
+    )
+    today_cash_receipts = float(cash_pay_res.scalar() or 0.0)
+
+    digital_pay_res = await db.execute(
+        select(func.coalesce(func.sum(PaymentReceipt.amount), 0.0))
+        .where(PaymentReceipt.date == today, PaymentReceipt.payment_mode != "CASH")
+    )
+    today_digital_receipts = float(digital_pay_res.scalar() or 0.0)
+
+    if latest_shift and latest_shift.date == today:
+        today_sale = float(latest_shift.total_sale_amount or 0.0)
+        cash_col = float(latest_shift.total_cash or 0.0)
+        credit_col = float(latest_shift.total_credit or 0.0)
+        digital_col = float(latest_shift.total_digital or 0.0)
+    elif today_meter_sales > 0 or today_credit_sales > 0:
+        today_sale = today_meter_sales if today_meter_sales > 0 else today_credit_sales
+        cash_col = max(0.0, today_sale - today_credit_sales - today_digital_receipts) + today_cash_receipts
+        credit_col = today_credit_sales
+        digital_col = today_digital_receipts
+    elif latest_shift:
+        today_sale = float(latest_shift.total_sale_amount or 0.0)
+        cash_col = float(latest_shift.total_cash or 0.0)
+        credit_col = float(latest_shift.total_credit or 0.0)
+        digital_col = float(latest_shift.total_digital or 0.0)
+    else:
+        today_sale = 0.0
+        cash_col = 0.0
+        credit_col = 0.0
+        digital_col = 0.0
 
     # 5. Top Outstanding Customers
     cust_res = await db.execute(
@@ -1109,177 +1155,446 @@ async def get_dsr_report(db: AsyncSession = Depends(get_db)):
 
     report_data = []
     for t in tanks:
-        # Mock last 5 days DSR rows based on real formula
         prod_name = t.product.name if t.product else "Fuel"
-        open_stock = t.current_stock - 3000.0
-        receipt = 4000.0
-        meter_sale = 1533.19
-        testing = 20.0
-        net_sale = meter_sale - testing
-        closing_book = open_stock + receipt - net_sale
-        actual_dip = closing_book - 9.81
+        # 1. Receipts (purchases) for this tank
+        purch_res = await db.execute(
+            select(func.coalesce(func.sum(PurchaseEntry.qty_liters), 0.0))
+            .where(PurchaseEntry.tank_id == t.id)
+        )
+        receipt = float(purch_res.scalar() or 0.0)
+
+        # 2. Meter sale & testing from ShiftMeterReading for nozzles on this tank
+        nozzles_res = await db.execute(select(Nozzle.id).where(Nozzle.tank_id == t.id))
+        nozzle_ids = nozzles_res.scalars().all()
+
+        if nozzle_ids:
+            sales_res = await db.execute(
+                select(
+                    func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
+                    func.coalesce(func.sum(ShiftMeterReading.testing_qty), 0.0),
+                ).where(ShiftMeterReading.nozzle_id.in_(nozzle_ids))
+            )
+            sale_row = sales_res.one_or_none()
+            meter_sale = float(sale_row[0] if sale_row else 0.0)
+            testing = float(sale_row[1] if sale_row else 0.0)
+        else:
+            meter_sale = 0.0
+            testing = 0.0
+
+        net_sale = round(meter_sale - testing, 2)
+
+        # 3. Latest Dip Entry
+        dip_res = await db.execute(
+            select(TankDipEntry).where(TankDipEntry.tank_id == t.id).order_by(desc(TankDipEntry.id)).limit(1)
+        )
+        latest_dip = dip_res.scalar_one_or_none()
+
+        actual_dip = float(latest_dip.closing_stock) if latest_dip else float(t.current_stock)
+        open_stock = float(latest_dip.opening_stock) if latest_dip else float(t.current_stock)
+        closing_book = round(open_stock + receipt - net_sale, 2)
         variation = round(actual_dip - closing_book, 2)
 
         report_data.append({
             "tank": t.tank_name,
             "product": prod_name,
             "opening_stock": round(open_stock, 2),
-            "receipt": receipt,
+            "receipt": round(receipt, 2),
             "total_stock": round(open_stock + receipt, 2),
-            "meter_sale": meter_sale,
-            "testing": testing,
-            "net_sale": net_sale,
+            "meter_sale": round(meter_sale, 2),
+            "testing": round(testing, 2),
+            "net_sale": round(net_sale, 2),
             "closing_book_stock": round(closing_book, 2),
             "actual_dip_stock": round(actual_dip, 2),
-            "daily_variation": variation,
-            "cumulative_variation": round(variation * 4, 2),
+            "daily_variation": round(variation, 2),
+            "cumulative_variation": round(variation, 2),
         })
 
     return report_data
 
 
 @router.get("/reports/vat-summary", summary="State VAT Purchase vs Sale Summary")
-async def get_vat_summary():
+async def get_vat_summary(db: AsyncSession = Depends(get_db)):
+    # Purchases grouped by product
+    purch_res = await db.execute(
+        select(
+            FuelProduct.name,
+            func.coalesce(func.sum(PurchaseEntry.qty_liters), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.basic_excise), 0.0),
+            func.coalesce(func.avg(PurchaseEntry.vat_percent), 14.9),
+            func.coalesce(func.sum(PurchaseEntry.vat_amount), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.cess_amount), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.gross_amount), 0.0),
+        )
+        .join(FuelProduct, PurchaseEntry.product_id == FuelProduct.id)
+        .group_by(FuelProduct.name)
+    )
+    purch_rows = purch_res.all()
+
+    purch_list = []
+    tot_purch_vat = 0.0
+    for r in purch_rows:
+        tot_purch_vat += float(r[4])
+        purch_list.append({
+            "item": r[0],
+            "qty": round(float(r[1]), 2),
+            "basic": round(float(r[2]), 2),
+            "vat_pct": round(float(r[3]), 2),
+            "vat_amount": round(float(r[4]), 2),
+            "cess": round(float(r[5]), 2),
+            "total": round(float(r[6]), 2),
+        })
+
+    # Sales grouped by product
+    sales_res = await db.execute(
+        select(
+            FuelProduct.name,
+            func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
+            func.coalesce(func.sum(ShiftMeterReading.total_amount - ShiftMeterReading.vat_amount), 0.0),
+            func.coalesce(func.sum(ShiftMeterReading.vat_amount), 0.0),
+            func.coalesce(func.sum(ShiftMeterReading.total_amount), 0.0),
+        )
+        .join(Nozzle, ShiftMeterReading.nozzle_id == Nozzle.id)
+        .join(FuelProduct, Nozzle.product_id == FuelProduct.id)
+        .group_by(FuelProduct.name)
+    )
+    sales_rows = sales_res.all()
+
+    sales_list = []
+    tot_sales_vat = 0.0
+    for s in sales_rows:
+        tot_sales_vat += float(s[3])
+        sales_list.append({
+            "item": s[0],
+            "qty": round(float(s[1]), 2),
+            "basic": round(float(s[2]), 2),
+            "vat_pct": 14.90 if "Diesel" in s[0] else 13.70,
+            "vat_amount": round(float(s[3]), 2),
+            "total": round(float(s[4]), 2),
+        })
+
     return {
-        "purchase": [
-            {"item": "Petrol (MS)", "qty": 49000.0, "basic": 3736421.00, "vat_pct": 13.70, "vat_amount": 511889.70, "cess": 169932.43, "total": 4418242.00},
-            {"item": "Diesel (HSD)", "qty": 103000.0, "basic": 7524229.31, "vat_pct": 14.90, "vat_amount": 1121110.17, "cess": 345813.57, "total": 8991151.00},
-        ],
-        "sales": [
-            {"item": "Petrol (MS)", "qty": 49688.97, "basic": 4156917.17, "vat_pct": 13.70, "vat_amount": 569497.65, "total": 4726414.82},
-            {"item": "Diesel (HSD)", "qty": 102196.93, "basic": 8070800.15, "vat_pct": 14.90, "vat_amount": 1202549.22, "total": 9273349.37},
-        ],
+        "purchase": purch_list,
+        "sales": sales_list,
         "payable": {
-            "purchase_vat": 1632999.87,
-            "sales_vat": 1772046.87,
-            "net_payable_vat": 139047.00,
+            "purchase_vat": round(tot_purch_vat, 2),
+            "sales_vat": round(tot_sales_vat, 2),
+            "net_payable_vat": round(tot_sales_vat - tot_purch_vat, 2),
         },
     }
 
 
 @router.get("/reports/profit-summary", summary="Dealer Margin & P&L Per Liter (LFR)")
-async def get_profit_summary():
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-    return [
-        {
-            "date": today.strftime("%d-%b-%Y"),
-            "sale_qty": 1587.73,
-            "purchase_rate": 90.17,
-            "purchase_amt": 143162.76,
-            "purchase_vat": 16586.59,
-            "sale_rate": 95.12,
-            "sale_amt": 151024.88,
-            "sale_vat": 18197.37,
-            "gross_profit": 7862.12,
-            "net_profit": 6251.34,
-            "profit_per_liter": 3.94,
-            "vat_per_liter": 1.01,
+async def get_profit_summary(db: AsyncSession = Depends(get_db)):
+    sales_by_date = await db.execute(
+        select(
+            Shift.date,
+            func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
+            func.coalesce(func.avg(ShiftMeterReading.rate), 0.0),
+            func.coalesce(func.sum(ShiftMeterReading.total_amount), 0.0),
+            func.coalesce(func.sum(ShiftMeterReading.vat_amount), 0.0),
+        )
+        .join(Shift, ShiftMeterReading.shift_id == Shift.id)
+        .group_by(Shift.date)
+        .order_by(desc(Shift.date))
+        .limit(10)
+    )
+    rows = sales_by_date.all()
+
+    avg_purch = await db.execute(
+        select(func.coalesce(func.avg(PurchaseEntry.rate_per_kl / 1000.0), 90.17))
+    )
+    purch_rate = float(avg_purch.scalar() or 90.17)
+
+    result = []
+    for r in rows:
+        sqty = float(r[1])
+        srate = float(r[2])
+        samt = float(r[3])
+        svat = float(r[4])
+        pamt = round(sqty * purch_rate, 2)
+        pvat = round(pamt * 0.149, 2)
+        gross_profit = round(samt - pamt, 2)
+        net_profit = round(gross_profit - svat + pvat, 2)
+        profit_per_l = round(gross_profit / sqty, 2) if sqty > 0 else 0.0
+
+        result.append({
+            "date": r[0].strftime("%d-%b-%Y") if r[0] else date.today().strftime("%d-%b-%Y"),
+            "sale_qty": round(sqty, 2),
+            "purchase_rate": round(purch_rate, 2),
+            "purchase_amt": pamt,
+            "purchase_vat": pvat,
+            "sale_rate": round(srate, 2),
+            "sale_amt": round(samt, 2),
+            "sale_vat": round(svat, 2),
+            "gross_profit": gross_profit,
+            "net_profit": net_profit,
+            "profit_per_liter": profit_per_l,
+            "vat_per_liter": round(svat / sqty, 2) if sqty > 0 else 0.0,
             "lfr_per_liter": 0.52,
-        },
-        {
-            "date": yesterday.strftime("%d-%b-%Y"),
-            "sale_qty": 1489.98,
-            "purchase_rate": 90.17,
-            "purchase_amt": 134348.81,
-            "purchase_vat": 15565.42,
-            "sale_rate": 95.12,
-            "sale_amt": 141726.90,
-            "sale_vat": 17077.03,
-            "gross_profit": 7378.09,
-            "net_profit": 5866.48,
-            "profit_per_liter": 3.94,
-            "vat_per_liter": 1.01,
-            "lfr_per_liter": 0.52,
-        },
-    ]
+        })
+    return result
 
 
-@router.get("/reports/tds-summary", summary="TDS 0.1% / Section 194Q Statutory Summary (Frame 0360)")
-async def get_tds_summary():
+@router.get("/reports/tds-summary", summary="TDS 0.1% / Section 194Q Statutory Summary")
+async def get_tds_summary(db: AsyncSession = Depends(get_db)):
+    purch_res = await db.execute(
+        select(
+            FuelProduct.name,
+            func.coalesce(func.sum(PurchaseEntry.qty_liters), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.basic_excise), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.vat_amount), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.cess_amount), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.gross_amount), 0.0),
+        )
+        .join(FuelProduct, PurchaseEntry.product_id == FuelProduct.id)
+        .group_by(FuelProduct.name)
+    )
+    rows = purch_res.all()
+    purch_list = []
+    tot_basic = 0.0
+    tot_vat = 0.0
+    tot_cess = 0.0
+    tot_qty = 0.0
+    tot_amount = 0.0
+
+    for r in rows:
+        qty = float(r[1])
+        basic = float(r[2])
+        vat = float(r[3])
+        cess = float(r[4])
+        total = float(r[5])
+        tot_qty += qty
+        tot_basic += basic
+        tot_vat += vat
+        tot_cess += cess
+        tot_amount += total
+        purch_list.append({
+            "item": r[0],
+            "purchase_qty": round(qty, 2),
+            "basic_amount": round(basic, 2),
+            "vat_amount": round(vat, 2),
+            "cess": round(cess, 2),
+            "tcs": 0.0,
+            "total_amount": round(total, 2),
+        })
+
+    tds_payable = round(tot_basic * 0.001, 2)
+
     return {
         "as_on_date": date.today().strftime("%d-%m-%Y"),
-        "purchases": [
-            {"item": "Petrol", "purchase_qty": 49000.0, "basic_amount": 3736421.0, "vat_amount": 511889.70, "cess": 169932.43, "tcs": 0.0, "total_amount": 4418242.0},
-            {"item": "Diesel", "purchase_qty": 103000.0, "basic_amount": 7524229.31, "vat_amount": 1121110.17, "cess": 345813.57, "tcs": 0.0, "total_amount": 8991151.0},
-        ],
-        "purchases_total": {"qty": 152000.0, "basic": 11260650.31, "vat": 1632999.87, "cess": 515746.0, "tcs": 0.0, "total": 13409393.0},
+        "purchases": purch_list,
+        "purchases_total": {
+            "qty": round(tot_qty, 2),
+            "basic": round(tot_basic, 2),
+            "vat": round(tot_vat, 2),
+            "cess": round(tot_cess, 2),
+            "tcs": 0.0,
+            "total": round(tot_amount, 2),
+        },
         "gst_lube": [],
         "tds_summary": {
-            "total_amount": 13409393.00,
-            "tax_amount": 1632999.87,
-            "basic_amount": 11260650.31,
+            "total_amount": round(tot_amount, 2),
+            "tax_amount": round(tot_vat + tot_cess, 2),
+            "basic_amount": round(tot_basic, 2),
             "tds_rate": "0.1 %",
-            "tds_payable": 11260.65
-        }
+            "tds_payable": tds_payable,
+        },
     }
 
 
-@router.get("/reports/dealer-commission", summary="OMC Dealer Commission Report (Frame 0351)")
-async def get_dealer_commission():
+@router.get("/reports/dealer-commission", summary="OMC Dealer Commission Report")
+async def get_dealer_commission(db: AsyncSession = Depends(get_db)):
     today = date.today()
     month_start = date(today.year, today.month, 1)
+
+    sales_res = await db.execute(
+        select(
+            FuelProduct.name,
+            func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
+        )
+        .join(Nozzle, ShiftMeterReading.nozzle_id == Nozzle.id)
+        .join(FuelProduct, Nozzle.product_id == FuelProduct.id)
+        .group_by(FuelProduct.name)
+    )
+    rows = sales_res.all()
+
+    items = []
+    tot_rate = 0.0
+    tot_qty_kl = 0.0
+    tot_commission = 0.0
+
+    for r in rows:
+        name = r[0]
+        qty_kl = round(float(r[1]) / 1000.0, 3)
+        comm_rate_kl = 379.67 if "Petrol" in name or "MS" in name else 281.23
+        amt = round(qty_kl * comm_rate_kl, 2)
+        tot_rate += comm_rate_kl
+        tot_qty_kl += qty_kl
+        tot_commission += amt
+        items.append({
+            "item": name,
+            "rate": comm_rate_kl,
+            "qty": qty_kl,
+            "total_amount": amt,
+            "received_amount": 0.0,
+        })
+
     return {
         "from_date": month_start.strftime("%Y-%m-%d"),
         "to_date": today.strftime("%Y-%m-%d"),
-        "items": [
-            {"item": "Diesel", "rate": 281.23, "qty": 103.0, "total_amount": 28966.69, "received_amount": 0.0},
-            {"item": "Petrol", "rate": 379.67, "qty": 49.0, "total_amount": 18603.83, "received_amount": 0.0},
-        ],
-        "total": {"rate": 660.90, "qty": 152.0, "total_amount": 47570.52, "received_amount": 0.0}
+        "items": items,
+        "total": {
+            "rate": round(tot_rate, 2),
+            "qty": round(tot_qty_kl, 3),
+            "total_amount": round(tot_commission, 2),
+            "received_amount": 0.0,
+        },
     }
 
 
-@router.get("/reports/lfr-summary", summary="Licensee Fee Recovery & TDS 10% Summary (Frame 0337)")
-async def get_lfr_summary():
+@router.get("/reports/lfr-summary", summary="Licensee Fee Recovery & TDS 10% Summary")
+async def get_lfr_summary(db: AsyncSession = Depends(get_db)):
     today = date.today()
     month_start = date(today.year, today.month, 1)
+
+    purch_res = await db.execute(
+        select(
+            FuelProduct.name,
+            func.coalesce(func.sum(PurchaseEntry.qty_kl), 0.0),
+        )
+        .join(FuelProduct, PurchaseEntry.product_id == FuelProduct.id)
+        .group_by(FuelProduct.name)
+    )
+    rows = purch_res.all()
+
+    purchases = []
+    tot_basic = 0.0
+    tot_cgst = 0.0
+    tot_sgst = 0.0
+    tot_qty_kl = 0.0
+    tot_lfr_rate = 0.0
+
+    for r in rows:
+        name = r[0]
+        qty_kl = float(r[1])
+        lfr_rate = 523.34 if "Petrol" in name or "MS" in name else 436.10
+        basic = round(qty_kl * lfr_rate, 2)
+        cgst = round(basic * 0.09, 2)
+        sgst = round(basic * 0.09, 2)
+        total = round(basic + cgst + sgst, 2)
+        tot_basic += basic
+        tot_cgst += cgst
+        tot_sgst += sgst
+        tot_qty_kl += qty_kl
+        tot_lfr_rate += lfr_rate
+        purchases.append({
+            "item": name,
+            "lfr_rate": lfr_rate,
+            "qty": round(qty_kl, 2),
+            "basic": basic,
+            "cgst": cgst,
+            "sgst": sgst,
+            "total": total,
+        })
+
+    tot_total = round(tot_basic + tot_cgst + tot_sgst, 2)
+    tds = round(tot_basic * 0.10, 2)
+
     return {
         "from_date": month_start.strftime("%Y-%m-%d"),
         "to_date": today.strftime("%Y-%m-%d"),
-        "purchases": [
-            {"item": "Diesel", "lfr_rate": 436.10, "qty": 103.0, "basic": 38066.36, "cgst": 3425.97, "sgst": 3425.97, "total": 44918.30},
-            {"item": "Petrol", "lfr_rate": 523.34, "qty": 49.0, "basic": 21731.92, "cgst": 1955.87, "sgst": 1955.87, "total": 25643.66},
-        ],
-        "total": {"lfr_rate": 959.44, "qty": 152.0, "basic": 59798.28, "cgst": 5381.84, "sgst": 5381.84, "total": 70561.96},
+        "purchases": purchases,
+        "total": {
+            "lfr_rate": round(tot_lfr_rate, 2),
+            "qty": round(tot_qty_kl, 2),
+            "basic": round(tot_basic, 2),
+            "cgst": round(tot_cgst, 2),
+            "sgst": round(tot_sgst, 2),
+            "total": tot_total,
+        },
         "tds_summary": {
-            "total_amount": 70561.96,
-            "gst_tax": 10763.68,
-            "basic_amount": 59798.28,
+            "total_amount": tot_total,
+            "gst_tax": round(tot_cgst + tot_sgst, 2),
+            "basic_amount": round(tot_basic, 2),
             "tds_percent": "10.00%",
-            "tds_payable": 5979.83
-        }
+            "tds_payable": tds,
+        },
     }
 
 
-@router.get("/reports/profit-loss", summary="Profit Loss Summary Report (Frame 0390)")
-async def get_profit_loss():
+@router.get("/reports/profit-loss", summary="Profit Loss Summary Report")
+async def get_profit_loss(db: AsyncSession = Depends(get_db)):
+    tanks_res = await db.execute(select(Tank).options(selectinload(Tank.product)))
+    tanks = tanks_res.scalars().all()
+
+    stock_list = []
+    tot_stock_amt = 0.0
+    for t in tanks:
+        pname = t.product.name if t.product else "Fuel"
+        rate = t.product.current_rate if (t.product and t.product.current_rate) else 0.0
+        amt = round(t.current_stock * rate, 2)
+        tot_stock_amt += amt
+        stock_list.append({
+            "item": pname,
+            "qty": round(t.current_stock, 2),
+            "amount": amt,
+        })
+
+    purch_res = await db.execute(
+        select(
+            FuelProduct.name,
+            func.coalesce(func.sum(PurchaseEntry.qty_liters), 0.0),
+            func.coalesce(func.sum(PurchaseEntry.gross_amount), 0.0),
+        )
+        .join(FuelProduct, PurchaseEntry.product_id == FuelProduct.id)
+        .group_by(FuelProduct.name)
+    )
+    purch_rows = purch_res.all()
+    purchases = []
+    tot_purch_amt = 0.0
+    for pr in purch_rows:
+        pamt = round(float(pr[2]), 2)
+        tot_purch_amt += pamt
+        purchases.append({
+            "item": pr[0],
+            "qty": round(float(pr[1]), 2),
+            "amount": pamt,
+        })
+
+    sales_res = await db.execute(
+        select(
+            FuelProduct.name,
+            func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
+            func.coalesce(func.sum(ShiftMeterReading.total_amount), 0.0),
+        )
+        .join(Nozzle, ShiftMeterReading.nozzle_id == Nozzle.id)
+        .join(FuelProduct, Nozzle.product_id == FuelProduct.id)
+        .group_by(FuelProduct.name)
+    )
+    sales_rows = sales_res.all()
+    sales = []
+    tot_sales_amt = 0.0
+    for sr in sales_rows:
+        samt = round(float(sr[2]), 2)
+        tot_sales_amt += samt
+        sales.append({
+            "item": sr[0],
+            "qty": round(float(sr[1]), 2),
+            "amount": samt,
+        })
+
     return {
         "as_on_date": date.today().strftime("%d-%m-%Y"),
-        "opening_stock": [
-            {"item": "Diesel", "qty": 16745.0, "amount": 1279485.45},
-            {"item": "Petrol", "qty": 12511.0, "amount": 997376.92},
-        ],
-        "opening_stock_total": 2276862.37,
-        "sales": [
-            {"item": "Diesel", "qty": 102196.93, "amount": 8070800.15},
-            {"item": "Petrol", "qty": 49688.97, "amount": 4156917.17},
-        ],
-        "sales_total": 12227717.32,
-        "sale_lube": 24774.60,
-        "purchases": [
-            {"item": "Diesel", "qty": 103000.0, "amount": 7870042.88},
-            {"item": "Petrol", "qty": 49000.0, "amount": 3906353.43},
-        ],
-        "purchases_total": 11776396.31,
-        "closing_stock": [
-            {"item": "Diesel", "qty": 17345.0, "amount": 1325331.45},
-            {"item": "Petrol", "qty": 11524.0, "amount": 918693.28},
-        ],
-        "closing_stock_total": 2244024.73,
-        "loss_stock": [
-            {"item": "Diesel", "qty": -203.07, "amount": -15516.58}
-        ]
+        "opening_stock": stock_list,
+        "opening_stock_total": round(tot_stock_amt, 2),
+        "sales": sales,
+        "sales_total": round(tot_sales_amt, 2),
+        "sale_lube": 0.0,
+        "purchases": purchases,
+        "purchases_total": round(tot_purch_amt, 2),
+        "closing_stock": stock_list,
+        "closing_stock_total": round(tot_stock_amt, 2),
+        "loss_stock": [],
     }
 
 
@@ -1490,3 +1805,49 @@ async def get_stamping_reminders(db: AsyncSession = Depends(get_db)):
             })
     return reminders
 
+
+# -------------------------------------------------------------
+# 18. System Operations Reset (Clean Baseline Purge)
+# -------------------------------------------------------------
+@router.post("/system/reset-operations", summary="Reset Operations to Clean State (Zero Balance Base)")
+async def reset_operations(confirm: str = Query(...), db: AsyncSession = Depends(get_db)):
+    if confirm != "CONFIRM_CLEAN_SLATE":
+        raise HTTPException(status_code=400, detail="Invalid confirmation token")
+
+    # 1. Purge all transaction and operational history
+    await db.execute(delete(ShiftMeterReading))
+    await db.execute(delete(CreditSale))
+    await db.execute(delete(PaymentReceipt))
+    await db.execute(delete(Expense))
+    await db.execute(delete(PurchaseEntry))
+    await db.execute(delete(ShiftSettlement))
+    await db.execute(delete(TankDipEntry))
+    await db.execute(delete(Shift))
+
+    # 2. Reset customer outstanding balances to 0.0
+    await db.execute(update(Customer).values(current_outstanding=0.0))
+
+    # 3. Reset bank and cash account balances to 0.0
+    await db.execute(update(BankAccount).values(balance=0.0))
+
+    # 4. Reset tank stock levels to clean baseline
+    await db.execute(update(Tank).values(current_stock=0.0, current_dip_cm=0.0))
+
+    # 5. Create initial clean Shift #00001 (Status: Open)
+    clean_shift = Shift(
+        so_number="00001",
+        date=date.today(),
+        shift_name="First",
+        status="Open",
+        total_sale_amount=0.0,
+        total_cash=0.0,
+        total_credit=0.0,
+        total_digital=0.0,
+    )
+    db.add(clean_shift)
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": "All operational transactions purged. System is now on a clean, authentic zero baseline with Shift #00001 (Open).",
+    }

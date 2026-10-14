@@ -45,6 +45,7 @@ import {
   saveShiftSettlement,
   triggerCreateBackup,
   updateRate,
+  resetOperationsToCleanSlate,
 } from './api/client';
 import { exportToCsv } from './utils/exportCsv';
 import {
@@ -156,7 +157,7 @@ export default function App() {
   };
 
   // Station Control Panel State
-  const [controlPanelTab, setControlPanelTab] = useState<'shift' | 'profile'>('shift');
+  const [controlPanelTab, setControlPanelTab] = useState<'shift' | 'profile' | 'maintenance'>('shift');
   const [profileForm, setProfileForm] = useState<StationProfile>(stationProfile);
 
   // Employees List State
@@ -5932,6 +5933,26 @@ export default function App() {
                 >
                   🏢 Station Outlet Profile & Dealership Settings
                 </button>
+                <button
+                  type="button"
+                  style={{
+                    padding: '6px 16px',
+                    border: '1px solid #7f9db9',
+                    borderBottom: controlPanelTab === 'maintenance' ? '2px solid #ece9d8' : '1px solid #7f9db9',
+                    background: controlPanelTab === 'maintenance' ? '#ece9d8' : '#d4d0c8',
+                    fontWeight: controlPanelTab === 'maintenance' ? 700 : 400,
+                    cursor: 'pointer',
+                    outline: 'none',
+                    borderTopLeftRadius: '3px',
+                    borderTopRightRadius: '3px',
+                    marginBottom: controlPanelTab === 'maintenance' ? '-2px' : '0',
+                    fontSize: '11px',
+                    color: '#c0392b',
+                  }}
+                  onClick={() => setControlPanelTab('maintenance')}
+                >
+                  🧹 Clean Operational Baseline
+                </button>
               </div>
 
               {/* TAB 1: Shift Operations */}
@@ -6165,6 +6186,48 @@ export default function App() {
                     </button>
                   </div>
                 </form>
+              )}
+
+              {/* TAB 3: Operational Data Reset */}
+              {controlPanelTab === 'maintenance' && (
+                <div>
+                  <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '14px', marginBottom: '14px' }}>
+                    <div style={{ fontWeight: 700, color: '#c0392b', fontSize: '13px', marginBottom: '8px', borderBottom: '1px solid #d4d0c8', paddingBottom: '4px' }}>
+                      ⚠ Operational Clean Baseline Reset (Purge Demo Data)
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#444', lineHeight: '1.6', marginBottom: '12px' }}>
+                      This operation will permanently purge all historical demo shifts, meter sales, credit slips, cash vouchers, and expenses from the live PostgreSQL database on Railway.
+                      <br />
+                      <br />
+                      ✅ <b>Preserved Masters:</b> Fuel Products (MS, HSD, Lube), Underground Tanks, Dispensing Units & Nozzles, Fleet Customers list, and Bank Accounts structure.
+                      <br />
+                      🔄 <b>Reset Operational Balances:</b> Today's sales will become ₹ 0.00, customer outstanding balances will reset to ₹ 0.00, bank balances will reset to ₹ 0.00, and a fresh <b>Shift #00001 (Status: Open)</b> will be initialized.
+                      <br />
+                      🔒 <b>Security:</b> Requires Manager PIN authorization (default: <code>{stationProfile.managerPin || '1234'}</code>).
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="win-btn-classic"
+                        style={{ background: '#d32f2f', color: '#fff', borderColor: '#b71c1c', fontWeight: 700, padding: '8px 16px', fontSize: '12px', cursor: 'pointer' }}
+                        onClick={() => {
+                          requestManagerAuthorization('Purge all demo transactions and reset to clean zero baseline', async () => {
+                            try {
+                              const res = await resetOperationsToCleanSlate();
+                              showToast(`✔ ${res.message}`);
+                              setActiveDialog(null);
+                              await loadAllErpData();
+                            } catch (err: any) {
+                              showToast(`⚠ Error resetting operations: ${err.message}`);
+                            }
+                          });
+                        }}
+                      >
+                        🧹 Purge Demo Data & Start Clean Baseline
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
             <div className="win-dialog-footer">
