@@ -42,3 +42,9 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Large media downloads
+downloads/
+*.mp4
+*.mkv
+*.webm
