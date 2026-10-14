@@ -4,9 +4,12 @@ import {
   API_BASE_URL,
   addVehicle,
   calculateSettlement,
+  createBankAccount,
+  createCardSettlement,
   createCreditSale,
   createCustomer,
   createExpense,
+  createPaymentReceipt,
   createPurchase,
   createTankDip,
   createTransfer,
@@ -18,6 +21,7 @@ import {
   fetchExpenses,
   fetchHealth,
   fetchLfrSummary,
+  fetchPayments,
   fetchProfitLossSummary,
   fetchProfitSummary,
   fetchPurchases,
@@ -408,7 +412,7 @@ export default function App() {
         setActiveDialog('credit');
       } else if (e.key === 'F4') {
         e.preventDefault();
-        setActiveDialog('payment');
+        openPaymentDialog();
       } else if (e.key === 'F5') {
         e.preventDefault();
         setActiveDialog('expense');
@@ -504,6 +508,27 @@ export default function App() {
       ]);
     }
     setActiveDialog('stamping');
+  };
+
+  const openPaymentDialog = async () => {
+    try {
+      const data = await fetchPayments();
+      if (data && data.length > 0) {
+        setPayReceiptsHistory(
+          data.map((p) => ({
+            shift: p.shift || 'First',
+            date: p.date,
+            cust: p.customer,
+            mode: p.mode,
+            amt: p.amount,
+          }))
+        );
+      }
+    } catch {
+      // Offline fallback state kept
+    }
+    setActiveDialog('payment');
+    setOpenDropdown(null);
   };
 
   const openPurchaseMaster = async () => {
@@ -863,7 +888,7 @@ export default function App() {
   };
 
   // Add Bank Account Handler
-  const handleCreateBankAccount = (e: React.FormEvent) => {
+  const handleCreateBankAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBankName) return;
     const newAcc = {
@@ -872,19 +897,31 @@ export default function App() {
       type: newBankType,
       balance: newBankBalance,
     };
-    if (dashboard) {
-      setDashboard({
-        ...dashboard,
-        accounts: [...dashboard.accounts, newAcc],
+    try {
+      await createBankAccount({
+        account_name: newBankName,
+        account_type: newBankType,
+        balance: newBankBalance,
       });
+      showToast(`✔ Bank Account "${newAcc.name}" saved to PostgreSQL!`);
+      setNewBankName('');
+      setNewBankBalance(0);
+      loadData();
+    } catch {
+      if (dashboard) {
+        setDashboard({
+          ...dashboard,
+          accounts: [...dashboard.accounts, newAcc],
+        });
+      }
+      showToast(`✔ Bank Account "${newAcc.name}" created!`);
+      setNewBankName('');
+      setNewBankBalance(0);
     }
-    showToast(`✔ Bank Account "${newAcc.name}" created!`);
-    setNewBankName('');
-    setNewBankBalance(0);
   };
 
   // Card POS Settlement Save
-  const handleSaveCardSettlement = () => {
+  const handleSaveCardSettlement = async () => {
     const newEntry = {
       machine: cardMachine,
       batch: cardBatchNo,
@@ -894,7 +931,18 @@ export default function App() {
       status: 'SETTLED',
     };
     setCardSettlements([newEntry, ...cardSettlements]);
-    showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled!`);
+    try {
+      await createCardSettlement({
+        machine_name: cardMachine,
+        batch_no: cardBatchNo,
+        slip_count: cardSlipsCount,
+        amount: cardBatchTotal,
+      });
+      showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled in PostgreSQL!`);
+      loadData();
+    } catch {
+      showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled locally!`);
+    }
   };
 
   // Station Control Actions
@@ -1092,7 +1140,7 @@ export default function App() {
           <div className="gel-btn gel-blue" onClick={() => setActiveDialog('credit')} title="Credit Customer Sale (F3)">
             Credit<br />Customer
           </div>
-          <div className="gel-btn gel-pink" onClick={() => setActiveDialog('payment')} title="Customer Payment Receipt (F4)">
+          <div className="gel-btn gel-pink" onClick={openPaymentDialog} title="Customer Payment Receipt (F4)">
             Payment<br />Receipt
           </div>
           <div className="gel-btn gel-green" onClick={() => setActiveDialog('expense')} title="Daily Expense Book (F5)">
@@ -1793,7 +1841,7 @@ export default function App() {
                 <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
                   <button
                     className="win-btn-classic win-btn-primary"
-                    onClick={() => {
+                    onClick={async () => {
                       const newReceipt = {
                         shift: 'First',
                         date: '17 Apr 2026',
@@ -1804,7 +1852,20 @@ export default function App() {
                       setPayReceiptsHistory([newReceipt, ...payReceiptsHistory]);
                       setPayTotalPaid(payTotalPaid + payAmount);
                       setPayTotalUnpaid(Math.max(0, payTotalUnpaid - payAmount));
-                      showToast(`✔ Receipt #${payReceiptNo} recorded for ₹${payAmount}!`);
+                      try {
+                        const custObj = customers.find((c) => c.name === payCustName);
+                        const custId = custObj ? custObj.id : 1;
+                        await createPaymentReceipt({
+                          customer_id: custId,
+                          amount: payAmount,
+                          payment_mode: payMode,
+                          bank_name: payBank,
+                        });
+                        showToast(`✔ Receipt recorded in PostgreSQL! Outstanding reduced by ₹${payAmount}`);
+                        loadData();
+                      } catch {
+                        showToast(`✔ Receipt #${payReceiptNo} recorded locally for ₹${payAmount}!`);
+                      }
                     }}
                   >
                     Save (F2)

@@ -553,3 +553,55 @@ export async function fetchStampingReminders(): Promise<any[]> {
   return res.json();
 }
 
+export async function fetchPayments(): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/payments`);
+  if (!res.ok) throw new Error(`Payments API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createPaymentReceipt(data: {
+  customer_id: number;
+  amount: number;
+  payment_mode?: string;
+  bank_name?: string;
+  cheque_no?: string;
+  remarks?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/payments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Create payment receipt failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createBankAccount(data: {
+  account_name: string;
+  account_type?: string;
+  balance?: number;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/bank-accounts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Create bank account failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createCardSettlement(data: {
+  machine_name: string;
+  batch_no: string;
+  slip_count: number;
+  amount: number;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/card-settlements`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Card settlement failed: ${res.status}`);
+  return res.json();
+}
+

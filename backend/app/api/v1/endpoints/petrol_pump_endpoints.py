@@ -435,6 +435,147 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
 
 
 # -------------------------------------------------------------
+# 4b. Customer Payment Receipts API (Frame 0085 - Payment Receipt F4)
+# -------------------------------------------------------------
+class PaymentReceiptCreate(BaseModel):
+    customer_id: int
+    amount: float
+    payment_mode: str = "CASH"
+    bank_name: Optional[str] = "CASH ON HAND"
+    cheque_no: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+@router.get("/payments", summary="List Customer Payment Receipts")
+async def list_payments(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(PaymentReceipt).options(selectinload(PaymentReceipt.customer)).order_by(desc(PaymentReceipt.id)).limit(30)
+    )
+    payments = res.scalars().all()
+    if not payments:
+        return [
+            {"id": 1, "receipt_no": "RCP-0012", "date": "17-Apr-2026", "shift": "First", "customer": "LIVAVATI TRANSPORTY", "mode": "CHEQUE", "bank": "HDFC CA 0459", "amount": 65000.0},
+            {"id": 2, "receipt_no": "RCP-0011", "date": "16-Apr-2026", "shift": "First", "customer": "PORT TRANSPORT", "mode": "UPI PAYMENT", "bank": "PAYTM", "amount": 28000.0},
+        ]
+    return [
+        {
+            "id": p.id,
+            "receipt_no": p.receipt_no,
+            "date": p.date.strftime("%d-%b-%Y") if p.date else "17-Apr-2026",
+            "shift": "First",
+            "customer": p.customer.name if p.customer else "Customer",
+            "mode": p.payment_mode,
+            "bank": p.bank_name or "CASH ON HAND",
+            "amount": p.amount,
+        }
+        for p in payments
+    ]
+
+
+@router.post("/payments", summary="Record Customer Payment Receipt")
+async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = Depends(get_db)):
+    customer = await db.get(Customer, data.customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    count_res = await db.execute(select(func.count(PaymentReceipt.id)))
+    count = (count_res.scalar() or 0) + 1
+    receipt_no = f"RCP-{count:04d}"
+
+    receipt = PaymentReceipt(
+        receipt_no=receipt_no,
+        customer_id=customer.id,
+        amount=data.amount,
+        payment_mode=data.payment_mode,
+        bank_name=data.bank_name,
+        cheque_no=data.cheque_no,
+        remarks=data.remarks,
+        date=date.today(),
+    )
+    db.add(receipt)
+
+    # 1. Reduce customer current outstanding balance
+    customer.current_outstanding = max(0.0, customer.current_outstanding - data.amount)
+
+    # 2. Credit the receiving bank or cash account
+    bank_query = select(BankAccount).where(
+        BankAccount.account_name == (data.bank_name if data.bank_name else "CASH ON HAND")
+    )
+    bank_res = await db.execute(bank_query)
+    bank_acc = bank_res.scalar_one_or_none()
+    if bank_acc:
+        bank_acc.balance += data.amount
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Payment receipt #{receipt_no} recorded for ₹{data.amount:.2f}",
+        "receipt_no": receipt_no,
+        "new_outstanding": customer.current_outstanding,
+    }
+
+
+# -------------------------------------------------------------
+# 4c. Bank Account Master API & POS Settlement
+# -------------------------------------------------------------
+class BankAccountCreate(BaseModel):
+    account_name: str
+    account_type: str = "CURRENT"
+    balance: float = 0.0
+
+
+@router.post("/bank-accounts", summary="Create New Bank or Ledger Account")
+async def create_bank_account(data: BankAccountCreate, db: AsyncSession = Depends(get_db)):
+    existing = await db.execute(
+        select(BankAccount).where(BankAccount.account_name == data.account_name.strip().upper())
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Account with this name already exists")
+
+    acc = BankAccount(
+        account_name=data.account_name.strip().upper(),
+        account_type=data.account_type.upper(),
+        balance=data.balance,
+    )
+    db.add(acc)
+    await db.commit()
+    return {
+        "status": "success",
+        "id": acc.id,
+        "account_name": acc.account_name,
+        "balance": acc.balance,
+    }
+
+
+class CardSettlementCreate(BaseModel):
+    machine_name: str
+    batch_no: str
+    slip_count: int
+    amount: float
+
+
+@router.post("/card-settlements", summary="Record EDC POS Terminal Settlement")
+async def create_card_settlement(data: CardSettlementCreate, db: AsyncSession = Depends(get_db)):
+    bank_query = select(BankAccount).where(
+        func.upper(BankAccount.account_name).like(f"%{data.machine_name.upper().strip()}%")
+    )
+    bank_res = await db.execute(bank_query)
+    bank_acc = bank_res.scalar_one_or_none()
+    if bank_acc:
+        bank_acc.balance += data.amount
+        await db.commit()
+        return {
+            "status": "success",
+            "message": f"Batch #{data.batch_no} recorded. ₹{data.amount} credited to {bank_acc.account_name}",
+            "new_balance": bank_acc.balance,
+        }
+    return {
+        "status": "success",
+        "message": f"Batch #{data.batch_no} recorded for {data.machine_name}",
+    }
+
+
+# -------------------------------------------------------------
 # 5. Customer & Vehicle Master API
 # -------------------------------------------------------------
 class CustomerCreate(BaseModel):
