@@ -605,3 +605,72 @@ export async function createCardSettlement(data: {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Cloudflare R2 Disaster Recovery & Database Backups
+// ---------------------------------------------------------------------------
+export interface BackupItem {
+  key: string;
+  filename: string;
+  size_bytes: number;
+  size_kb: number;
+  last_modified: string;
+  storage: string;
+}
+
+export interface BackupStatusResponse {
+  status: string;
+  r2_connection: {
+    connected: boolean;
+    configured: boolean;
+    bucket?: string;
+    endpoint?: string;
+    message: string;
+    error_code?: string;
+  };
+  backup_count: number;
+  latest_backup: BackupItem | null;
+  configuration_instructions: {
+    required_env_vars: string[];
+    help_url: string;
+  };
+}
+
+export interface CreateBackupResponse {
+  status: string;
+  filename: string;
+  size_kb: number;
+  total_records: number;
+  sha256: string;
+  storage: string;
+  uploaded_to_r2: boolean;
+  r2_key?: string;
+  message: string;
+  stats: Record<string, number>;
+  created_at: string;
+}
+
+export async function fetchBackupStatus(): Promise<BackupStatusResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/backups/status`);
+  if (!res.ok) throw new Error(`Backup status API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchBackupsList(): Promise<BackupItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/backups`);
+  if (!res.ok) throw new Error(`Backups list API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function triggerCreateBackup(): Promise<CreateBackupResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/backups/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Create backup API failed: ${res.status}`);
+  return res.json();
+}
+
+export function getBackupDownloadUrl(filename: string): string {
+  return `${API_BASE_URL}/api/v1/pump/backups/download/${encodeURIComponent(filename)}`;
+}
+

@@ -13,6 +13,8 @@ import {
   createPurchase,
   createTankDip,
   createTransfer,
+  fetchBackupStatus,
+  fetchBackupsList,
   fetchCreditSales,
   fetchCustomerStatement,
   fetchCustomers,
@@ -32,11 +34,15 @@ import {
   fetchStampingReminders,
   fetchTdsSummary,
   fetchVatSummary,
+  getBackupDownloadUrl,
   saveShiftMeters,
   saveShiftSettlement,
+  triggerCreateBackup,
   updateRate,
 } from './api/client';
 import type {
+  BackupItem,
+  BackupStatusResponse,
   CustomerFull,
   DashboardResponse,
   DenominationMap,
@@ -70,6 +76,7 @@ type DialogType =
   | 'dayBookReport'
   | 'crystalViewer'
   | 'selectCustomerBill'
+  | 'backup'
   | null;
 
 
@@ -201,6 +208,11 @@ export default function App() {
 
   // Stamping Reminders State
   const [stampingList, setStampingList] = useState<any[]>([]);
+
+  // Cloudflare R2 Backups & Disaster Recovery State
+  const [backupStatus, setBackupStatus] = useState<BackupStatusResponse | null>(null);
+  const [backupsList, setBackupsList] = useState<BackupItem[]>([]);
+  const [isBackingUp, setIsBackingUp] = useState<boolean>(false);
 
   // Reports Data
   const [dsrReport, setDsrReport] = useState<any[]>([]);
@@ -677,6 +689,39 @@ export default function App() {
       }
     } catch {
       // Offline fallback
+    }
+  };
+
+  const openBackupDialog = async () => {
+    setActiveDialog('backup');
+    setOpenDropdown(null);
+    try {
+      const [status, list] = await Promise.all([
+        fetchBackupStatus(),
+        fetchBackupsList(),
+      ]);
+      setBackupStatus(status);
+      setBackupsList(list);
+    } catch (err: any) {
+      console.warn('Backup status fetch error:', err);
+    }
+  };
+
+  const handleTriggerBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const res = await triggerCreateBackup();
+      showToast(`✔ Database snapshot created! ${res.filename} (${res.size_kb} KB) archived.`);
+      const [status, list] = await Promise.all([
+        fetchBackupStatus(),
+        fetchBackupsList(),
+      ]);
+      setBackupStatus(status);
+      setBackupsList(list);
+    } catch (err: any) {
+      showToast(`⚠ Backup failed: ${err.message || 'Error'}`);
+    } finally {
+      setIsBackingUp(false);
     }
   };
 
@@ -1253,6 +1298,7 @@ export default function App() {
         <button className="win-menu-item" onClick={() => setActiveDialog('selectCustomerBill')}>Credit Bills</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('cardEntry')}>Card Entry</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('cashBill')}>Cash Bill</button>
+        <button className="win-menu-item" style={{ color: '#0d47a1', fontWeight: 700 }} onClick={openBackupDialog}>☁️ Cloudflare R2</button>
       </div>
 
       {/* -------------------------------------------------------------
@@ -1264,6 +1310,7 @@ export default function App() {
         </div>
 
         <div className="win-ribbon-center">
+          <button className="btn-stamp-reminder" style={{ background: 'linear-gradient(180deg, #f39c12 0%, #d35400 100%)', color: '#fff', border: '1px solid #b94a00', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} onClick={openBackupDialog}>☁️ R2 Cloud Backups</button>
           <button className="btn-stamp-reminder" onClick={openStampingCalendar}>Stamping Reminder</button>
           <button className="btn-help-desk" onClick={() => setActiveDialog('help')}>Help Desk</button>
         </div>
@@ -4935,6 +4982,157 @@ export default function App() {
             </div>
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit</span>
+              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =============================================================
+       * MODAL 27: Cloudflare R2 Disaster Recovery & Database Backups
+       * ============================================================= */}
+      {activeDialog === 'backup' && (
+        <div className="win-modal-overlay">
+          <div className="win-form-dialog" style={{ width: '880px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="win-dialog-titlebar" style={{ background: 'linear-gradient(180deg, #f39c12 0%, #d35400 100%)', color: '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>☁️</span>
+                <span style={{ fontWeight: 700 }}>Cloudflare R2 — Disaster Recovery & Automated Database Backups</span>
+              </div>
+              <button className="win-btn" style={{ color: '#fff' }} onClick={() => setActiveDialog(null)}>✕</button>
+            </div>
+
+            <div className="win-dialog-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Top Banner Status */}
+              <div style={{ border: '1px solid #7f9db9', background: '#fdfefe', padding: '12px', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '18px' }}>
+                      {backupStatus?.r2_connection.connected ? '🟢' : (backupStatus?.r2_connection.configured ? '🟡' : '🔵')}
+                    </span>
+                    <strong style={{ fontSize: '13px' }}>
+                      {backupStatus?.r2_connection.connected
+                        ? 'Cloudflare R2 Bucket Connected & Ready'
+                        : (backupStatus?.r2_connection.configured
+                            ? 'Cloudflare R2 Configured (Checking Bucket)'
+                            : 'Local Persistent Backup Ready (Cloud Sync Ready)')}
+                    </strong>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#555', lineHeight: '1.6' }}>
+                    <div><strong>Storage Bucket:</strong> {backupStatus?.r2_connection.bucket || 'nsaipetrosoft-backups'}</div>
+                    <div><strong>Zero Egress Guarantee:</strong> Cloudflare R2 charges ₹0.00 for backup downloads.</div>
+                    <div><strong>Total Backups Stored:</strong> {backupsList.length} database snapshot(s) available</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px' }}>
+                  <button
+                    className="win-btn-classic win-btn-primary"
+                    style={{ height: '36px', fontSize: '12px', fontWeight: 700, background: 'linear-gradient(180deg, #27ae60 0%, #1e8449 100%)', color: '#fff', border: '1px solid #145a32' }}
+                    onClick={handleTriggerBackup}
+                    disabled={isBackingUp}
+                  >
+                    {isBackingUp ? '⏳ Generating Compressed Snapshot...' : '📦 Take Instant PostgreSQL Backup & Archive'}
+                  </button>
+                  <div style={{ fontSize: '10px', color: '#777', textAlign: 'center' }}>
+                    Auto-schedules daily at 23:59 IST with 99.999999999% durability
+                  </div>
+                </div>
+              </div>
+
+              {/* Backups List Table */}
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '12px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Available Database Archive Snapshots (.json.gz)</span>
+                  <button className="win-btn-classic" style={{ fontSize: '10px', height: '18px' }} onClick={openBackupDialog}>🔄 Refresh List</button>
+                </div>
+                <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '200px', overflowY: 'auto' }}>
+                  <table className="win-datagrid">
+                    <thead>
+                      <tr>
+                        <th>Archive Filename</th>
+                        <th>Date & Time (UTC)</th>
+                        <th className="text-right">Size</th>
+                        <th>Storage Tier</th>
+                        <th style={{ width: '100px', textAlign: 'center' }}>Download</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {backupsList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '16px', color: '#888' }}>
+                            No backup archives found yet. Click "Take Instant PostgreSQL Backup" above to generate your first snapshot!
+                          </td>
+                        </tr>
+                      ) : (
+                        backupsList.map((b, i) => (
+                          <tr key={i}>
+                            <td style={{ fontWeight: 600 }}>{b.filename}</td>
+                            <td>{new Date(b.last_modified).toLocaleString()}</td>
+                            <td className="text-right">{b.size_kb} KB</td>
+                            <td>
+                              <span style={{
+                                padding: '1px 6px',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                background: b.storage === 'cloudflare_r2' ? '#e8f8f5' : '#fef9e7',
+                                color: b.storage === 'cloudflare_r2' ? '#117a65' : '#b7950b',
+                                border: `1px solid ${b.storage === 'cloudflare_r2' ? '#a3e4d7' : '#f9e79f'}`
+                              }}>
+                                {b.storage === 'cloudflare_r2' ? '☁️ Cloudflare R2' : '💾 Local Disk'}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <a
+                                href={getBackupDownloadUrl(b.filename)}
+                                target="_blank"
+                                rel="noreferrer"
+                                download={b.filename}
+                                className="win-btn-classic"
+                                style={{
+                                  display: 'inline-block',
+                                  textDecoration: 'none',
+                                  lineHeight: '18px',
+                                  height: '18px',
+                                  padding: '0 6px',
+                                  fontSize: '10px',
+                                  fontWeight: 600
+                                }}
+                              >
+                                ⬇️ Download
+                              </a>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Cloudflare R2 Connection Details & Help Guide */}
+              <div style={{ border: '1px solid #d4d0c8', background: '#ece9d8', padding: '10px', fontSize: '11px', lineHeight: '1.6' }}>
+                <div style={{ fontWeight: 700, color: '#333', marginBottom: '4px' }}>
+                  🔑 Cloudflare R2 Setup Guide for Railway:
+                </div>
+                <div style={{ color: '#444' }}>
+                  To link your live Cloudflare R2 bucket with zero egress fees, add these 4 variables in your <strong>Railway Project Settings → Variables</strong>:
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', marginTop: '6px', fontFamily: 'monospace', fontSize: '11px' }}>
+                  <div style={{ background: '#fff', padding: '4px 6px', border: '1px solid #ccc' }}>R2_ACCOUNT_ID</div>
+                  <div style={{ background: '#fff', padding: '4px 6px', border: '1px solid #ccc' }}>R2_BUCKET_NAME = nsaipetrosoft-backups</div>
+                  <div style={{ background: '#fff', padding: '4px 6px', border: '1px solid #ccc' }}>R2_ACCESS_KEY_ID</div>
+                  <div style={{ background: '#fff', padding: '4px 6px', border: '1px solid #ccc' }}>R2_SECRET_ACCESS_KEY</div>
+                </div>
+                <div style={{ marginTop: '6px', color: '#666' }}>
+                  <em>Note: Even without R2 credentials entered, backups are safely generated, compressed, and downloadable immediately from the server!</em>
+                </div>
+              </div>
+            </div>
+
+            <div className="win-dialog-footer">
+              <span className="hotkeys-hint-red">ESC=Exit | 100% Zero Bandwidth Fees</span>
               <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
             </div>
           </div>

@@ -22,6 +22,22 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
+    # Cloudflare R2 Object Storage for Automated Database Backups
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = "nsaipetrosoft-backups"
+    R2_ENDPOINT_URL: str = ""
+
+    @computed_field
+    @property
+    def EFFECTIVE_R2_ENDPOINT(self) -> str:
+        if self.R2_ENDPOINT_URL:
+            return self.R2_ENDPOINT_URL.strip().rstrip("/")
+        if self.R2_ACCOUNT_ID:
+            return f"https://{self.R2_ACCOUNT_ID.strip()}.r2.cloudflarestorage.com"
+        return ""
+
     @computed_field
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
