@@ -6393,9 +6393,47 @@ export default function App() {
                   <span className="win-label">Total Amount</span>
                   <input type="text" className="win-input" readOnly value={`₹ ${(cashMemoLiters * cashMemoRate).toFixed(2)}`} style={{ flex: 1, fontWeight: 800, color: '#1565c0' }} />
                 </div>
-                <button type="button" className="win-btn-classic win-btn-primary" style={{ width: '100%', marginTop: '12px' }} onClick={() => window.print()}>
-                  🖨️ Print Thermal Cash Receipt
-                </button>
+                <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                  <button
+                    type="button"
+                    className="win-btn-classic win-btn-primary"
+                    style={{ flex: 1, fontWeight: 700 }}
+                    onClick={async () => {
+                      if (cashMemoLiters <= 0) {
+                        showToast('⚠ Please enter valid liters for Cash Memo');
+                        return;
+                      }
+                      try {
+                        const walkInCust = customers.find(c => c.name.toLowerCase().includes('walk') || c.name.toLowerCase().includes('cash')) || customers[0];
+                        if (walkInCust) {
+                          await createPaymentReceipt({
+                            customer_id: walkInCust.id,
+                            amount: cashMemoLiters * cashMemoRate,
+                            payment_mode: 'CASH',
+                            bank_name: 'CASH ON HAND',
+                            remarks: `Retail Cash Memo #${cashMemoBillNo} - ${cashMemoLiters}L ${cashMemoProduct} @ ${cashMemoRate} (Veh: ${cashMemoVehicle || 'WALK-IN'})`,
+                          });
+                        }
+                        showToast(`✔ Cash Memo #${cashMemoBillNo} recorded! Cash credited to Cash On Hand.`);
+                        window.print();
+                        await loadAllErpData();
+                      } catch (err: any) {
+                        showToast(`✔ Slip printed. Note: ${err.message}`);
+                        window.print();
+                      }
+                    }}
+                  >
+                    💾 Save & Print Cash Memo
+                  </button>
+                  <button
+                    type="button"
+                    className="win-btn-classic"
+                    onClick={() => window.print()}
+                    title="Print receipt without creating ledger entry"
+                  >
+                    🖨️ Print Slip
+                  </button>
+                </div>
               </div>
 
               {/* Thermal Paper Slip Preview */}

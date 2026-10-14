@@ -101,26 +101,14 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
     )
     today_digital_receipts = float(digital_pay_res.scalar() or 0.0)
 
-    if latest_shift and latest_shift.date == today:
-        today_sale = float(latest_shift.total_sale_amount or 0.0)
-        cash_col = float(latest_shift.total_cash or 0.0)
-        credit_col = float(latest_shift.total_credit or 0.0)
-        digital_col = float(latest_shift.total_digital or 0.0)
-    elif today_meter_sales > 0 or today_credit_sales > 0:
-        today_sale = today_meter_sales if today_meter_sales > 0 else today_credit_sales
-        cash_col = max(0.0, today_sale - today_credit_sales - today_digital_receipts) + today_cash_receipts
-        credit_col = today_credit_sales
-        digital_col = today_digital_receipts
-    elif latest_shift:
-        today_sale = float(latest_shift.total_sale_amount or 0.0)
-        cash_col = float(latest_shift.total_cash or 0.0)
-        credit_col = float(latest_shift.total_credit or 0.0)
-        digital_col = float(latest_shift.total_digital or 0.0)
-    else:
-        today_sale = 0.0
-        cash_col = 0.0
-        credit_col = 0.0
-        digital_col = 0.0
+    shift_sale = float(latest_shift.total_sale_amount or 0.0) if (latest_shift and latest_shift.date == today) else 0.0
+    today_sale = max(shift_sale, today_meter_sales, today_credit_sales)
+
+    credit_col = max(today_credit_sales, float(latest_shift.total_credit or 0.0) if (latest_shift and latest_shift.date == today) else 0.0)
+    digital_col = max(today_digital_receipts, float(latest_shift.total_digital or 0.0) if (latest_shift and latest_shift.date == today) else 0.0)
+    cash_col = max(today_cash_receipts, float(latest_shift.total_cash or 0.0) if (latest_shift and latest_shift.date == today) else 0.0)
+    if cash_col == 0.0 and today_sale > (credit_col + digital_col):
+        cash_col = round(today_sale - credit_col - digital_col, 2)
 
     # 5. Top Outstanding Customers
     cust_res = await db.execute(
@@ -433,7 +421,15 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     count_res = await db.execute(select(func.count(CreditSale.id)))
     bill_num = f"{(count_res.scalar() or 0) + 1:04d}"
 
+    # Auto-associate with current open shift if available
+    active_shift_res = await db.execute(
+        select(Shift).where(Shift.status == "Open").order_by(desc(Shift.id)).limit(1)
+    )
+    active_shift = active_shift_res.scalar_one_or_none()
+    shift_id = data.shift_id or (active_shift.id if active_shift else None)
+
     sale = CreditSale(
+        shift_id=shift_id,
         customer_id=customer.id,
         vehicle_no=data.vehicle_no.upper().strip(),
         product_id=product.id,
@@ -629,6 +625,21 @@ class BankAccountCreate(BaseModel):
     account_name: str
     account_type: str = "CURRENT"
     balance: float = 0.0
+
+
+@router.get("/bank-accounts", summary="List All Bank and Ledger Accounts")
+async def get_bank_accounts(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(BankAccount).order_by(BankAccount.id))
+    accounts = res.scalars().all()
+    return [
+        {
+            "id": a.id,
+            "name": a.account_name,
+            "type": a.account_type,
+            "balance": round(a.balance, 2),
+        }
+        for a in accounts
+    ]
 
 
 @router.post("/bank-accounts", summary="Create New Bank or Ledger Account")
