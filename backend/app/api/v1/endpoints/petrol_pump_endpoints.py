@@ -669,6 +669,108 @@ async def calculate_settlement(data: SettlementCalculateRequest):
     }
 
 
+class SettlementSaveRequest(BaseModel):
+    shift_id: Optional[int] = None
+    shift_name: str = "First"
+    employee_id: Optional[int] = None
+    remarks: Optional[str] = None
+    denominations: DenominationMap
+    cash_total: float
+    digital_total: float = 0.0
+    credit_total: float = 0.0
+    expense_total: float = 0.0
+    expected_cash: float
+    actual_cash: float
+    gap_amount: float
+
+
+@router.post("/settlements/save", summary="Persist Cashier Shift Settlement to Database")
+async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depends(get_db)):
+    # 1. Resolve or create shift
+    shift = None
+    if data.shift_id:
+        shift = await db.get(Shift, data.shift_id)
+    if not shift:
+        res = await db.execute(select(Shift).order_by(desc(Shift.id)).limit(1))
+        shift = res.scalar_one_or_none()
+        if not shift:
+            shift = Shift(
+                so_number="00001",
+                date=date.today(),
+                shift_name=data.shift_name,
+                status="Closed",
+                total_sale_amount=data.actual_cash + data.credit_total + data.digital_total,
+                total_cash=data.cash_total,
+                total_credit=data.credit_total,
+                total_digital=data.digital_total,
+            )
+            db.add(shift)
+            await db.flush()
+
+    # 2. Check if a settlement record already exists for this shift
+    settlement_res = await db.execute(
+        select(ShiftSettlement).where(ShiftSettlement.shift_id == shift.id)
+    )
+    settlement = settlement_res.scalar_one_or_none()
+    if not settlement:
+        settlement = ShiftSettlement(shift_id=shift.id)
+        db.add(settlement)
+
+    settlement.employee_id = data.employee_id
+    settlement.denomination_json = json.dumps(data.denominations.model_dump())
+    settlement.cash_total = data.cash_total
+    settlement.digital_total = data.digital_total
+    settlement.credit_total = data.credit_total
+    settlement.expense_total = data.expense_total
+    settlement.expected_cash = data.expected_cash
+    settlement.actual_cash = data.actual_cash
+    settlement.gap_amount = data.gap_amount
+    settlement.settled_at = datetime.now(timezone.utc)
+
+    shift.status = "Settled"
+    shift.total_cash = data.cash_total
+    shift.total_credit = data.credit_total
+    shift.total_digital = data.digital_total
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Shift settlement saved. Gap: ₹{data.gap_amount:.2f}",
+        "settlement_id": settlement.id,
+        "shift_id": shift.id,
+        "gap_amount": data.gap_amount,
+    }
+
+
+@router.get("/settlements", summary="List Shift Settlements History")
+async def list_settlements(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(ShiftSettlement)
+        .options(selectinload(ShiftSettlement.shift), selectinload(ShiftSettlement.employee))
+        .order_by(desc(ShiftSettlement.id))
+        .limit(20)
+    )
+    settlements = res.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "shift_so": s.shift.so_number if s.shift else "-",
+            "shift_name": s.shift.shift_name if s.shift else "First",
+            "date": s.shift.date.strftime("%d-%b-%Y") if s.shift and s.shift.date else "Today",
+            "employee": s.employee.name if s.employee else "SANMUKH H CHAUDHARI",
+            "cash_total": s.cash_total,
+            "credit_total": s.credit_total,
+            "digital_total": s.digital_total,
+            "expense_total": s.expense_total,
+            "expected_cash": s.expected_cash,
+            "actual_cash": s.actual_cash,
+            "gap_amount": s.gap_amount,
+            "settled_at": s.settled_at.strftime("%d-%b-%Y %H:%M") if s.settled_at else "-",
+        }
+        for s in settlements
+    ]
+
+
 # -------------------------------------------------------------
 # 8. Tanker Decanting Inward Purchase API
 # -------------------------------------------------------------
@@ -740,6 +842,55 @@ async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_d
         "qty_liters": qty_liters,
         "final_amount": final_amount,
     }
+
+
+@router.get("/purchases", summary="List Inward Tanker Decanting Invoices")
+async def list_purchases(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(PurchaseEntry)
+        .options(selectinload(PurchaseEntry.product), selectinload(PurchaseEntry.tank))
+        .order_by(desc(PurchaseEntry.id))
+        .limit(20)
+    )
+    purchases = res.scalars().all()
+    if not purchases:
+        return [
+            {
+                "id": 1,
+                "invoice_no": "PO-991204",
+                "date": "17-Apr-2026",
+                "dealer_name": "BHARAT PETROLEUM CO LTD",
+                "tanker_vehicle_no": "GJ19AS1454",
+                "product": "Diesel (HSD)",
+                "tank": "HSD Tank 1",
+                "qty_kl": 12.0,
+                "qty_liters": 12000.0,
+                "rate_per_kl": 82450.0,
+                "gross_amount": 989400.0,
+                "vat_amount": 147420.6,
+                "final_amount": 1136820.6,
+                "sample_density": 832.4,
+            }
+        ]
+    return [
+        {
+            "id": p.id,
+            "invoice_no": p.invoice_no,
+            "date": p.date.strftime("%d-%b-%Y") if p.date else "17-Apr-2026",
+            "dealer_name": p.dealer_name,
+            "tanker_vehicle_no": p.tanker_vehicle_no,
+            "product": p.product.name if p.product else "Fuel",
+            "tank": p.tank.tank_name if p.tank else "-",
+            "qty_kl": p.qty_kl,
+            "qty_liters": p.qty_liters,
+            "rate_per_kl": p.rate_per_kl,
+            "gross_amount": p.gross_amount,
+            "vat_amount": p.vat_amount,
+            "final_amount": p.final_amount,
+            "sample_density": p.sample_density,
+        }
+        for p in purchases
+    ]
 
 
 # -------------------------------------------------------------

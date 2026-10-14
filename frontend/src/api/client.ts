@@ -359,9 +359,77 @@ export async function calculateSettlement(data: {
   return res.json();
 }
 
+export async function saveShiftSettlement(data: {
+  shift_id?: number;
+  shift_name?: string;
+  employee_id?: number;
+  remarks?: string;
+  denominations: DenominationMap;
+  cash_total: number;
+  digital_total?: number;
+  credit_total?: number;
+  expense_total?: number;
+  expected_cash: number;
+  actual_cash: number;
+  gap_amount: number;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/settlements/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Save Settlement API failed: ${res.status}`);
+  return res.json();
+}
+
+export interface ShiftSettlementItem {
+  id: number;
+  shift_so: string;
+  shift_name: string;
+  date: string;
+  employee: string;
+  cash_total: number;
+  credit_total: number;
+  digital_total: number;
+  expense_total: number;
+  expected_cash: number;
+  actual_cash: number;
+  gap_amount: number;
+  settled_at: string;
+}
+
+export async function fetchShiftSettlements(): Promise<ShiftSettlementItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/settlements`);
+  if (!res.ok) throw new Error(`Settlements history API failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Tanker Decanting Inward Purchase
 // ---------------------------------------------------------------------------
+export interface PurchaseHistoryItem {
+  id: number;
+  invoice_no: string;
+  date: string;
+  dealer_name: string;
+  tanker_vehicle_no: string;
+  product: string;
+  tank: string;
+  qty_kl: number;
+  qty_liters: number;
+  rate_per_kl: number;
+  gross_amount: number;
+  vat_amount: number;
+  final_amount: number;
+  sample_density: number;
+}
+
+export async function fetchPurchases(): Promise<PurchaseHistoryItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/purchases`);
+  if (!res.ok) throw new Error(`Purchases API failed: ${res.status}`);
+  return res.json();
+}
+
 export async function createPurchase(data: {
   invoice_no: string;
   dealer_name: string;

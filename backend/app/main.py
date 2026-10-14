@@ -27,7 +27,13 @@ app = FastAPI(
 # CORS configuration allowing Cloudflare Pages, custom domains, and local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://nsaipetrosoft.pages.dev",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+    ],
+    allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*pages\.dev$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

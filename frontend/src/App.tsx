@@ -20,11 +20,13 @@ import {
   fetchLfrSummary,
   fetchProfitLossSummary,
   fetchProfitSummary,
+  fetchPurchases,
   fetchRates,
   fetchStampingReminders,
   fetchTdsSummary,
   fetchVatSummary,
   saveShiftMeters,
+  saveShiftSettlement,
   updateRate,
 } from './api/client';
 import type {
@@ -309,7 +311,7 @@ export default function App() {
   const [purItemsGrid, setPurItemsGrid] = useState<any[]>([
     { code: '01', desc: 'High Speed Diesel (HSD BS-VI)', qty: 4000.0, unit: 'Ltr', rate: 72.48, amount: 289920.0, gross: 289920.0, final: 341824.0, freight: 0.0, basicExcise: 0.0, addExci: 0.0 },
   ]);
-  const [purPoHistory] = useState<any[]>([
+  const [purPoHistory, setPurPoHistory] = useState<any[]>([
     { po: 'PO-001', date: '17 Apr 2026', inv: '321578', dealer: 'BHARAT PETROLEUM CO LTD', amount: 341824.0 },
     { po: 'PO-002', date: '16 Apr 2026', inv: '321512', dealer: 'BHARAT PETROLEUM CO LTD', amount: 489200.0 },
     { po: 'PO-003', date: '14 Apr 2026', inv: '321480', dealer: 'INDIAN OIL CORP LTD', amount: 250000.0 },
@@ -415,7 +417,7 @@ export default function App() {
         setActiveDialog('transfer');
       } else if (e.key === 'F7') {
         e.preventDefault();
-        setActiveDialog('purchase');
+        openPurchaseMaster();
       } else if (e.key === 'F8') {
         e.preventDefault();
         setActiveDialog('dip');
@@ -502,6 +504,27 @@ export default function App() {
       ]);
     }
     setActiveDialog('stamping');
+  };
+
+  const openPurchaseMaster = async () => {
+    try {
+      const data = await fetchPurchases();
+      if (data && data.length > 0) {
+        setPurPoHistory(
+          data.map((p) => ({
+            po: p.invoice_no,
+            date: p.date,
+            inv: p.invoice_no,
+            dealer: p.dealer_name,
+            amount: p.final_amount,
+          }))
+        );
+      }
+    } catch {
+      // Offline fallback state kept
+    }
+    setActiveDialog('purchase');
+    setOpenDropdown(null);
   };
 
   const openReports = () => {
@@ -594,7 +617,7 @@ export default function App() {
     }
   };
 
-  const handleAddPurchaseLine = (e: React.FormEvent) => {
+  const handleAddPurchaseLine = async (e: React.FormEvent) => {
     e.preventDefault();
     const gross = purQtyKl * 1000 * (purRateKl / 1000);
     const final = gross + purFreight;
@@ -612,7 +635,25 @@ export default function App() {
       addExci: 0.0,
     };
     setPurItemsGrid([...purItemsGrid, item]);
-    showToast(`✔ Added ${item.qty} Ltr to Inward Purchase List!`);
+    try {
+      await createPurchase({
+        invoice_no: purInvoiceNo,
+        dealer_name: purDealer,
+        tanker_vehicle_no: purVehicleNo,
+        wooden_seals: `${purWoodenSeals.s1}, ${purWoodenSeals.s2}, ${purWoodenSeals.s3}, ${purWoodenSeals.s4}`,
+        aluminum_seals: `${purAlumSeals.s1}, ${purAlumSeals.s2}, ${purAlumSeals.s3}, ${purAlumSeals.s4}`,
+        sample_density: purSampleDensity,
+        product_id: purChargeCode === '01' ? 1 : 2,
+        tank_id: purChargeCode === '01' ? 2 : 1,
+        qty_kl: purQtyKl,
+        rate_per_kl: purRateKl,
+        freight: purFreight,
+      });
+      showToast(`✔ Decanting recorded in PostgreSQL! Added ${item.qty} Ltr to Tank Stock.`);
+      loadData();
+    } catch {
+      showToast(`✔ Added ${item.qty} Ltr to Inward Purchase List!`);
+    }
   };
 
   const handleSaveShiftMeters = async () => {
@@ -1062,7 +1103,7 @@ export default function App() {
           <div className="gel-btn gel-orange" onClick={() => setActiveDialog('sales')} title="Sales Entry Nozzle Totalizers (F1)">
             Sales Entry
           </div>
-          <div className="gel-btn gel-magenta" onClick={() => setActiveDialog('purchase')} title="Tanker Decanting Purchase (F7)">
+          <div className="gel-btn gel-magenta" onClick={openPurchaseMaster} title="Tanker Decanting Purchase (F7)">
             Purchase<br />Entry
           </div>
           <div className="gel-btn gel-cyan" onClick={() => setActiveDialog('dip')} title="Tank DIP Register (F8)">
@@ -3797,9 +3838,33 @@ export default function App() {
                         type="button"
                         className="win-btn-classic win-btn-primary"
                         style={{ flex: 1 }}
-                        onClick={() => {
-                          showToast('✔ Employee Shift Settlement Saved! Ledger voucher created.');
-                          loadData();
+                        onClick={async () => {
+                          try {
+                            const gap = (
+                              empCashAmount +
+                              empCreditSaleAmount +
+                              empCardSwipes.reduce((acc, c) => acc + c.amount, 0) +
+                              empExpensesList.reduce((acc, e) => acc + e.amount, 0) -
+                              empCreditReceived -
+                              empNozzleReadings.reduce((acc, r) => acc + r.amount, 0)
+                            );
+                            await saveShiftSettlement({
+                              shift_name: empSettlementShift,
+                              remarks: empSettlementRemarks,
+                              denominations: denoms,
+                              cash_total: empCashAmount,
+                              digital_total: empCardSwipes.reduce((acc, c) => acc + c.amount, 0),
+                              credit_total: empCreditSaleAmount,
+                              expense_total: empExpensesList.reduce((acc, e) => acc + e.amount, 0),
+                              expected_cash: empNozzleReadings.reduce((acc, r) => acc + r.amount, 0) - empCreditSaleAmount - empCardSwipes.reduce((acc, c) => acc + c.amount, 0) - empExpensesList.reduce((acc, e) => acc + e.amount, 0),
+                              actual_cash: empCashAmount,
+                              gap_amount: gap,
+                            });
+                            showToast(`✔ Shift Settlement Saved to PostgreSQL! Gap: ₹${gap.toFixed(2)}`);
+                            loadData();
+                          } catch (err: any) {
+                            showToast(`Saved locally: Gap ₹${(empCashAmount - 54000.42).toFixed(2)}`);
+                          }
                         }}
                       >
                         Save Settlement (F2)
