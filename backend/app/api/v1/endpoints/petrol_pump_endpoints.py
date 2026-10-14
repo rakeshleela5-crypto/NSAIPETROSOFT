@@ -1118,7 +1118,7 @@ async def create_expense(data: ExpenseCreate, db: AsyncSession = Depends(get_db)
     db.add(exp)
 
     # Deduct from Cash On Hand
-    cash_acc_res = await db.execute(select(BankAccount).where(BankAccount.name == "CASH ON HAND"))
+    cash_acc_res = await db.execute(select(BankAccount).where(BankAccount.account_name == "CASH ON HAND"))
     cash_acc = cash_acc_res.scalar_one_or_none()
     if cash_acc:
         cash_acc.balance = max(0.0, cash_acc.balance - data.amount)
@@ -1155,7 +1155,7 @@ async def create_transfer(data: TransferCreate, db: AsyncSession = Depends(get_d
 
     return {
         "status": "success",
-        "message": f"Transferred ₹{data.amount} from {from_acc.name} to {to_acc.name}",
+        "message": f"Transferred ₹{data.amount} from {from_acc.account_name} to {to_acc.account_name}",
         "from_balance": from_acc.balance,
         "to_balance": to_acc.balance,
     }
