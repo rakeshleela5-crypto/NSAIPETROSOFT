@@ -15,7 +15,7 @@ graph LR
 
 | Component | Technology | Hosting Platform | Production URL |
 | :--- | :--- | :--- | :--- |
-| **Frontend** | React 19, TypeScript, Vite, Glassmorphic CSS | [Cloudflare Pages](https://pages.cloudflare.com) | Connected to GitHub repo |
+| **Frontend** | React 19, TypeScript, Vite, Glassmorphic CSS | [Cloudflare Pages](https://pages.cloudflare.com) | [`https://nsaipetrosoft.pages.dev`](https://nsaipetrosoft.pages.dev) |
 | **Backend** | FastAPI (Python 3.12), Uvicorn Async | [Railway](https://railway.com) | `https://nsaipetrosoft-production.up.railway.app` |
 | **Database** | PostgreSQL + asyncpg (16 Relational Tables) | [Railway](https://railway.com) | Managed Railway PostgreSQL |
 
