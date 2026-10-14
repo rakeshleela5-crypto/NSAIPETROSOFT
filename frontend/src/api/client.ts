@@ -408,3 +408,80 @@ export async function fetchProfitSummary(): Promise<any[]> {
   if (!res.ok) throw new Error(`Profit Summary API failed: ${res.status}`);
   return res.json();
 }
+
+export async function fetchTdsSummary(): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/tds-summary`);
+  if (!res.ok) throw new Error(`TDS Summary API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchDealerCommission(): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/dealer-commission`);
+  if (!res.ok) throw new Error(`Dealer Commission API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchLfrSummary(): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/lfr-summary`);
+  if (!res.ok) throw new Error(`LFR Summary API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchProfitLossSummary(): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/profit-loss`);
+  if (!res.ok) throw new Error(`Profit Loss API failed: ${res.status}`);
+  return res.json();
+}
+
+
+// ---------------------------------------------------------------------------
+// Expenses, Transfers, Customer Statements, Stamping
+// ---------------------------------------------------------------------------
+export async function fetchExpenses(): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/expenses`);
+  if (!res.ok) throw new Error(`Expenses API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createExpense(data: {
+  category: string;
+  amount: number;
+  narration?: string;
+  paid_to?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/expenses`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Create expense failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTransfer(data: {
+  from_account_id: number;
+  to_account_id: number;
+  amount: number;
+  remarks?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/transfers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Transfer API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCustomerStatement(customerId: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/customers/${customerId}/statement`);
+  if (!res.ok) throw new Error(`Statement API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchStampingReminders(): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/stamping-reminders`);
+  if (!res.ok) throw new Error(`Stamping API failed: ${res.status}`);
+  return res.json();
+}
+

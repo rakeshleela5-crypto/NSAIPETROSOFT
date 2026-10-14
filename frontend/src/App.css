@@ -694,3 +694,615 @@ body {
 .win-btn-primary:hover {
   background: #2980b9;
 }
+
+/* -------------------------------------------------------------
+ * Dropdown Menu Container
+ * ------------------------------------------------------------- */
+.win-menu-dropdown-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.win-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #ffffff;
+  border: 1px solid #7f9db9;
+  box-shadow: 2px 4px 8px rgba(0, 0, 0, 0.25);
+  min-width: 190px;
+  z-index: 500;
+  padding: 2px 0;
+}
+
+.win-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #111;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.win-dropdown-item:hover {
+  background: #3399ff;
+  color: #ffffff;
+}
+
+.win-menu-divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 2px 0;
+}
+
+/* -------------------------------------------------------------
+ * Windows Calculator Widget
+ * ------------------------------------------------------------- */
+.calc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.calc-btn {
+  height: 34px;
+  background: linear-gradient(180deg, #ffffff 0%, #ece9d8 100%);
+  border: 1px solid #7f9db9;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.calc-btn:hover {
+  background: #e5f1fb;
+}
+
+.calc-btn-op {
+  background: linear-gradient(180deg, #f7f9fa 0%, #e1e7ec 100%);
+  color: #0055ea;
+}
+
+.calc-display {
+  width: 100%;
+  height: 38px;
+  background: #ffffff;
+  border: 1px solid #7f9db9;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: right;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  font-family: 'Consolas', monospace;
+}
+
+/* -------------------------------------------------------------
+ * Frame 0300: Statement of Accounts / Bill Layout
+ * ------------------------------------------------------------- */
+.statement-sheet {
+  background: #ffffff;
+  border: 1px solid #000000;
+  padding: 16px;
+  font-family: Arial, sans-serif;
+  color: #000;
+}
+
+.statement-title-bar {
+  text-align: center;
+  border-bottom: 2px solid #000;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.statement-bunk-name {
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.statement-subtitle {
+  font-size: 13px;
+  color: #333;
+}
+
+.statement-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #000;
+  padding: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.statement-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+
+.statement-table th,
+.statement-table td {
+  border: 1px solid #000;
+  padding: 4px 6px;
+}
+
+.statement-table th {
+  background: #f0f0f0;
+  font-weight: bold;
+}
+
+.statement-bottom-summary {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  border: 1px solid #000;
+}
+
+.terms-box {
+  padding: 8px;
+  font-size: 11px;
+  border-right: 1px solid #000;
+}
+
+.totals-calc-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.totals-calc-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 12px;
+}
+
+.totals-calc-row.final-due {
+  border-bottom: none;
+  font-weight: bold;
+  font-size: 14px;
+  background: #f8f8f8;
+}
+
+/* -------------------------------------------------------------
+ * Tab Navigation Component (Windows XP / 7 Style Tabs)
+ * ------------------------------------------------------------- */
+.win-tab-bar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 2px solid #0055ea;
+  margin-bottom: 10px;
+  background: #f0f0f0;
+  padding: 4px 6px 0 6px;
+}
+
+.win-tab-btn {
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #333;
+  background: #e1e1e1;
+  border: 1px solid #adadad;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.win-tab-btn:hover {
+  background: #fff;
+  color: #0055ea;
+}
+
+.win-tab-btn.active {
+  background: #0055ea;
+  color: #ffffff;
+  border-color: #0055ea;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* -------------------------------------------------------------
+ * Toast Notification Banner
+ * ------------------------------------------------------------- */
+.win-toast {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%);
+  color: #ffffff;
+  padding: 10px 18px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 99999;
+  animation: winToastSlide 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  border: 1px solid #1e8449;
+}
+
+@keyframes winToastSlide {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* -------------------------------------------------------------
+ * Search Input Box in Datagrids
+ * ------------------------------------------------------------- */
+.win-search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.win-search-box input {
+  padding: 3px 6px;
+  border: 1px solid #7f9db9;
+  font-size: 11px;
+  width: 160px;
+  outline: none;
+}
+
+.win-search-box input:focus {
+  border-color: #0055ea;
+  box-shadow: 0 0 3px rgba(0, 85, 234, 0.4);
+}
+
+/* -------------------------------------------------------------
+ * Tank Inventory Gauge Visualizer
+ * ------------------------------------------------------------- */
+.tank-visualizer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.tank-gauge-card {
+  border: 2px solid #506f8c;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 12px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.05);
+}
+
+.tank-cylinder {
+  width: 50px;
+  height: 120px;
+  border: 2px solid #333;
+  border-radius: 8px;
+  background: #f0f0f0;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.tank-liquid-ms {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, #ff7675 0%, #d63031 100%);
+  transition: height 0.4s ease;
+}
+
+.tank-liquid-hsd {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, #74b9ff 0%, #0984e3 100%);
+  transition: height 0.4s ease;
+}
+
+.tank-details {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* -------------------------------------------------------------
+ * Cash Memo Thermal Print Slip
+ * ------------------------------------------------------------- */
+.thermal-slip-box {
+  width: 320px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px dashed #666;
+  padding: 14px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.thermal-slip-header {
+  text-align: center;
+  border-bottom: 1px dashed #000;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.thermal-slip-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 2px 0;
+}
+
+.thermal-slip-footer {
+  text-align: center;
+  border-top: 1px dashed #000;
+  padding-top: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+/* -------------------------------------------------------------
+ * Print Formatting
+ * ------------------------------------------------------------- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .statement-sheet,
+  .statement-sheet *,
+  .thermal-slip-box,
+  .thermal-slip-box *,
+  .crystal-report-sheet,
+  .crystal-report-sheet * {
+    visibility: visible;
+  }
+  .statement-sheet,
+  .thermal-slip-box,
+  .crystal-report-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* -------------------------------------------------------------
+ * Windows Classic Group Box / Fieldset
+ * ------------------------------------------------------------- */
+.win-groupbox {
+  border: 1px solid #7f9db9;
+  background-color: #f7f9fb;
+  border-radius: 2px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.win-groupbox legend {
+  font-weight: 700;
+  color: #0b3954;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+/* -------------------------------------------------------------
+ * Set Report Criteria Modal (Frame 0375)
+ * ------------------------------------------------------------- */
+.report-criteria-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px 10px;
+  max-height: 230px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.report-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: #111;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.report-radio-label input[type="radio"] {
+  cursor: pointer;
+}
+
+/* -------------------------------------------------------------
+ * SAP Crystal Reports Viewer Shell (Frames 0132, 0310, 0330, 0360)
+ * ------------------------------------------------------------- */
+.crystal-viewer-dialog {
+  width: 95vw;
+  max-width: 1200px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: #d4d0c8;
+  border: 2px solid #0055ea;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.crystal-toolbar {
+  height: 30px;
+  background: #ece9d8;
+  border-bottom: 1px solid #999;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 6px;
+  font-size: 11px;
+  user-select: none;
+}
+
+.crystal-tool-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 2px 5px;
+  border-radius: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #333;
+}
+
+.crystal-tool-btn:hover {
+  background: #fff;
+  border: 1px solid #7f9db9;
+}
+
+.crystal-page-counter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #222;
+  margin: 0 4px;
+}
+
+.crystal-canvas-wrapper {
+  flex: 1;
+  background: #737373;
+  overflow: auto;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.crystal-report-sheet {
+  width: 960px;
+  min-height: 1100px;
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  padding: 24px 30px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11.5px;
+  position: relative;
+}
+
+.crystal-report-title {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #b71c1c;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.crystal-company-name {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #000;
+}
+
+.crystal-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.crystal-table th {
+  background: #d896b7;
+  color: #000000;
+  font-weight: 700;
+  border: 1px solid #777;
+  padding: 3px 6px;
+  text-align: left;
+}
+
+.crystal-table td {
+  border: 1px solid #999;
+  padding: 3px 6px;
+}
+
+.crystal-table-subhead {
+  background: #b2ebf2;
+  font-weight: 700;
+  font-size: 12px;
+  border: 1px solid #777;
+  padding: 4px 6px;
+}
+
+.crystal-highlight-row {
+  background: #fff59d;
+  font-weight: 700;
+}
+
+.crystal-total-box {
+  background: #f8bbd0;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px;
+  border: 1px solid #888;
+}
+
+/* -------------------------------------------------------------
+ * Employee Shift Settlement Form (Frame 0210 & 0220)
+ * ------------------------------------------------------------- */
+.emp-settlement-dialog {
+  width: 95vw;
+  max-width: 1150px;
+  background: #ece9d8;
+  border: 2px solid #0055ea;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.emp-settlement-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 12px;
+}
+
+.win-btn-green {
+  background: linear-gradient(180deg, #4caf50 0%, #388e3c 100%);
+  color: #fff;
+  border: 1px solid #2e7d32;
+  font-weight: 700;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.win-btn-green:hover {
+  background: linear-gradient(180deg, #66bb6a 0%, #43a047 100%);
+}
+
+.gap-highlight {
+  background: #ffebee;
+  color: #c62828;
+  font-weight: 700;
+  padding: 2px 6px;
+  border: 1px solid #e57373;
+}
+
+.gap-ok {
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-weight: 700;
+  padding: 2px 6px;
+  border: 1px solid #81c784;
+}
+
+
