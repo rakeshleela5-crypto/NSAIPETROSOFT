@@ -88,10 +88,70 @@ type DialogType =
   | null;
 
 
+export interface StationProfile {
+  stationName: string;
+  oilCompany: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  gstin: string;
+  phone: string;
+}
+
+export const getFinancialYear = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1; // 1-12
+  if (month >= 4) {
+    return `${year}-${(year + 1).toString().slice(-2)}`;
+  }
+  return `${year - 1}-${year.toString().slice(-2)}`;
+};
+
 export default function App() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
   const [selectedAccount, setSelectedAccount] = useState<string>('CASH ON HAND');
+
+  // Station Outlet Profile State (Persistent in Browser LocalStorage)
+  const [stationProfile, setStationProfile] = useState<StationProfile>(() => {
+    const saved = localStorage.getItem('nsaipetrosoft_station_profile');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+    return {
+      stationName: 'NSAIPETROSOFT RETAIL OUTLET',
+      oilCompany: 'BHARAT PETROLEUM CORPORATION LTD',
+      address: 'HIGHWAY SERVICE STATION',
+      city: 'SURAT',
+      state: 'GUJARAT',
+      pincode: '395003',
+      gstin: '24AAACN1234F1Z5',
+      phone: '+91 98765 43210',
+    };
+  });
+
+  const saveStationProfile = (updated: StationProfile) => {
+    setStationProfile(updated);
+    try {
+      localStorage.setItem('nsaipetrosoft_station_profile', JSON.stringify(updated));
+    } catch {}
+    showToast('✔ Station Outlet Profile Updated Successfully!');
+  };
+
+  // Station Control Panel State
+  const [controlPanelTab, setControlPanelTab] = useState<'shift' | 'profile'>('shift');
+  const [profileForm, setProfileForm] = useState<StationProfile>(stationProfile);
+
+  // Employees List State
+  const [employeesList, setEmployeesList] = useState<any[]>([
+    { id: 1, name: 'SANMUKH H CHAUDHARI', code: 'EMP01' },
+    { id: 2, name: 'DINESH Z CHAUDHARI', code: 'EMP02' },
+    { id: 3, name: 'AA', code: 'EMP03' },
+  ]);
 
   // Menubar Dropdown State
   const [openDropdown, setOpenDropdown] = useState<'masters' | 'dataEntry' | 'reports' | null>(null);
@@ -188,7 +248,7 @@ export default function App() {
 
   // Purchase Decanting State
   const [purInvoiceNo, setPurInvoiceNo] = useState<string>('3215788');
-  const [purDealer, setPurDealer] = useState<string>('BHARAT PETROLEUM CO LTD');
+  const [purDealer, setPurDealer] = useState<string>(stationProfile.oilCompany);
   const [purVehicleNo, setPurVehicleNo] = useState<string>('GJ01DU6553');
   const [purDensity, setPurDensity] = useState<number>(825.4);
   const [purQtyKl, setPurQtyKl] = useState<number>(4.0);
@@ -273,14 +333,14 @@ export default function App() {
   const [critCustomer, setCritCustomer] = useState<string>('---Select Any---');
   const [critSupplier, setCritSupplier] = useState<string>('---Select Any---');
   const [critItem, setCritItem] = useState<string>('Diesel');
-  const [critInvoiceNo, setCritInvoiceNo] = useState<string>('1409523983');
+  const [critInvoiceNo, setCritInvoiceNo] = useState<string>('');
   const [critDate, setCritDate] = useState<string>(getTodayErpDate());
   const [critShift, setCritShift] = useState<string>('First');
   const [critLedger, setCritLedger] = useState<string>('---Select Any---');
   const [critAccountGroup, setCritAccountGroup] = useState<string>('---Select Any---');
   const [critVehicle, setCritVehicle] = useState<string>('---Select Any---');
   const [critBillPeriod, setCritBillPeriod] = useState<string>('---Select Any---');
-  const [critEmployee, setCritEmployee] = useState<string>('AA');
+  const [critEmployee, setCritEmployee] = useState<string>('ALL');
   const [activeReportTitle, setActiveReportTitle] = useState<string>('DSR REPORT');
   const [reportZoom, setReportZoom] = useState<string>('Whole Page');
   const [crystalPage, setCrystalPage] = useState<number>(1);
@@ -294,7 +354,7 @@ export default function App() {
   const [empSettlementDate] = useState<string>(getTodayErpDate());
   const [empSettlementShift, setEmpSettlementShift] = useState<string>('First');
   const [empSettlementSaleNo] = useState<string>('00001');
-  const [empSettlementEmp, setEmpSettlementEmp] = useState<string>('SANMUKH H CHAUDHARI');
+  const [empSettlementEmp, setEmpSettlementEmp] = useState<string>('Duty Attendant');
   const [empSettlementMachine, setEmpSettlementMachine] = useState<string>('MPD 1');
   const [empSettlementRemarks, setEmpSettlementRemarks] = useState<string>('');
   const [empNozzleReadings] = useState<any[]>([
@@ -315,11 +375,11 @@ export default function App() {
   const [empExpensesList] = useState<any[]>([
     { name: 'CESS', amount: 0.0, narration: '' },
     { name: 'MISC EXPENSES', amount: 0.0, narration: '' },
-    { name: 'YATIN N CHAUDHARI', amount: 0.0, narration: '' },
+    { name: 'STAFF INCENTIVE / ADVANCE', amount: 0.0, narration: '' },
     { name: 'PURCHASE ACCOUNT', amount: 0.0, narration: '' },
     { name: 'TEA N FOOD EXP', amount: 300.0, narration: 'Staff tea & food' },
     { name: 'GENERATOR EXP', amount: 1480.0, narration: 'Diesel generator power' },
-    { name: 'SANMUKH H CHAUDHARI', amount: 84.0, narration: 'Cashier advance' },
+    { name: 'CASHIER ADVANCE', amount: 84.0, narration: 'Shift petty cash advance' },
   ]);
   const [empCashAmount, setEmpCashAmount] = useState<number>(54000.0);
   const [empCreditSaleAmount, setEmpCreditSaleAmount] = useState<number>(43939.20);
@@ -350,8 +410,22 @@ export default function App() {
     try {
       const h = await fetchHealth();
       setBackendOnline(h.status === 'healthy');
-      const d = await fetchDashboard();
+      const [d, shiftData] = await Promise.all([
+        fetchDashboard(),
+        fetchCurrentShift().catch(() => null),
+      ]);
       setDashboard(d);
+      if (shiftData) {
+        if (shiftData.employees && shiftData.employees.length > 0) {
+          setEmployeesList(shiftData.employees);
+        }
+        if (shiftData.so_number) {
+          setShiftNumber(shiftData.so_number.replace(/^SO-/, ''));
+        }
+        if (shiftData.shift_name) {
+          setShiftName(shiftData.shift_name);
+        }
+      }
     } catch {
       setBackendOnline(false);
       setDashboard({
@@ -546,11 +620,11 @@ export default function App() {
           total_paid_period: 21000.0,
           net_payables: 795532.21,
           terms: [
-            '(1) Subject To Tapi Jurisdiction',
+            `(1) Subject To ${stationProfile.city} Jurisdiction`,
             '(2) Query in the Invoice should be notified to us immediately. No claims or discrepancy shall be entertained after 5 days from the Date of INVOICE.',
             '(3) Outstanding Bill Amount must be paid/cleared in 5 days from the bill date. After that 1.5% interest PM will be applicable.',
           ],
-          signatory: 'For NSAIPETROSOFT TECHNOLOGY\nAuthorized Signatory',
+          signatory: `For ${stationProfile.stationName}\nAuthorized Signatory`,
         },
       });
     }
@@ -666,38 +740,80 @@ export default function App() {
     setOpenDropdown(null);
     try {
       const shiftData = await fetchCurrentShift();
-      if (shiftData && shiftData.nozzles && shiftData.nozzles.length > 0) {
+      if (shiftData) {
+        if (shiftData.employees && shiftData.employees.length > 0) {
+          setEmployeesList(shiftData.employees);
+        }
         if (shiftData.so_number) {
           setShiftNumber(shiftData.so_number.replace(/^SO-/, ''));
         }
         if (shiftData.shift_name) {
           setShiftName(shiftData.shift_name);
         }
-        setSalesReadings(
-          shiftData.nozzles.map((n) => {
-            const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
-            const amount = Math.round(qty * n.rate * 100) / 100;
-            const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
-            return {
-              emp: shiftData.employees?.[0]?.code || 'AA',
-              nozzle: n.nozzle_name,
-              item: n.product_name,
-              open: n.opening_meter,
-              close: n.closing_meter,
-              test: n.testing,
-              qty: qty,
-              rate: n.rate,
-              amount: amount,
-              vat: vat,
-              lube: 0,
-              nozzle_id: n.nozzle_id,
-            };
-          })
-        );
+        if (shiftData.nozzles && shiftData.nozzles.length > 0) {
+          setSalesReadings(
+            shiftData.nozzles.map((n) => {
+              const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
+              const amount = Math.round(qty * n.rate * 100) / 100;
+              const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
+              return {
+                emp: shiftData.employees?.[0]?.code || 'EMP01',
+                nozzle: n.nozzle_name,
+                item: n.product_name,
+                open: n.opening_meter,
+                close: n.closing_meter,
+                test: n.testing,
+                qty: qty,
+                rate: n.rate,
+                amount: amount,
+                vat: vat,
+                lube: 0,
+                nozzle_id: n.nozzle_id,
+              };
+            })
+          );
+        }
       }
     } catch {
       // Offline fallback
     }
+    loadData();
+  };
+
+  const openEmployeeSettlement = async () => {
+    setActiveDialog('employeeSettlement');
+    setOpenDropdown(null);
+    try {
+      const shiftData = await fetchCurrentShift();
+      if (shiftData) {
+        if (shiftData.employees && shiftData.employees.length > 0) {
+          setEmployeesList(shiftData.employees);
+        }
+        if (shiftData.nozzles && shiftData.nozzles.length > 0) {
+          setSalesReadings(
+            shiftData.nozzles.map((n) => {
+              const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
+              const amount = Math.round(qty * n.rate * 100) / 100;
+              const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
+              return {
+                emp: shiftData.employees?.[0]?.code || 'EMP01',
+                nozzle: n.nozzle_name,
+                item: n.product_name,
+                open: n.opening_meter,
+                close: n.closing_meter,
+                test: n.testing,
+                qty: qty,
+                rate: n.rate,
+                amount: amount,
+                vat: vat,
+                lube: 0,
+                nozzle_id: n.nozzle_id,
+              };
+            })
+          );
+        }
+      }
+    } catch {}
     loadData();
   };
 
@@ -1024,14 +1140,24 @@ export default function App() {
   };
 
   const handleCalculateDenom = async () => {
+    const digitalCards = cardSettlements.length > 0 
+      ? cardSettlements.reduce((acc, c) => acc + Number(c.amount || 0), 0)
+      : empCardSwipes.reduce((acc, c) => acc + Number(c.amount || 0), 0);
+    const creditSales = creditBillsList.reduce((acc, c) => acc + Number(c.total || 0), 0);
+    const shiftExpenses = expensesList.length > 0
+      ? expensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0)
+      : empExpensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0);
+    const creditCollections = empCreditReceived || 0;
+    const totalMeterSales = salesReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0) || (dashboard?.kpis.today_sale || 664908.18);
+
     try {
       const res = await calculateSettlement({
         denominations: denoms,
-        digital_cards: 373156.84,
-        credit_sales: 54091.46,
-        expenses: 1864.0,
-        credit_collections: 65000.0,
-        total_meter_sales: 664908.18,
+        digital_cards: digitalCards,
+        credit_sales: creditSales,
+        expenses: shiftExpenses,
+        credit_collections: creditCollections,
+        total_meter_sales: totalMeterSales,
       });
       setDenomResult(res);
       setEmpCashAmount(res.cash_total);
@@ -1047,13 +1173,13 @@ export default function App() {
         denoms.n10 * 10 +
         denoms.n5 * 5 +
         denoms.coins;
-      const expCash = 664908.18 - 54091.46 - 373156.84 - 1864.0 + 65000.0;
+      const expCash = totalMeterSales - creditSales - digitalCards - shiftExpenses + creditCollections;
       const gap = totalCash - expCash;
       setDenomResult({
         cash_total: totalCash,
         expected_cash: expCash,
         gap_amount: gap,
-        status: gap === 0 ? 'BALANCED' : gap < 0 ? 'SHORTAGE (Cashier Owes)' : 'EXCESS',
+        status: Math.abs(gap) < 0.01 ? 'BALANCED' : gap < 0 ? 'SHORTAGE (Cashier Owes)' : 'EXCESS',
       });
       setEmpCashAmount(totalCash);
       showToast(`✔ Cash counted: ₹${totalCash.toFixed(2)}`);
@@ -1305,7 +1431,7 @@ export default function App() {
               <button className="win-dropdown-item" onClick={openPurchaseMaster}>🚛 Purchase Entry (Decanting)</button>
               <button className="win-dropdown-item" onClick={() => openDipDialog()}>📐 DIP REGISTER</button>
               <div className="win-menu-divider" />
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('employeeSettlement'); setOpenDropdown(null); }}>👨‍💼 Employee Shift Settlement (FrmLis...)</button>
+              <button className="win-dropdown-item" onClick={openEmployeeSettlement}>👨‍💼 Employee Shift Settlement (FrmLis...)</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('denom'); setOpenDropdown(null); }}>💵 Cashier Denomination Settlement</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('dayBookReport'); setOpenDropdown(null); }}>📖 Day Book / Shift Cashier Tally</button>
             </div>
@@ -1353,7 +1479,7 @@ export default function App() {
        * ------------------------------------------------------------- */}
       <div className="win-ribbon-bar">
         <div className="win-welcome-text">
-          WELCOME : NSAIPETROSOFT RETAIL OUTLET
+          WELCOME : {stationProfile.stationName}
         </div>
 
         <div className="win-ribbon-center">
@@ -1364,7 +1490,7 @@ export default function App() {
 
         <div className="win-ribbon-right">
           <span>License : 228 Day(s) Left</span>
-          <span>Financial Year : 2026-27</span>
+          <span>Financial Year : {getFinancialYear()}</span>
           <span style={{ fontSize: '11px', color: backendOnline ? '#2e7d32' : '#e67e22' }} title={`API: ${API_BASE_URL}`}>
             ● {backendOnline ? 'Cloud Backend Connected' : 'Local Ready'}
           </span>
@@ -2910,8 +3036,8 @@ export default function App() {
             <div className="win-dialog-body">
               <div className="statement-sheet">
                 <div className="statement-title-bar">
-                  <div className="statement-bunk-name">NSAIPETROSOFT RETAIL OUTLET</div>
-                  <div className="statement-subtitle">Dealers In: Motor Spirit (Petrol) & High Speed Diesel | Surat, Gujarat</div>
+                  <div className="statement-bunk-name">{stationProfile.stationName}</div>
+                  <div className="statement-subtitle">Dealers In: {stationProfile.oilCompany} | {stationProfile.city}, {stationProfile.state}</div>
                   <div style={{ fontSize: '14px', fontWeight: 'bold', marginTop: '4px' }}>STATEMENT OF ACCOUNTS</div>
                 </div>
 
@@ -2961,8 +3087,8 @@ export default function App() {
                     {selectedStatement.summary.terms.map((t: string, i: number) => (
                       <div key={i} style={{ marginBottom: '2px', lineHeight: '1.2' }}>{t}</div>
                     ))}
-                    <div style={{ marginTop: '24px', fontWeight: 'bold' }}>
-                      {selectedStatement.summary.signatory}
+                    <div style={{ marginTop: '24px', fontWeight: 'bold', whiteSpace: 'pre-line' }}>
+                      {selectedStatement.summary.signatory || `For ${stationProfile.stationName}\nAuthorized Signatory`}
                     </div>
                   </div>
 
@@ -3339,10 +3465,10 @@ export default function App() {
                   <div className="win-form-row">
                     <span className="win-label" style={{ minWidth: '70px' }}>Ledger</span>
                     <select className="win-select" value={critLedger} onChange={(e) => setCritLedger(e.target.value)} style={{ flex: 1 }}>
-                      <option>---Select Any---</option>
-                      <option>CASH ON HAND</option>
-                      <option>HDFC BANK CA</option>
-                      <option>SBI CURRENT A/C</option>
+                      <option value="">---Select Any---</option>
+                      {accountsList.map((a) => (
+                        <option key={a.id} value={a.name}>{a.name} ({a.type})</option>
+                      ))}
                     </select>
                   </div>
                   <div className="win-form-row">
@@ -3372,9 +3498,10 @@ export default function App() {
                   <div className="win-form-row">
                     <span className="win-label" style={{ minWidth: '70px' }}>Employee</span>
                     <select className="win-select" value={critEmployee} onChange={(e) => setCritEmployee(e.target.value)} style={{ flex: 1 }}>
-                      <option>AA</option>
-                      <option>SANMUKH H CHAUDHARI</option>
-                      <option>YATIN N CHAUDHARI</option>
+                      <option value="ALL">---All Attendants---</option>
+                      {employeesList.map((e) => (
+                        <option key={e.id} value={e.name}>{e.name} ({e.code})</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -3461,9 +3588,9 @@ export default function App() {
             <div className="crystal-canvas-wrapper">
               <div className="crystal-report-sheet">
                 {/* Header */}
-                <div className="crystal-company-name">NSAIPETROSOFT RETAIL OUTLET</div>
+                <div className="crystal-company-name">{stationProfile.stationName}</div>
                 <div style={{ textAlign: 'center', fontSize: '11px', color: '#444' }}>
-                  DEALERS IN: BHARAT PETROLEUM CORPORATION LTD. | SURAT, GUJARAT - 395003
+                  DEALERS IN: {stationProfile.oilCompany} | {stationProfile.city}, {stationProfile.state} - {stationProfile.pincode}
                 </div>
                 <div className="crystal-report-title">{activeReportTitle}</div>
                 <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, color: '#333', marginBottom: '8px' }}>
@@ -3770,7 +3897,7 @@ export default function App() {
                       </thead>
                       <tbody>
                         <tr>
-                          <td>BHARAT PETROLEUM CO LTD</td>
+                          <td>{stationProfile.oilCompany}</td>
                           <td>HSD BS-VI</td>
                           <td className="text-right">4.000 KL</td>
                           <td className="text-right">₹ 3,840.00</td>
@@ -3805,7 +3932,7 @@ export default function App() {
                       <tbody>
                         <tr>
                           <td>3215788</td>
-                          <td>BHARAT PETROLEUM CO LTD</td>
+                          <td>{stationProfile.oilCompany}</td>
                           <td>HSD BS-VI</td>
                           <td className="text-right">4,000.00</td>
                           <td className="text-right">59,798.30</td>
@@ -3839,7 +3966,7 @@ export default function App() {
                         <tr>
                           <td>194Q</td>
                           <td>AAACB1234K</td>
-                          <td>BHARAT PETROLEUM CO LTD</td>
+                          <td>{stationProfile.oilCompany}</td>
                           <td className="text-right">1,12,60,650.00</td>
                           <td className="text-right">0.10%</td>
                           <td className="text-right" style={{ fontWeight: 700, color: '#c0392b' }}>₹ 11,260.65</td>
@@ -3944,7 +4071,7 @@ export default function App() {
                         <tr>
                           <td>{getTodayErpDate()}</td>
                           <td>TXN-002</td>
-                          <td>Bharat Petroleum Inward Tanker</td>
+                          <td>{stationProfile.oilCompany} Inward Tanker</td>
                           <td>First</td>
                           <td>Decanting</td>
                           <td className="text-right">4,000.00</td>
@@ -3955,7 +4082,7 @@ export default function App() {
                         <tr>
                           <td>{getTodayErpDate()}</td>
                           <td>TXN-003</td>
-                          <td>Customer Payment LIVAVATI TRANSPORTY</td>
+                          <td>Customer Payment {customers[0]?.name || 'PORT TRANSPORT'}</td>
                           <td>First</td>
                           <td>UPI Paytm</td>
                           <td className="text-right">-</td>
@@ -4020,9 +4147,9 @@ export default function App() {
                 <div className="win-form-row">
                   <span className="win-label" style={{ minWidth: '70px' }}>Employee</span>
                   <select className="win-select" value={empSettlementEmp} onChange={(e) => setEmpSettlementEmp(e.target.value)} style={{ flex: 1, fontWeight: 700 }}>
-                    <option>SANMUKH H CHAUDHARI</option>
-                    <option>YATIN N CHAUDHARI</option>
-                    <option>AA</option>
+                    {employeesList.map((e) => (
+                      <option key={e.id} value={e.name}>{e.name} ({e.code})</option>
+                    ))}
                   </select>
                 </div>
                 <div className="win-form-row">
@@ -4041,7 +4168,7 @@ export default function App() {
                 <div>
                   {/* Table 1: Nozzle meter difference table */}
                   <div style={{ fontWeight: 700, fontSize: '11px', color: '#1565c0', marginBottom: '4px' }}>
-                    1. Nozzle Meter Difference (MPD 1)
+                    1. Nozzle Meter Difference ({empSettlementMachine})
                   </div>
                   <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '140px', overflowY: 'auto', marginBottom: '8px' }}>
                     <table className="win-datagrid">
@@ -4057,23 +4184,38 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {empNozzleReadings.map((r, i) => (
-                          <tr key={i}>
-                            <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
-                            <td className="text-right">{r.op.toFixed(1)}</td>
-                            <td className="text-right">{r.close.toFixed(1)}</td>
-                            <td className="text-right">{r.test.toFixed(1)}</td>
-                            <td className="text-right" style={{ fontWeight: 700, color: '#1565c0' }}>{r.sale.toFixed(2)}</td>
-                            <td className="text-right">{r.rate}</td>
-                            <td className="text-right" style={{ fontWeight: 700 }}>{r.amount.toFixed(2)}</td>
-                          </tr>
-                        ))}
+                        {(salesReadings.length > 0 ? salesReadings : empNozzleReadings).map((r, i) => {
+                          const op = r.open ?? r.op ?? 0;
+                          const cl = r.close ?? 0;
+                          const tst = r.test ?? 0;
+                          const sale = r.qty ?? r.sale ?? Math.max(0, cl - op - tst);
+                          const amt = r.amount ?? (sale * r.rate);
+                          return (
+                            <tr key={i}>
+                              <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
+                              <td className="text-right">{Number(op).toFixed(1)}</td>
+                              <td className="text-right">{Number(cl).toFixed(1)}</td>
+                              <td className="text-right">{Number(tst).toFixed(1)}</td>
+                              <td className="text-right" style={{ fontWeight: 700, color: '#1565c0' }}>{Number(sale).toFixed(2)}</td>
+                              <td className="text-right">{r.rate}</td>
+                              <td className="text-right" style={{ fontWeight: 700 }}>{Number(amt).toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
                         <tr style={{ background: '#e5f1fb', fontWeight: 800 }}>
                           <td colSpan={4}>TOTAL METER SALE</td>
-                          <td className="text-right">1,354.00 L</td>
+                          <td className="text-right">
+                            {(salesReadings.length > 0
+                              ? salesReadings.reduce((acc, r) => acc + (r.qty || 0), 0)
+                              : empNozzleReadings.reduce((acc, r) => acc + (r.sale || 0), 0)
+                            ).toFixed(2)} L
+                          </td>
                           <td></td>
                           <td className="text-right" style={{ color: '#0d47a1', fontSize: '12px' }}>
-                            ₹ {empNozzleReadings.reduce((acc, r) => acc + r.amount, 0).toFixed(2)}
+                            ₹ {(salesReadings.length > 0
+                              ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
+                              : empNozzleReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
+                            ).toFixed(2)}
                           </td>
                         </tr>
                       </tbody>
@@ -4221,7 +4363,12 @@ export default function App() {
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                         <span>Nozzle Sales + Lube Total:</span>
-                        <strong>₹ {empNozzleReadings.reduce((acc, r) => acc + r.amount, 0).toFixed(2)}</strong>
+                        <strong>₹ {(
+                          (salesReadings.length > 0
+                            ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
+                            : empNozzleReadings.reduce((acc, r) => acc + (r.amount || 0), 0)) +
+                          empLubeItems.reduce((acc, l) => acc + (l.amount || 0), 0)
+                        ).toFixed(2)}</strong>
                       </div>
 
                       {/* Frame 0210/0220/0260 Gap Amount Exact Banner */}
@@ -4240,7 +4387,10 @@ export default function App() {
                             empCardSwipes.reduce((acc, c) => acc + c.amount, 0) +
                             empExpensesList.reduce((acc, e) => acc + e.amount, 0) -
                             empCreditReceived -
-                            empNozzleReadings.reduce((acc, r) => acc + r.amount, 0)
+                            ((salesReadings.length > 0
+                              ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
+                              : empNozzleReadings.reduce((acc, r) => acc + (r.amount || 0), 0)) +
+                            empLubeItems.reduce((acc, l) => acc + (l.amount || 0), 0))
                           ).toFixed(2)}
                         </div>
                         <div style={{ fontSize: '10px', color: '#555', marginTop: '2px' }}>
@@ -4255,15 +4405,19 @@ export default function App() {
                         className="win-btn-classic win-btn-primary"
                         style={{ flex: 1 }}
                         onClick={async () => {
+                          const liveMeterTotal = (salesReadings.length > 0
+                            ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
+                            : empNozzleReadings.reduce((acc, r) => acc + (r.amount || 0), 0)) +
+                            empLubeItems.reduce((acc, l) => acc + (l.amount || 0), 0);
+                          const gap = (
+                            empCashAmount +
+                            empCreditSaleAmount +
+                            empCardSwipes.reduce((acc, c) => acc + c.amount, 0) +
+                            empExpensesList.reduce((acc, e) => acc + e.amount, 0) -
+                            empCreditReceived -
+                            liveMeterTotal
+                          );
                           try {
-                            const gap = (
-                              empCashAmount +
-                              empCreditSaleAmount +
-                              empCardSwipes.reduce((acc, c) => acc + c.amount, 0) +
-                              empExpensesList.reduce((acc, e) => acc + e.amount, 0) -
-                              empCreditReceived -
-                              empNozzleReadings.reduce((acc, r) => acc + r.amount, 0)
-                            );
                             await saveShiftSettlement({
                               shift_name: empSettlementShift,
                               remarks: empSettlementRemarks,
@@ -4272,14 +4426,14 @@ export default function App() {
                               digital_total: empCardSwipes.reduce((acc, c) => acc + c.amount, 0),
                               credit_total: empCreditSaleAmount,
                               expense_total: empExpensesList.reduce((acc, e) => acc + e.amount, 0),
-                              expected_cash: empNozzleReadings.reduce((acc, r) => acc + r.amount, 0) - empCreditSaleAmount - empCardSwipes.reduce((acc, c) => acc + c.amount, 0) - empExpensesList.reduce((acc, e) => acc + e.amount, 0),
+                              expected_cash: liveMeterTotal - empCreditSaleAmount - empCardSwipes.reduce((acc, c) => acc + c.amount, 0) - empExpensesList.reduce((acc, e) => acc + e.amount, 0),
                               actual_cash: empCashAmount,
                               gap_amount: gap,
                             });
                             showToast(`✔ Shift Settlement Saved to PostgreSQL! Gap: ₹${gap.toFixed(2)}`);
                             loadData();
                           } catch (err: any) {
-                            showToast(`Saved locally: Gap ₹${(empCashAmount - 54000.42).toFixed(2)}`);
+                            showToast(`Saved locally: Gap ₹${gap.toFixed(2)}`);
                           }
                         }}
                       >
@@ -4309,133 +4463,216 @@ export default function App() {
       {/* =============================================================
        * MODAL 14D: Day Book / Shift Cashier Tally Report (Frames 0256 & 0260)
        * ============================================================= */}
-      {activeDialog === 'dayBookReport' && (
-        <div className="win-modal-overlay">
-          <div className="crystal-viewer-dialog" style={{ width: '920px', height: '88vh' }}>
-            <div className="win-dialog-titlebar">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>📖</span>
-                <span>Day Book / Cashier Tally Report — Frame 0256 & 0260</span>
+      {activeDialog === 'dayBookReport' && (() => {
+        const denomRows = [
+          { label: '₹ 2000 ×', count: denoms.n2000, value: denoms.n2000 * 2000 },
+          { label: '₹ 500 ×', count: denoms.n500, value: denoms.n500 * 500 },
+          { label: '₹ 200 ×', count: denoms.n200, value: denoms.n200 * 200 },
+          { label: '₹ 100 ×', count: denoms.n100, value: denoms.n100 * 100 },
+          { label: '₹ 50 ×', count: denoms.n50, value: denoms.n50 * 50 },
+          { label: '₹ 20 ×', count: denoms.n20, value: denoms.n20 * 20 },
+          { label: '₹ 10 ×', count: denoms.n10, value: denoms.n10 * 10 },
+          { label: '₹ 5 ×', count: denoms.n5, value: denoms.n5 * 5 },
+          { label: 'Coins', count: denoms.coins > 0 ? denoms.coins : '-', value: denoms.coins },
+        ];
+        const calculatedCashFromDenoms = denomRows.reduce((acc, r) => acc + (typeof r.value === 'number' ? r.value : 0), 0);
+        const effectiveCash = calculatedCashFromDenoms > 0 ? calculatedCashFromDenoms : empCashAmount;
+
+        const effectiveCreditTotal = creditBillsList.reduce((acc, c) => acc + Number(c.total || 0), 0);
+        const effectiveDigitalTotal = cardSettlements.length > 0
+          ? cardSettlements.reduce((acc, c) => acc + Number(c.amount || 0), 0)
+          : empCardSwipes.reduce((acc, c) => acc + Number(c.amount || 0), 0);
+        const effectiveExpenseTotal = expensesList.length > 0
+          ? expensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0)
+          : empExpensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0);
+
+        const totalReconciled = effectiveCash + effectiveCreditTotal + effectiveDigitalTotal + effectiveExpenseTotal;
+        const totalMeterSales = (salesReadings.length > 0
+          ? salesReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0)
+          : empNozzleReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0)) +
+          empLubeItems.reduce((acc, l) => acc + Number(l.amount || 0), 0);
+        const gap = totalReconciled - totalMeterSales;
+
+        return (
+          <div className="win-modal-overlay">
+            <div className="crystal-viewer-dialog" style={{ width: '920px', height: '88vh' }}>
+              <div className="win-dialog-titlebar">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>📖</span>
+                  <span>Day Book / Cashier Tally Report — Frame 0256 & 0260</span>
+                </div>
+                <button className="win-btn" onClick={() => setActiveDialog(null)}>✕</button>
               </div>
-              <button className="win-btn" onClick={() => setActiveDialog(null)}>✕</button>
-            </div>
 
-            {/* Crystal Toolbar */}
-            <div className="crystal-toolbar">
-              <button className="crystal-tool-btn" onClick={() => window.print()} title="Print">🖨️ Print Report</button>
-              <button className="crystal-tool-btn" onClick={() => showToast('✔ Day Book exported to Excel & PDF')} title="Export">💾 Export</button>
-              <button className="crystal-tool-btn" onClick={() => showToast('Refreshed')} title="Refresh">🔄 Refresh</button>
-            </div>
+              {/* Crystal Toolbar */}
+              <div className="crystal-toolbar">
+                <button className="crystal-tool-btn" onClick={() => window.print()} title="Print">🖨️ Print Report</button>
+                <button
+                  className="crystal-tool-btn"
+                  onClick={() => exportToCsv(
+                    `NSAIPETROSOFT_DayBook_${shiftName}_${new Date().toISOString().split('T')[0]}`,
+                    ['Category', 'Particulars / Denomination', 'Amount (INR)'],
+                    [
+                      ...denomRows.map(d => ['Cash Denomination', `${d.label} (${d.count})`, d.value]),
+                      ['Cash Handover', 'Total Physical Cash', effectiveCash],
+                      ...creditBillsList.map(c => ['Credit Slip', `${c.cust} (${c.vehicle})`, c.total]),
+                      ['Credit Sales', 'Total Credit Slips', effectiveCreditTotal],
+                      ...(cardSettlements.length > 0
+                        ? cardSettlements.map(cs => ['Digital POS', `${cs.machine} (${cs.batch})`, cs.amount])
+                        : empCardSwipes.map(cs => ['Digital POS', cs.name, cs.amount])),
+                      ['Digital Sales', 'Total Digital / POS', effectiveDigitalTotal],
+                      ...(expensesList.length > 0
+                        ? expensesList.map(ex => ['Expense Voucher', ex.category || ex.narration, ex.amount])
+                        : empExpensesList.filter(e => e.amount > 0).map(ex => ['Expense Voucher', ex.name, ex.amount])),
+                      ['Shift Expenses', 'Total Station Expenses', effectiveExpenseTotal],
+                      ['Summary', 'Total Reconciled Collection', totalReconciled],
+                      ['Summary', 'Total Nozzle Meter Sales', totalMeterSales],
+                      ['Summary', 'Gap Amount (Shortage / Excess)', gap],
+                    ]
+                  )}
+                  title="Export to Excel CSV"
+                >
+                  💾 Export to Excel
+                </button>
+                <button className="crystal-tool-btn" onClick={() => showToast('Day Book Refreshed')} title="Refresh">🔄 Refresh</button>
+              </div>
 
-            {/* 2-Column Crystal Report Canvas */}
-            <div className="crystal-canvas-wrapper">
-              <div className="crystal-report-sheet" style={{ width: '850px', minHeight: '900px' }}>
-                <div className="crystal-company-name">NSAIPETROSOFT RETAIL OUTLET</div>
-                <div style={{ textAlign: 'center', fontSize: '11px', color: '#444' }}>
-                  SURAT, GUJARAT - 395003 | DEALERS IN: BHARAT PETROLEUM CORP LTD
-                </div>
-                <div className="crystal-report-title" style={{ fontSize: '15px' }}>
-                  SHIFT CASHIER TALLY & DAY BOOK RECONCILIATION
-                </div>
-                <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, marginBottom: '12px' }}>
-                  Date: {getTodayErpDate()} | Shift: {shiftName} | Attendant: SANMUKH H CHAUDHARI | Machine: MPD 1
-                </div>
-
-                {/* 2 Columns: Left = Cash Notes, Right = Credit + Cards + Expenses */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '16px' }}>
-                  {/* Left Column: Physical Cash Breakdown */}
-                  <div style={{ border: '1px solid #777', padding: '8px' }}>
-                    <div style={{ fontWeight: 700, fontSize: '11.5px', background: '#d896b7', padding: '3px 6px', border: '1px solid #777', marginBottom: '6px' }}>
-                      PHYSICAL CURRENCY BREAKDOWN
-                    </div>
-                    <table className="crystal-table">
-                      <thead>
-                        <tr>
-                          <th>Denomination</th>
-                          <th className="text-right">Count</th>
-                          <th className="text-right">Total Amount (₹)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr><td>₹ 500 ×</td><td className="text-right">100</td><td className="text-right">50,000.00</td></tr>
-                        <tr><td>₹ 200 ×</td><td className="text-right">15</td><td className="text-right">3,000.00</td></tr>
-                        <tr><td>₹ 100 ×</td><td className="text-right">10</td><td className="text-right">1,000.00</td></tr>
-                        <tr><td>₹ 50 ×</td><td className="text-right">0</td><td className="text-right">0.00</td></tr>
-                        <tr><td>₹ 20 ×</td><td className="text-right">0</td><td className="text-right">0.00</td></tr>
-                        <tr><td>₹ 10 ×</td><td className="text-right">0</td><td className="text-right">0.00</td></tr>
-                        <tr><td>Coins</td><td className="text-right">-</td><td className="text-right">0.00</td></tr>
-                        <tr className="crystal-highlight-row">
-                          <td colSpan={2}>TOTAL CASH HANDOVER</td>
-                          <td className="text-right" style={{ fontWeight: 800, fontSize: '12px' }}>₹ 54,000.00</td>
-                        </tr>
-                      </tbody>
-                    </table>
+              {/* 2-Column Crystal Report Canvas */}
+              <div className="crystal-canvas-wrapper">
+                <div className="crystal-report-sheet" style={{ width: '850px', minHeight: '900px' }}>
+                  <div className="crystal-company-name">{stationProfile.stationName}</div>
+                  <div style={{ textAlign: 'center', fontSize: '11px', color: '#444' }}>
+                    {stationProfile.city}, {stationProfile.state} - {stationProfile.pincode} | DEALERS IN: {stationProfile.oilCompany}
+                  </div>
+                  <div className="crystal-report-title" style={{ fontSize: '15px' }}>
+                    SHIFT CASHIER TALLY & DAY BOOK RECONCILIATION
+                  </div>
+                  <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, marginBottom: '12px' }}>
+                    Date: {getTodayErpDate()} | Shift: {shiftName} | Attendant: {empSettlementEmp} | Machine: {empSettlementMachine}
                   </div>
 
-                  {/* Right Column: Credit Sales + Bank POS + Expenses */}
-                  <div style={{ border: '1px solid #777', padding: '8px' }}>
-                    <div style={{ fontWeight: 700, fontSize: '11.5px', background: '#b2ebf2', padding: '3px 6px', border: '1px solid #777', marginBottom: '6px' }}>
-                      CREDIT SLIPS & EXPENSE RECONCILIATION
-                    </div>
-
-                    <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>Credit Slips List:</div>
-                    <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
-                      <div>• PORT TRANSPORT (GJ19AS1454) - ₹ 15,072.00</div>
-                      <div>• HINESHBHAI (MH14AS2545) - ₹ 16,000.00</div>
-                      <div>• ABC TRANSPORT (GJ18AS557) - ₹ 12,867.20</div>
-                      <div style={{ fontWeight: 700, textAlign: 'right' }}>Total Credit: ₹ 43,939.20</div>
-                    </div>
-
-                    <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>Bank POS Swipes:</div>
-                    <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
-                      <div>• PAYTM QR: ₹ 5,000.00</div>
-                      <div>• M SWIPE: ₹ 6,000.00</div>
-                      <div>• PETRO CARD: ₹ 14,500.00</div>
-                      <div style={{ fontWeight: 700, textAlign: 'right' }}>Total Digital: ₹ 25,500.00</div>
-                    </div>
-
-                    <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>Station Cash Expenses:</div>
-                    <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
-                      <div>• Staff Tea & Snacks: ₹ 300.00</div>
-                      <div>• Generator Backup Diesel: ₹ 1,480.00</div>
-                      <div>• Cashier Advance: ₹ 84.00</div>
-                      <div style={{ fontWeight: 700, textAlign: 'right', color: '#c0392b' }}>Total Expenses: ₹ 1,864.00</div>
-                    </div>
-
-                    {/* Frame 0260 Gap Amount Exact Display */}
-                    <div style={{ background: '#fff59d', border: '2px solid #f57f17', padding: '6px 8px', marginTop: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                        <span>Reconciled Collection:</span>
-                        <strong>₹ 1,25,303.20</strong>
+                  {/* 2 Columns: Left = Cash Notes, Right = Credit + Cards + Expenses */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '16px' }}>
+                    {/* Left Column: Physical Cash Breakdown */}
+                    <div style={{ border: '1px solid #777', padding: '8px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '11.5px', background: '#d896b7', padding: '3px 6px', border: '1px solid #777', marginBottom: '6px' }}>
+                        PHYSICAL CURRENCY BREAKDOWN
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                        <span>Total Nozzle Meter Sales:</span>
-                        <strong>₹ 1,25,303.62</strong>
+                      <table className="crystal-table">
+                        <thead>
+                          <tr>
+                            <th>Denomination</th>
+                            <th className="text-right">Count</th>
+                            <th className="text-right">Total Amount (₹)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {denomRows.map((d, idx) => (
+                            <tr key={idx}>
+                              <td>{d.label}</td>
+                              <td className="text-right">{d.count}</td>
+                              <td className="text-right">{Number(d.value).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                          <tr className="crystal-highlight-row">
+                            <td colSpan={2}>TOTAL CASH HANDOVER</td>
+                            <td className="text-right" style={{ fontWeight: 800, fontSize: '12px' }}>₹ {Number(effectiveCash).toFixed(2)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Right Column: Credit Sales + Bank POS + Expenses */}
+                    <div style={{ border: '1px solid #777', padding: '8px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '11.5px', background: '#b2ebf2', padding: '3px 6px', border: '1px solid #777', marginBottom: '6px' }}>
+                        CREDIT SLIPS & EXPENSE RECONCILIATION
                       </div>
-                      <div style={{ borderTop: '1px solid #f57f17', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px', color: '#b71c1c' }}>
-                        <span>Gap Amount:</span>
-                        <span>-0.42</span>
+
+                      <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>Credit Slips List:</div>
+                      <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
+                        {creditBillsList.length > 0 ? (
+                          creditBillsList.slice(0, 6).map((c, i) => (
+                            <div key={i}>• {c.cust} ({c.vehicle}) - ₹ {Number(c.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                          ))
+                        ) : (
+                          <div style={{ color: '#888', fontStyle: 'italic' }}>No credit sales in this shift</div>
+                        )}
+                        <div style={{ fontWeight: 700, textAlign: 'right', marginTop: '2px' }}>
+                          Total Credit: ₹ {effectiveCreditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>Bank POS Swipes:</div>
+                      <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
+                        {cardSettlements.length > 0 ? (
+                          cardSettlements.map((cs, i) => (
+                            <div key={i}>• {cs.machine} ({cs.batch || 'POS'}): ₹ {Number(cs.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                          ))
+                        ) : empCardSwipes.filter(c => c.amount > 0).length > 0 ? (
+                          empCardSwipes.filter(c => c.amount > 0).map((cs, i) => (
+                            <div key={i}>• {cs.name}: ₹ {Number(cs.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                          ))
+                        ) : (
+                          <div style={{ color: '#888', fontStyle: 'italic' }}>No digital card transactions</div>
+                        )}
+                        <div style={{ fontWeight: 700, textAlign: 'right', marginTop: '2px' }}>
+                          Total Digital: ₹ {effectiveDigitalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>Station Cash Expenses:</div>
+                      <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
+                        {expensesList.length > 0 ? (
+                          expensesList.map((ex, i) => (
+                            <div key={i}>• {ex.category || ex.narration}: ₹ {Number(ex.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                          ))
+                        ) : empExpensesList.filter(e => e.amount > 0).length > 0 ? (
+                          empExpensesList.filter(e => e.amount > 0).map((ex, i) => (
+                            <div key={i}>• {ex.name || ex.narration}: ₹ {Number(ex.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                          ))
+                        ) : (
+                          <div style={{ color: '#888', fontStyle: 'italic' }}>No station expenses this shift</div>
+                        )}
+                        <div style={{ fontWeight: 700, textAlign: 'right', color: '#c0392b', marginTop: '2px' }}>
+                          Total Expenses: ₹ {effectiveExpenseTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      {/* Frame 0260 Gap Amount Exact Display */}
+                      <div style={{ background: '#fff59d', border: '2px solid #f57f17', padding: '6px 8px', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                          <span>Reconciled Collection:</span>
+                          <strong>₹ {totalReconciled.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                          <span>Total Nozzle Meter Sales:</span>
+                          <strong>₹ {totalMeterSales.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                        </div>
+                        <div style={{ borderTop: '1px solid #f57f17', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px', color: gap < 0 ? '#b71c1c' : '#2e7d32' }}>
+                          <span>Gap Amount:</span>
+                          <span>{gap >= 0 ? `+${gap.toFixed(2)} (Excess)` : `${gap.toFixed(2)} (Shortage)`}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Signatures */}
-                <div style={{ marginTop: '40px', borderTop: '1px solid #888', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
-                  <span>Cashier: SANMUKH H CHAUDHARI</span>
-                  <span>Verified By: Station Manager</span>
-                  <span>Authorized Signature: __________________</span>
+                  {/* Signatures */}
+                  <div style={{ marginTop: '40px', borderTop: '1px solid #888', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
+                    <span>Cashier: {empSettlementEmp}</span>
+                    <span>Verified By: Station Manager</span>
+                    <span>Authorized Signature: __________________</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="win-dialog-footer">
-              <span className="hotkeys-hint-red">ESC=Exit</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div className="win-dialog-footer">
+                <span className="hotkeys-hint-red">ESC=Exit</span>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* =============================================================
        * MODAL 14E: Select Customer Dialog (Frame 0280)
@@ -4452,7 +4689,7 @@ export default function App() {
             </div>
             <div className="win-dialog-body">
               <div style={{ fontSize: '11px', marginBottom: '8px', color: '#333' }}>
-                Select an institutional credit customer to generate the BPCL Statement of Accounts:
+                Select an institutional credit customer to generate the {stationProfile.oilCompany} Statement of Accounts:
               </div>
               <div className="win-form-row">
                 <span className="win-label" style={{ minWidth: '100px' }}>Customer Name</span>
@@ -4850,71 +5087,281 @@ export default function App() {
        * ============================================================= */}
       {activeDialog === 'controlPanel' && (
         <div className="win-modal-overlay">
-          <div className="win-form-dialog" style={{ width: '640px' }}>
+          <div className="win-form-dialog" style={{ width: '740px' }}>
             <div className="win-dialog-titlebar">
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span>🎛️</span>
-                <span>Station Shift Management & Control Panel</span>
+                <span>Station Shift Management & Dealership Profile Control Panel</span>
               </div>
               <button className="win-btn" onClick={() => setActiveDialog(null)}>✕</button>
             </div>
             <div className="win-dialog-body">
-              <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '14px', marginBottom: '14px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
-                  <div><strong>Station Date:</strong> {getTodayErpDate()}</div>
-                  <div><strong>SO Counter:</strong> #{shiftNumber}</div>
-                  <div><strong>Active Shift:</strong> {shiftName} Shift</div>
-                  <div>
-                    <strong>Status:</strong>{' '}
-                    <span style={{ color: shiftStatus === 'OPEN' ? '#27ae60' : '#c0392b', fontWeight: 700 }}>
-                      ● {shiftStatus}
-                    </span>
-                  </div>
-                  <div>
-                    <strong>Automation Lock:</strong>{' '}
-                    <span style={{ color: dispenserLocked ? '#c0392b' : '#27ae60', fontWeight: 700 }}>
-                      {dispenserLocked ? 'LOCKED (Sales Closed)' : 'UNLOCKED (Dispensing Active)'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              {/* Tab Selector */}
+              <div style={{ display: 'flex', borderBottom: '2px solid #506f8c', marginBottom: '12px', background: '#e0dfdb', padding: '4px 8px 0 8px', gap: '4px' }}>
                 <button
-                  className="win-btn-classic win-btn-primary"
-                  style={{ height: '36px', fontSize: '12px' }}
-                  onClick={handleCloseShift}
+                  type="button"
+                  style={{
+                    padding: '6px 16px',
+                    border: '1px solid #7f9db9',
+                    borderBottom: controlPanelTab === 'shift' ? '2px solid #ece9d8' : '1px solid #7f9db9',
+                    background: controlPanelTab === 'shift' ? '#ece9d8' : '#d4d0c8',
+                    fontWeight: controlPanelTab === 'shift' ? 700 : 400,
+                    cursor: 'pointer',
+                    outline: 'none',
+                    borderTopLeftRadius: '3px',
+                    borderTopRightRadius: '3px',
+                    marginBottom: controlPanelTab === 'shift' ? '-2px' : '0',
+                    fontSize: '11px',
+                  }}
+                  onClick={() => setControlPanelTab('shift')}
                 >
-                  🔒 Close Shift & Lock Meters
+                  ⚙️ Shift Operations & Dispenser Locks
                 </button>
                 <button
-                  className="win-btn-classic"
-                  style={{ height: '36px', fontSize: '12px' }}
-                  onClick={handleOpenNextShift}
-                >
-                  ▶️ Start Next Shift
-                </button>
-                <button
-                  className="win-btn-classic"
-                  style={{ height: '36px', fontSize: '12px' }}
+                  type="button"
+                  style={{
+                    padding: '6px 16px',
+                    border: '1px solid #7f9db9',
+                    borderBottom: controlPanelTab === 'profile' ? '2px solid #ece9d8' : '1px solid #7f9db9',
+                    background: controlPanelTab === 'profile' ? '#ece9d8' : '#d4d0c8',
+                    fontWeight: controlPanelTab === 'profile' ? 700 : 400,
+                    cursor: 'pointer',
+                    outline: 'none',
+                    borderTopLeftRadius: '3px',
+                    borderTopRightRadius: '3px',
+                    marginBottom: controlPanelTab === 'profile' ? '-2px' : '0',
+                    fontSize: '11px',
+                  }}
                   onClick={() => {
-                    setDispenserLocked(!dispenserLocked);
-                    showToast(dispenserLocked ? 'Dispensers Unlocked' : 'Dispensers Locked');
+                    setProfileForm(stationProfile);
+                    setControlPanelTab('profile');
                   }}
                 >
-                  ⚡ Toggle Dispenser Lock
-                </button>
-                <button
-                  className="win-btn-classic"
-                  style={{ height: '36px', fontSize: '12px' }}
-                  onClick={() => window.print()}
-                >
-                  🖨️ Print Shift Audit Sheet
+                  🏢 Station Outlet Profile & Dealership Settings
                 </button>
               </div>
+
+              {/* TAB 1: Shift Operations */}
+              {controlPanelTab === 'shift' && (
+                <div>
+                  <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '14px', marginBottom: '14px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
+                      <div><strong>Station Date:</strong> {getTodayErpDate()}</div>
+                      <div><strong>SO Counter:</strong> #{shiftNumber}</div>
+                      <div><strong>Active Shift:</strong> {shiftName} Shift</div>
+                      <div>
+                        <strong>Shift Status:</strong>{' '}
+                        <span style={{ color: shiftStatus === 'OPEN' ? '#27ae60' : '#c0392b', fontWeight: 700 }}>
+                          ● {shiftStatus}
+                        </span>
+                      </div>
+                      <div>
+                        <strong>Automation Lock:</strong>{' '}
+                        <span style={{ color: dispenserLocked ? '#c0392b' : '#27ae60', fontWeight: 700 }}>
+                          {dispenserLocked ? 'LOCKED (Sales Closed)' : 'UNLOCKED (Dispensing Active)'}
+                        </span>
+                      </div>
+                      <div>
+                        <strong>Dealership:</strong> {stationProfile.stationName}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <button
+                      className="win-btn-classic win-btn-primary"
+                      style={{ height: '36px', fontSize: '12px' }}
+                      onClick={handleCloseShift}
+                    >
+                      🔒 Close Shift & Lock Meters
+                    </button>
+                    <button
+                      className="win-btn-classic"
+                      style={{ height: '36px', fontSize: '12px' }}
+                      onClick={handleOpenNextShift}
+                    >
+                      ▶️ Start Next Shift
+                    </button>
+                    <button
+                      className="win-btn-classic"
+                      style={{ height: '36px', fontSize: '12px' }}
+                      onClick={() => {
+                        setDispenserLocked(!dispenserLocked);
+                        showToast(dispenserLocked ? 'Dispensers Unlocked' : 'Dispensers Locked');
+                      }}
+                    >
+                      ⚡ Toggle Dispenser Lock
+                    </button>
+                    <button
+                      className="win-btn-classic"
+                      style={{ height: '36px', fontSize: '12px' }}
+                      onClick={() => window.print()}
+                    >
+                      🖨️ Print Shift Audit Sheet
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: Station Outlet Profile */}
+              {controlPanelTab === 'profile' && (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  saveStationProfile(profileForm);
+                }}>
+                  <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ fontWeight: 700, color: '#1565c0', fontSize: '12px', marginBottom: '8px', borderBottom: '1px solid #d4d0c8', paddingBottom: '4px' }}>
+                      Dealership Branding & Oil Marketing Company (OMC) Credentials
+                    </div>
+
+                    <div className="win-form-row">
+                      <span className="win-label" style={{ minWidth: '150px' }}>Station Outlet Name</span>
+                      <input
+                        type="text"
+                        className="win-input"
+                        required
+                        value={profileForm.stationName}
+                        onChange={(e) => setProfileForm({ ...profileForm, stationName: e.target.value.toUpperCase() })}
+                        style={{ flex: 1, fontWeight: 700 }}
+                        placeholder="e.g. SHREE SHYAM PETROLEUM / NSAIPETROSOFT"
+                      />
+                    </div>
+
+                    <div className="win-form-row">
+                      <span className="win-label" style={{ minWidth: '150px' }}>Oil Company (OMC)</span>
+                      <select
+                        className="win-select"
+                        value={profileForm.oilCompany}
+                        onChange={(e) => setProfileForm({ ...profileForm, oilCompany: e.target.value })}
+                        style={{ flex: 1, fontWeight: 600 }}
+                      >
+                        <option value="BHARAT PETROLEUM CORPORATION LTD">BHARAT PETROLEUM CORPORATION LTD (BPCL)</option>
+                        <option value="INDIAN OIL CORPORATION LTD">INDIAN OIL CORPORATION LTD (IOCL)</option>
+                        <option value="HINDUSTAN PETROLEUM CORPORATION LTD">HINDUSTAN PETROLEUM CORPORATION LTD (HPCL)</option>
+                        <option value="NAYARA ENERGY LIMITED">NAYARA ENERGY LIMITED (ESSAR OIL)</option>
+                        <option value="SHELL INDIA MARKETS PVT LTD">SHELL INDIA MARKETS PVT LTD</option>
+                        <option value="RELIANCE BP MOBILITY LTD">JIO-BP (RELIANCE BP MOBILITY LTD)</option>
+                      </select>
+                    </div>
+
+                    <div className="win-form-row">
+                      <span className="win-label" style={{ minWidth: '150px' }}>Custom OMC Title</span>
+                      <input
+                        type="text"
+                        className="win-input"
+                        value={profileForm.oilCompany}
+                        onChange={(e) => setProfileForm({ ...profileForm, oilCompany: e.target.value.toUpperCase() })}
+                        style={{ flex: 1 }}
+                        placeholder="Edit or customize Oil Company title if required"
+                      />
+                    </div>
+
+                    <div className="win-form-row">
+                      <span className="win-label" style={{ minWidth: '150px' }}>Highway / Street Address</span>
+                      <input
+                        type="text"
+                        className="win-input"
+                        value={profileForm.address}
+                        onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value.toUpperCase() })}
+                        style={{ flex: 1 }}
+                        placeholder="e.g. HIGHWAY SERVICE STATION, NH-48"
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr', gap: '8px' }}>
+                      <div className="win-form-row">
+                        <span className="win-label" style={{ minWidth: '40px' }}>City</span>
+                        <input
+                          type="text"
+                          className="win-input"
+                          value={profileForm.city}
+                          onChange={(e) => setProfileForm({ ...profileForm, city: e.target.value.toUpperCase() })}
+                          style={{ flex: 1 }}
+                        />
+                      </div>
+                      <div className="win-form-row">
+                        <span className="win-label" style={{ minWidth: '45px' }}>State</span>
+                        <input
+                          type="text"
+                          className="win-input"
+                          value={profileForm.state}
+                          onChange={(e) => setProfileForm({ ...profileForm, state: e.target.value.toUpperCase() })}
+                          style={{ flex: 1 }}
+                        />
+                      </div>
+                      <div className="win-form-row">
+                        <span className="win-label" style={{ minWidth: '55px' }}>Pincode</span>
+                        <input
+                          type="text"
+                          className="win-input"
+                          value={profileForm.pincode}
+                          onChange={(e) => setProfileForm({ ...profileForm, pincode: e.target.value })}
+                          style={{ flex: 1 }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', marginTop: '6px' }}>
+                      <div className="win-form-row">
+                        <span className="win-label" style={{ minWidth: '60px' }}>GSTIN No</span>
+                        <input
+                          type="text"
+                          className="win-input"
+                          value={profileForm.gstin}
+                          onChange={(e) => setProfileForm({ ...profileForm, gstin: e.target.value.toUpperCase() })}
+                          style={{ flex: 1, fontWeight: 700 }}
+                          placeholder="e.g. 24AAACN1234F1Z5"
+                        />
+                      </div>
+                      <div className="win-form-row">
+                        <span className="win-label" style={{ minWidth: '70px' }}>Contact Ph</span>
+                        <input
+                          type="text"
+                          className="win-input"
+                          value={profileForm.phone}
+                          onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                          style={{ flex: 1 }}
+                          placeholder="+91 98765 43210"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ color: '#c0392b' }}
+                      onClick={() => {
+                        const defaultProf: StationProfile = {
+                          stationName: 'NSAIPETROSOFT RETAIL OUTLET',
+                          oilCompany: 'BHARAT PETROLEUM CORPORATION LTD',
+                          address: 'HIGHWAY SERVICE STATION',
+                          city: 'SURAT',
+                          state: 'GUJARAT',
+                          pincode: '395003',
+                          gstin: '24AAACN1234F1Z5',
+                          phone: '+91 98765 43210',
+                        };
+                        setProfileForm(defaultProf);
+                        saveStationProfile(defaultProf);
+                      }}
+                    >
+                      🔄 Reset Factory Defaults
+                    </button>
+                    <button
+                      type="submit"
+                      className="win-btn-classic win-btn-primary"
+                      style={{ padding: '6px 20px', fontWeight: 700 }}
+                    >
+                      💾 Save Station Outlet Profile
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
             <div className="win-dialog-footer">
-              <span className="hotkeys-hint-red">ESC=Exit</span>
+              <span className="hotkeys-hint-red">ESC=Exit | Changes Persist Across All ERP Modules</span>
               <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
             </div>
           </div>
@@ -5043,16 +5490,29 @@ export default function App() {
                   <span className="win-label">Product</span>
                   <select
                     className="win-select"
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, fontWeight: 600 }}
                     value={cashMemoProduct}
                     onChange={(e) => {
-                      setCashMemoProduct(e.target.value);
-                      setCashMemoRate(e.target.value === 'MS' ? 94.25 : 90.21);
+                      const prod = e.target.value;
+                      setCashMemoProduct(prod);
+                      const matched = salesReadings.find(r => prod === 'MS' ? r.item === 'Petrol' : r.item === 'Diesel');
+                      setCashMemoRate(matched ? matched.rate : (prod === 'MS' ? 94.25 : 90.21));
                     }}
                   >
-                    <option value="MS">Motor Spirit (Petrol) - ₹94.25</option>
-                    <option value="HSD">High Speed Diesel - ₹90.21</option>
+                    <option value="MS">Motor Spirit (Petrol / MS)</option>
+                    <option value="HSD">High Speed Diesel (HSD)</option>
                   </select>
+                </div>
+                <div className="win-form-row">
+                  <span className="win-label">Rate / L (₹)</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="win-input"
+                    value={cashMemoRate}
+                    onChange={(e) => setCashMemoRate(parseFloat(e.target.value) || 0)}
+                    style={{ flex: 1, fontWeight: 700 }}
+                  />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Liters</span>
@@ -5071,12 +5531,13 @@ export default function App() {
               <div>
                 <div className="thermal-slip-box">
                   <div className="thermal-slip-header">
-                    <div style={{ fontWeight: 'bold', fontSize: '13px' }}>NSAIPETROSOFT RETAIL OUTLET</div>
-                    <div>SURAT, GUJARAT - 395003</div>
-                    <div>GSTIN: 24AAACN1234F1Z5</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{stationProfile.stationName}</div>
+                    <div style={{ fontSize: '10px', color: '#333' }}>{stationProfile.oilCompany} DEALER</div>
+                    <div>{stationProfile.address ? `${stationProfile.address}, ` : ''}{stationProfile.city}, {stationProfile.state} - {stationProfile.pincode}</div>
+                    <div>GSTIN: {stationProfile.gstin} {stationProfile.phone ? `| PH: ${stationProfile.phone}` : ''}</div>
                   </div>
-                  <div className="thermal-slip-row"><span>Bill No: {cashMemoBillNo}</span><span>{new Date().toLocaleDateString()}</span></div>
-                  <div className="thermal-slip-row"><span>Vehicle: {cashMemoVehicle}</span><span>{new Date().toLocaleTimeString()}</span></div>
+                  <div className="thermal-slip-row"><span>Bill No: {cashMemoBillNo}</span><span>{getTodayErpDate()}</span></div>
+                  <div className="thermal-slip-row"><span>Vehicle: {cashMemoVehicle || 'WALK-IN'}</span><span>{new Date().toLocaleTimeString()}</span></div>
                   <div style={{ borderBottom: '1px dashed #000', margin: '4px 0' }} />
                   <div className="thermal-slip-row">
                     <span>{cashMemoProduct === 'MS' ? 'PETROL (MS)' : 'DIESEL (HSD)'}</span>

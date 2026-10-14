@@ -893,7 +893,7 @@ async def list_settlements(db: AsyncSession = Depends(get_db)):
             "shift_so": s.shift.so_number if s.shift else "-",
             "shift_name": s.shift.shift_name if s.shift else "First",
             "date": s.shift.date.strftime("%d-%b-%Y") if s.shift and s.shift.date else "Today",
-            "employee": s.employee.name if s.employee else "SANMUKH H CHAUDHARI",
+            "employee": s.employee.name if s.employee else "Duty Cashier",
             "cash_total": s.cash_total,
             "credit_total": s.credit_total,
             "digital_total": s.digital_total,
@@ -1338,7 +1338,7 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
                 "(2) Query in the Invoice should be notified to us immediately. No claims or discrepancy shall be entertained after 5 days from the Date of INVOICE.",
                 "(3) Outstanding Bill Amount must be paid/cleared in 5 days from the bill date. After that 1.5% interest PM will be applicable.",
             ],
-            "signatory": "For NSAIPETROSOFT TECHNOLOGY\nAuthorized Signatory",
+            "signatory": "For Authorized Petrol Pump Dealership\nAuthorized Signatory",
         },
     }
 
