@@ -13,10 +13,12 @@ import {
   createPurchase,
   createTankDip,
   createTransfer,
+  fetchCreditSales,
   fetchCustomerStatement,
   fetchCustomers,
   fetchDashboard,
   fetchDealerCommission,
+  fetchDips,
   fetchDsrReport,
   fetchExpenses,
   fetchHealth,
@@ -26,6 +28,7 @@ import {
   fetchProfitSummary,
   fetchPurchases,
   fetchRates,
+  fetchShiftSettlements,
   fetchStampingReminders,
   fetchTdsSummary,
   fetchVatSummary,
@@ -395,7 +398,49 @@ export default function App() {
   useEffect(() => {
     loadData();
     fetchCustomers().then(setCustomers).catch(() => {});
-    fetchExpenses().then(setExpensesList).catch(() => {});
+    fetchExpenses().then((data) => { if (data && data.length > 0) setExpensesList(data); }).catch(() => {});
+    fetchCreditSales().then((sales) => {
+      if (sales && sales.length > 0) {
+        setCreditBillsList(
+          sales.map((s) => ({
+            date: s.date,
+            shift: 'First',
+            slip: s.slip_no,
+            bill: s.bill_no,
+            cust: s.customer_name,
+            vehicle: s.vehicle_no,
+            qty: s.qty,
+            total: s.amount,
+          }))
+        );
+      }
+    }).catch(() => {});
+    fetchPayments().then((payments) => {
+      if (payments && payments.length > 0) {
+        setPayReceiptsHistory(
+          payments.map((p) => ({
+            shift: p.shift || 'First',
+            date: p.date,
+            cust: p.customer,
+            mode: p.mode,
+            amt: p.amount,
+          }))
+        );
+      }
+    }).catch(() => {});
+    fetchPurchases().then((purchases) => {
+      if (purchases && purchases.length > 0) {
+        setPurPoHistory(
+          purchases.map((p) => ({
+            po: p.invoice_no,
+            date: p.date,
+            inv: p.invoice_no,
+            dealer: p.dealer_name,
+            amount: p.final_amount,
+          }))
+        );
+      }
+    }).catch(() => {});
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -403,19 +448,19 @@ export default function App() {
         setOpenDropdown(null);
       } else if (e.key === 'F1') {
         e.preventDefault();
-        setActiveDialog('sales');
+        openSalesDialog();
       } else if (e.key === 'F2') {
         e.preventDefault();
         openRateMaster();
       } else if (e.key === 'F3') {
         e.preventDefault();
-        setActiveDialog('credit');
+        openCreditDialog();
       } else if (e.key === 'F4') {
         e.preventDefault();
         openPaymentDialog();
       } else if (e.key === 'F5') {
         e.preventDefault();
-        setActiveDialog('expense');
+        openExpenseBook();
       } else if (e.key === 'F6') {
         e.preventDefault();
         setActiveDialog('transfer');
@@ -424,10 +469,10 @@ export default function App() {
         openPurchaseMaster();
       } else if (e.key === 'F8') {
         e.preventDefault();
-        setActiveDialog('dip');
+        openDipDialog();
       } else if (e.key === 'F9') {
         e.preventDefault();
-        setActiveDialog('denom');
+        openDenomDialog();
       } else if (e.key === 'F10') {
         e.preventDefault();
         openReports();
@@ -552,6 +597,89 @@ export default function App() {
     setOpenDropdown(null);
   };
 
+  const openExpenseBook = async () => {
+    setActiveDialog('expense');
+    setOpenDropdown(null);
+    try {
+      const data = await fetchExpenses();
+      if (data && data.length > 0) {
+        setExpensesList(data);
+      }
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  const openCreditDialog = async () => {
+    setActiveDialog('credit');
+    setOpenDropdown(null);
+    try {
+      const [sales, custs] = await Promise.all([
+        fetchCreditSales(),
+        fetchCustomers(),
+      ]);
+      if (sales && sales.length > 0) {
+        setCreditBillsList(
+          sales.map((s) => ({
+            date: s.date,
+            shift: 'First',
+            slip: s.slip_no,
+            bill: s.bill_no,
+            cust: s.customer_name,
+            vehicle: s.vehicle_no,
+            qty: s.qty,
+            total: s.amount,
+          }))
+        );
+      }
+      if (custs && custs.length > 0) {
+        setCustomers(custs);
+      }
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  const openSalesDialog = async () => {
+    setActiveDialog('sales');
+    setOpenDropdown(null);
+    loadData();
+  };
+
+  const openDipDialog = async (tankId?: number) => {
+    if (tankId) setDipTankId(tankId);
+    setActiveDialog('dip');
+    setOpenDropdown(null);
+    try {
+      await Promise.all([fetchDips(), loadData()]);
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  const openDenomDialog = async () => {
+    setActiveDialog('denom');
+    setOpenDropdown(null);
+    try {
+      await Promise.all([fetchShiftSettlements(), loadData()]);
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  const openCustomerMaster = async () => {
+    setActiveDialog('customerMaster');
+    setOpenDropdown(null);
+    try {
+      const custs = await fetchCustomers();
+      if (custs && custs.length > 0) {
+        setCustomers(custs);
+      }
+    } catch {
+      // Offline fallback
+    }
+  };
+
   const openReports = () => {
     setActiveDialog('reports');
     setOpenDropdown(null);
@@ -630,7 +758,23 @@ export default function App() {
         qty: creditQty,
         total: creditQty * creditRate - creditCashPaid,
       };
-      setCreditBillsList([newBill, ...creditBillsList]);
+      const freshSales = await fetchCreditSales();
+      if (freshSales && freshSales.length > 0) {
+        setCreditBillsList(
+          freshSales.map((s) => ({
+            date: s.date,
+            shift: 'First',
+            slip: s.slip_no,
+            bill: s.bill_no,
+            cust: s.customer_name,
+            vehicle: s.vehicle_no,
+            qty: s.qty,
+            total: s.amount,
+          }))
+        );
+      } else {
+        setCreditBillsList([newBill, ...creditBillsList]);
+      }
       setLastCreditSlip(newBill);
       showToast(`✔ Credit Bill #${res.bill_no} Saved! Balance: ₹${res.new_balance.toFixed(2)}`);
       if (printSlip) {
@@ -716,8 +860,13 @@ export default function App() {
         narration: expNarration,
         paid_to: expPaidTo,
       });
-      showToast(`✔ Expense of ₹${expAmount} recorded in Cash Book!`);
-      setExpensesList([newExp, ...expensesList]);
+      showToast(`✔ Expense of ₹${expAmount} recorded in PostgreSQL Cash Book!`);
+      const fresh = await fetchExpenses();
+      if (fresh && fresh.length > 0) {
+        setExpensesList(fresh);
+      } else {
+        setExpensesList([newExp, ...expensesList]);
+      }
       loadData();
     } catch {
       setExpensesList([newExp, ...expensesList]);
@@ -1037,7 +1186,7 @@ export default function App() {
           {openDropdown === 'masters' && (
             <div className="win-dropdown-menu">
               <button className="win-dropdown-item" onClick={openRateMaster}>🏷️ Fuel Rate Master</button>
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('customerMaster'); setOpenDropdown(null); }}>👥 Customer Fleet Master</button>
+              <button className="win-dropdown-item" onClick={openCustomerMaster}>👥 Customer Fleet Master</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('tankMaster'); setOpenDropdown(null); }}>⛽ Underground Tank Master</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('nozzleMaster'); setOpenDropdown(null); }}>🚰 Nozzle Totalizer Master</button>
               <div className="win-menu-divider" />
@@ -1056,13 +1205,13 @@ export default function App() {
           </button>
           {openDropdown === 'dataEntry' && (
             <div className="win-dropdown-menu">
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('sales'); setOpenDropdown(null); }}>⛽ Sales Entry (Nozzle Meters)</button>
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('credit'); setOpenDropdown(null); }}>📋 Credit Customer Sale</button>
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('payment'); setOpenDropdown(null); }}>💰 Payment Receipt</button>
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('expense'); setOpenDropdown(null); }}>📝 Expence Book</button>
+              <button className="win-dropdown-item" onClick={openSalesDialog}>⛽ Sales Entry (Nozzle Meters)</button>
+              <button className="win-dropdown-item" onClick={openCreditDialog}>📋 Credit Customer Sale</button>
+              <button className="win-dropdown-item" onClick={openPaymentDialog}>💰 Payment Receipt</button>
+              <button className="win-dropdown-item" onClick={openExpenseBook}>📝 Expence Book</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('transfer'); setOpenDropdown(null); }}>🔄 Transfer Entry (Cash/Bank)</button>
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('purchase'); setOpenDropdown(null); }}>🚛 Purchase Entry (Decanting)</button>
-              <button className="win-dropdown-item" onClick={() => { setActiveDialog('dip'); setOpenDropdown(null); }}>📐 DIP REGISTER</button>
+              <button className="win-dropdown-item" onClick={openPurchaseMaster}>🚛 Purchase Entry (Decanting)</button>
+              <button className="win-dropdown-item" onClick={() => openDipDialog()}>📐 DIP REGISTER</button>
               <div className="win-menu-divider" />
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('employeeSettlement'); setOpenDropdown(null); }}>👨‍💼 Employee Shift Settlement (FrmLis...)</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('denom'); setOpenDropdown(null); }}>💵 Cashier Denomination Settlement</button>
@@ -1137,25 +1286,25 @@ export default function App() {
           <div className="gel-btn gel-purple" onClick={openRateMaster} title="Fuel Rate Master (F2)">
             Rate Master
           </div>
-          <div className="gel-btn gel-blue" onClick={() => setActiveDialog('credit')} title="Credit Customer Sale (F3)">
+          <div className="gel-btn gel-blue" onClick={openCreditDialog} title="Credit Customer Sale (F3)">
             Credit<br />Customer
           </div>
           <div className="gel-btn gel-pink" onClick={openPaymentDialog} title="Customer Payment Receipt (F4)">
             Payment<br />Receipt
           </div>
-          <div className="gel-btn gel-green" onClick={() => setActiveDialog('expense')} title="Daily Expense Book (F5)">
+          <div className="gel-btn gel-green" onClick={openExpenseBook} title="Daily Expense Book (F5)">
             Expence<br />Book
           </div>
           <div className="gel-btn gel-yellow" onClick={() => setActiveDialog('transfer')} title="Contra Transfer Entry (F6)">
             Transfer<br />Entry
           </div>
-          <div className="gel-btn gel-orange" onClick={() => setActiveDialog('sales')} title="Sales Entry Nozzle Totalizers (F1)">
+          <div className="gel-btn gel-orange" onClick={openSalesDialog} title="Sales Entry Nozzle Totalizers (F1)">
             Sales Entry
           </div>
           <div className="gel-btn gel-magenta" onClick={openPurchaseMaster} title="Tanker Decanting Purchase (F7)">
             Purchase<br />Entry
           </div>
-          <div className="gel-btn gel-cyan" onClick={() => setActiveDialog('dip')} title="Tank DIP Register (F8)">
+          <div className="gel-btn gel-cyan" onClick={() => openDipDialog()} title="Tank DIP Register (F8)">
             DIP<br />REGISTER
           </div>
         </aside>
@@ -1164,7 +1313,7 @@ export default function App() {
         <main className="win-content">
           {/* Top 4 KPI Cards */}
           <div className="win-kpi-row">
-            <div className="win-kpi-card kpi-blue-bg" onClick={() => setActiveDialog('sales')} style={{ cursor: 'pointer' }} title="Click to open Sales Entry">
+            <div className="win-kpi-card kpi-blue-bg" onClick={openSalesDialog} style={{ cursor: 'pointer' }} title="Click to open Sales Entry">
               <div className="kpi-icon-box">
                 <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M3 17l6-6 4 4 8-8" />
@@ -1177,7 +1326,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="win-kpi-card kpi-red-bg" onClick={() => setActiveDialog('customerMaster')} style={{ cursor: 'pointer' }} title="Click to view Customer Fleet Master">
+            <div className="win-kpi-card kpi-red-bg" onClick={openCustomerMaster} style={{ cursor: 'pointer' }} title="Click to view Customer Fleet Master">
               <div className="kpi-icon-box">
                 <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="3" y="12" width="4" height="9" fill="currentColor" />
@@ -1230,7 +1379,7 @@ export default function App() {
                   <div className="breakdown-card card-cash" onClick={() => setActiveDialog('denom')} style={{ cursor: 'pointer' }} title="Cashier Currency Denomination">
                     <span>💵</span>
                   </div>
-                  <div className="breakdown-card card-credit" onClick={() => setActiveDialog('credit')} style={{ cursor: 'pointer' }} title="Credit Customer Sale">
+                  <div className="breakdown-card card-credit" onClick={openCreditDialog} style={{ cursor: 'pointer' }} title="Credit Customer Sale">
                     <span>📋</span>
                   </div>
                   <div className="breakdown-card card-digital" onClick={() => setActiveDialog('cardEntry')} style={{ cursor: 'pointer' }} title="Digital POS Card Swipe">
@@ -1243,7 +1392,7 @@ export default function App() {
                     <div className="item-label-name">Cash</div>
                     <div className="item-label-amt">₹ {breakdown.cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                   </div>
-                  <div className="breakdown-item-label" onClick={() => setActiveDialog('credit')} style={{ cursor: 'pointer' }}>
+                  <div className="breakdown-item-label" onClick={openCreditDialog} style={{ cursor: 'pointer' }}>
                     <div className="item-label-name">Credit</div>
                     <div className="item-label-amt">₹ {breakdown.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                   </div>
@@ -1273,7 +1422,7 @@ export default function App() {
                   </thead>
                   <tbody>
                     {tanks.map((t) => (
-                      <tr key={t.id} onClick={() => { setDipTankId(t.id); setActiveDialog('dip'); }} style={{ cursor: 'pointer' }} title="Click to log Dip reading">
+                      <tr key={t.id} onClick={() => openDipDialog(t.id)} style={{ cursor: 'pointer' }} title="Click to log Dip reading">
                         <td>{t.name}</td>
                         <td>
                           <div className="progress-container">
@@ -1518,8 +1667,8 @@ export default function App() {
                     />
                   </div>
                   <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                    <button className="win-btn-classic" onClick={() => setActiveDialog('credit')}>Credit Entry</button>
-                    <button className="win-btn-classic" onClick={() => setActiveDialog('expense')}>Expence Book</button>
+                    <button className="win-btn-classic" onClick={openCreditDialog}>Credit Entry</button>
+                    <button className="win-btn-classic" onClick={openExpenseBook}>Expence Book</button>
                     <button className="win-btn-classic" onClick={() => setActiveDialog('denom')}>Cash Settlement</button>
                   </div>
                 </div>
@@ -4301,7 +4450,7 @@ export default function App() {
                     <div><strong>Current Physical Stock:</strong> 13,150 Liters (66%)</div>
                     <div><strong>Tank Dimensions:</strong> 2.4m Dia × 4.6m Length Double-Walled</div>
                   </div>
-                  <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => { setDipTankId(1); setActiveDialog('dip'); }}>
+                  <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => openDipDialog(1)}>
                     📐 Record Dip Reading
                   </button>
                 </div>
@@ -4315,7 +4464,7 @@ export default function App() {
                     <div><strong>Current Physical Stock:</strong> 16,890 Liters (84%)</div>
                     <div><strong>Tank Dimensions:</strong> 2.4m Dia × 4.6m Length Double-Walled</div>
                   </div>
-                  <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => { setDipTankId(2); setActiveDialog('dip'); }}>
+                  <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => openDipDialog(2)}>
                     📐 Record Dip Reading
                   </button>
                 </div>
@@ -4397,7 +4546,7 @@ export default function App() {
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit</span>
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button className="win-btn-classic win-btn-primary" onClick={() => setActiveDialog('sales')}>Sales Entry</button>
+                <button className="win-btn-classic win-btn-primary" onClick={openSalesDialog}>Sales Entry</button>
                 <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
               </div>
             </div>
@@ -4779,7 +4928,7 @@ export default function App() {
 
               <div style={{ marginTop: '16px', background: '#ece9d8', border: '1px solid #7f9db9', padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div><strong>Total Tank Valuation:</strong> ₹ {kpis.total_stock_cost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                <button className="win-btn-classic win-btn-primary" onClick={() => setActiveDialog('dip')}>
+                <button className="win-btn-classic win-btn-primary" onClick={() => openDipDialog()}>
                   📐 Record Today's Dip
                 </button>
               </div>
