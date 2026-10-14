@@ -423,6 +423,7 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
 
     return {
         "message": "Credit sale recorded successfully",
+        "id": sale.id,
         "bill_no": bill_num,
         "slip_no": data.slip_no,
         "customer_name": customer.name,
@@ -432,6 +433,31 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
         "limit_warning": limit_warning,
         "whatsapp_preview": whatsapp_text,
     }
+
+
+@router.delete("/credit-sales/{sale_id}", summary="Delete Credit Sale & Revert Customer Outstanding")
+async def delete_credit_sale(sale_id: int, db: AsyncSession = Depends(get_db)):
+    sale = await db.get(CreditSale, sale_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail=f"Credit sale #{sale_id} not found in database")
+
+    customer = await db.get(Customer, sale.customer_id)
+    credit_amount_revert = sale.credit_amount if sale.credit_amount is not None else sale.amount
+
+    if customer and credit_amount_revert:
+        customer.current_outstanding = max(0.0, round(customer.current_outstanding - credit_amount_revert, 2))
+
+    bill_number = sale.bill_no or str(sale_id)
+    await db.delete(sale)
+    await db.commit()
+
+    return {
+        "message": f"Credit sale bill #{bill_number} deleted and customer balance adjusted",
+        "sale_id": sale_id,
+        "reverted_amount": credit_amount_revert,
+        "customer_new_outstanding": customer.current_outstanding if customer else 0.0,
+    }
+
 
 
 # -------------------------------------------------------------

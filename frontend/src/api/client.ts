@@ -226,6 +226,18 @@ export async function createCreditSale(data: {
   return res.json();
 }
 
+export async function deleteCreditSale(saleId: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Delete credit sale failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+
 // ---------------------------------------------------------------------------
 // Customers & Vehicles
 // ---------------------------------------------------------------------------

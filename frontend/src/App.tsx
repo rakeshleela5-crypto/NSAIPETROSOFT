@@ -13,6 +13,7 @@ import {
   createPurchase,
   createTankDip,
   createTransfer,
+  deleteCreditSale,
   fetchBackupStatus,
   fetchBackupsList,
   fetchCreditSales,
@@ -506,6 +507,7 @@ export default function App() {
       if (creditSalesData && creditSalesData.length > 0) {
         setCreditBillsList(
           creditSalesData.map((s: any) => ({
+            id: s.id,
             date: s.date,
             shift: s.shift || 'First',
             slip: s.slip_no,
@@ -748,6 +750,7 @@ export default function App() {
       if (sales && sales.length > 0) {
         setCreditBillsList(
           sales.map((s) => ({
+            id: s.id,
             date: s.date,
             shift: 'First',
             slip: s.slip_no,
@@ -1007,6 +1010,7 @@ export default function App() {
       });
       setWhatsappSlip(res.whatsapp_preview);
       const newBill = {
+        id: res.id,
         date: formatErpDate(creditDate),
         shift: 'First',
         slip: creditSlipNo,
@@ -1020,6 +1024,7 @@ export default function App() {
       if (freshSales && freshSales.length > 0) {
         setCreditBillsList(
           freshSales.map((s) => ({
+            id: s.id,
             date: s.date,
             shift: 'First',
             slip: s.slip_no,
@@ -2216,12 +2221,25 @@ export default function App() {
                           <td>
                             <button
                               className="win-btn-classic"
-                              style={{ height: '18px', padding: '0 4px', fontSize: '10px' }}
+                              style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                               onClick={() => {
-                                const copy = [...creditBillsList];
-                                copy.splice(i, 1);
-                                setCreditBillsList(copy);
-                                showToast(`✔ Bill #${b.bill} deleted`);
+                                requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${Number(b.total || 0).toFixed(2)})`, async () => {
+                                  try {
+                                    if (b.id) {
+                                      await deleteCreditSale(b.id);
+                                    } else {
+                                      const latest = await fetchCreditSales();
+                                      const found = latest.find((x) => x.bill_no === b.bill || x.slip_no === b.slip);
+                                      if (found && found.id) {
+                                        await deleteCreditSale(found.id);
+                                      }
+                                    }
+                                    showToast(`✔ Credit Bill #${b.bill} permanently deleted & balance reversed!`);
+                                    await loadAllErpData();
+                                  } catch (err: any) {
+                                    showToast(`⚠ Error deleting bill: ${err.message || 'Database error'}`);
+                                  }
+                                });
                               }}
                             >
                               Delete
