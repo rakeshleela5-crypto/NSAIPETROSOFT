@@ -14,6 +14,9 @@ import {
   createTankDip,
   createTransfer,
   deleteCreditSale,
+  deleteExpense,
+  deletePaymentReceipt,
+  deletePurchase,
   fetchBackupStatus,
   fetchBackupsList,
   fetchCreditSales,
@@ -199,6 +202,7 @@ export default function App() {
 
   // Past Credit Bills
   const [creditBillsList, setCreditBillsList] = useState<any[]>([]);
+  const [shiftSettlementsList, setShiftSettlementsList] = useState<any[]>([]);
 
   // Sales Entry Nozzle Totalizers (Frame 0110)
   const [salesDate, setSalesDate] = useState<string>(getTodayErpDate());
@@ -416,6 +420,7 @@ export default function App() {
         lfrData,
         plData,
         dsrData,
+        settlementsData,
       ] = await Promise.all([
         fetchDashboard().catch(() => null),
         fetchCurrentShift().catch(() => null),
@@ -434,6 +439,7 @@ export default function App() {
         fetchLfrSummary().catch(() => null),
         fetchProfitLossSummary().catch(() => null),
         fetchDsrReport().catch(() => []),
+        fetchShiftSettlements().catch(() => []),
       ]);
 
       if (dashData) {
@@ -522,6 +528,8 @@ export default function App() {
       if (paymentsData && paymentsData.length > 0) {
         setPayReceiptsHistory(
           paymentsData.map((p: any) => ({
+            id: p.id,
+            receipt_no: p.receipt_no,
             shift: p.shift || 'First',
             date: p.date,
             cust: p.customer,
@@ -536,6 +544,7 @@ export default function App() {
       if (purchasesData && purchasesData.length > 0) {
         setPurPoHistory(
           purchasesData.map((p: any) => ({
+            id: p.id,
             po: p.invoice_no,
             date: p.date,
             inv: p.invoice_no,
@@ -543,6 +552,9 @@ export default function App() {
             amount: p.final_amount,
           }))
         );
+      }
+      if (settlementsData && settlementsData.length > 0) {
+        setShiftSettlementsList(settlementsData);
       }
       if (dipsData && dipsData.length > 0) {
         setDipsList(dipsData);
@@ -686,6 +698,8 @@ export default function App() {
       if (data) {
         setPayReceiptsHistory(
           data.map((p) => ({
+            id: p.id,
+            receipt_no: p.receipt_no,
             shift: p.shift || 'First',
             date: p.date,
             cust: p.customer,
@@ -711,6 +725,7 @@ export default function App() {
       if (data && data.length > 0) {
         setPurPoHistory(
           data.map((p) => ({
+            id: p.id,
             po: p.invoice_no,
             date: p.date,
             inv: p.invoice_no,
@@ -1125,8 +1140,16 @@ export default function App() {
   };
 
   const handleDeleteExpense = (id: number) => {
-    setExpensesList(expensesList.filter((x) => x.id !== id));
-    showToast('✔ Expense voucher deleted successfully');
+    const expItem = expensesList.find((x) => x.id === id);
+    requestManagerAuthorization(`Delete Expense Voucher #${id} (${expItem?.category || 'General'} - ₹${Number(expItem?.amount || 0).toFixed(2)})`, async () => {
+      try {
+        await deleteExpense(id);
+        showToast(`✔ Expense voucher #${id} permanently deleted from PostgreSQL & cash book updated!`);
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(`⚠ Error deleting expense: ${err.message || 'Database error'}`);
+      }
+    });
   };
 
   const handleSaveTransfer = async (e: React.FormEvent) => {
@@ -1916,20 +1939,31 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td>{getTodayErpDate(-1)}</td>
-                        <td>16</td>
-                        <td>First</td>
-                        <td>STATION ADMIN</td>
-                        <td><button className="win-btn-classic" onClick={() => showToast('✔ Shift Record #16 archived')}>Archive</button></td>
-                      </tr>
-                      <tr>
-                        <td>{getTodayErpDate(-2)}</td>
-                        <td>15</td>
-                        <td>First</td>
-                        <td>STATION ADMIN</td>
-                        <td><button className="win-btn-classic" onClick={() => showToast('✔ Shift Record #15 archived')}>Archive</button></td>
-                      </tr>
+                      {shiftSettlementsList && shiftSettlementsList.length > 0 ? (
+                        shiftSettlementsList.slice(0, 10).map((s, idx) => (
+                          <tr key={idx}>
+                            <td>{s.settlement_date || s.date || getTodayErpDate()}</td>
+                            <td style={{ fontWeight: 700 }}>{s.id || (idx + 1)}</td>
+                            <td>{s.shift_name || 'First'}</td>
+                            <td>{s.cashier_name || 'STATION ATTENDANT'}</td>
+                            <td>
+                              <button
+                                className="win-btn-classic"
+                                style={{ height: '18px', padding: '0 4px', fontSize: '10px' }}
+                                onClick={() => showToast(`✔ Shift #${s.id || (idx + 1)} (${s.shift_name || 'First'}) recorded in PostgreSQL`)}
+                              >
+                                Archived
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: '8px' }}>
+                            No previous shift settlements archived in database.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2475,12 +2509,25 @@ export default function App() {
                         <td>
                           <button
                             className="win-btn-classic"
-                            style={{ height: '18px', padding: '0 4px', fontSize: '10px' }}
+                            style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                             onClick={() => {
-                              const copy = [...payReceiptsHistory];
-                              copy.splice(i, 1);
-                              setPayReceiptsHistory(copy);
-                              showToast('✔ Receipt deleted');
+                              requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${h.cust} - ₹${Number(h.amt || 0).toFixed(2)})`, async () => {
+                                try {
+                                  if (h.id) {
+                                    await deletePaymentReceipt(h.id);
+                                  } else {
+                                    const latest = await fetchPayments();
+                                    const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === h.cust && x.amount === h.amt));
+                                    if (found && found.id) {
+                                      await deletePaymentReceipt(found.id);
+                                    }
+                                  }
+                                  showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
+                                  await loadAllErpData();
+                                } catch (err: any) {
+                                  showToast(`⚠ Error deleting payment receipt: ${err.message || 'Database error'}`);
+                                }
+                              });
                             }}
                           >
                             Delete
@@ -3086,14 +3133,42 @@ export default function App() {
                             <td>{p.dealer}</td>
                             <td className="text-right" style={{ fontWeight: 700 }}>₹ {p.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             <td>
-                              <button
-                                type="button"
-                                className="win-btn-classic"
-                                style={{ height: '18px', padding: '0 4px', fontSize: '10px' }}
-                                onClick={() => showToast(`✔ Viewing Decanting PO ${p.po}`)}
-                              >
-                                View
-                              </button>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  type="button"
+                                  className="win-btn-classic"
+                                  style={{ height: '18px', padding: '0 4px', fontSize: '10px' }}
+                                  onClick={() => showToast(`✔ Decanting PO: ${p.po} | Inv: ${p.inv} | Dealer: ${p.dealer} | ₹${p.amount}`)}
+                                >
+                                  View
+                                </button>
+                                <button
+                                  type="button"
+                                  className="win-btn-classic"
+                                  style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
+                                  onClick={() => {
+                                    requestManagerAuthorization(`Delete Purchase Inward #${p.inv || p.po} (${p.dealer} - ₹${Number(p.amount || 0).toFixed(2)})`, async () => {
+                                      try {
+                                        if (p.id) {
+                                          await deletePurchase(p.id);
+                                        } else {
+                                          const latest = await fetchPurchases();
+                                          const found = latest.find((x) => x.invoice_no === p.inv);
+                                          if (found && found.id) {
+                                            await deletePurchase(found.id);
+                                          }
+                                        }
+                                        showToast(`✔ Purchase decanting #${p.inv || p.po} deleted & tank stock reversed!`);
+                                        await loadAllErpData();
+                                      } catch (err: any) {
+                                        showToast(`⚠ Error deleting purchase: ${err.message || 'Database error'}`);
+                                      }
+                                    });
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}

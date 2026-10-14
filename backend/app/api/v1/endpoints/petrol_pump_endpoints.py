@@ -536,6 +536,38 @@ async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = 
     }
 
 
+@router.delete("/payments/{payment_id}", summary="Delete Payment Receipt & Restore Customer Outstanding")
+async def delete_payment_receipt(payment_id: int, db: AsyncSession = Depends(get_db)):
+    receipt = await db.get(PaymentReceipt, payment_id)
+    if not receipt:
+        raise HTTPException(status_code=404, detail=f"Payment receipt #{payment_id} not found")
+
+    # 1. Restore customer outstanding balance
+    customer = await db.get(Customer, receipt.customer_id)
+    if customer:
+        customer.current_outstanding = round(customer.current_outstanding + receipt.amount, 2)
+
+    # 2. Reverse receiving bank or cash account balance
+    bank_query = select(BankAccount).where(
+        BankAccount.account_name == (receipt.bank_name if receipt.bank_name else "CASH ON HAND")
+    )
+    bank_res = await db.execute(bank_query)
+    bank_acc = bank_res.scalar_one_or_none()
+    if bank_acc:
+        bank_acc.balance = max(0.0, round(bank_acc.balance - receipt.amount, 2))
+
+    rcpt_no = receipt.receipt_no or str(payment_id)
+    await db.delete(receipt)
+    await db.commit()
+
+    return {
+        "message": f"Payment receipt #{rcpt_no} permanently deleted and customer balance restored",
+        "payment_id": payment_id,
+        "restored_amount": receipt.amount,
+        "customer_new_outstanding": customer.current_outstanding if customer else 0.0,
+    }
+
+
 # -------------------------------------------------------------
 # 4c. Bank Account Master API & POS Settlement
 # -------------------------------------------------------------
@@ -1036,6 +1068,29 @@ async def list_purchases(db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.delete("/purchases/{purchase_id}", summary="Delete Purchase Decanting & Rollback Tank Stock")
+async def delete_purchase(purchase_id: int, db: AsyncSession = Depends(get_db)):
+    purchase = await db.get(PurchaseEntry, purchase_id)
+    if not purchase:
+        raise HTTPException(status_code=404, detail=f"Purchase entry #{purchase_id} not found")
+
+    # Rollback tank stock if tank was updated
+    if purchase.tank_id:
+        tank = await db.get(Tank, purchase.tank_id)
+        if tank and purchase.qty_liters:
+            tank.current_stock = max(0.0, round(tank.current_stock - purchase.qty_liters, 2))
+
+    inv_no = purchase.invoice_no or str(purchase_id)
+    await db.delete(purchase)
+    await db.commit()
+
+    return {
+        "message": f"Purchase decanting invoice #{inv_no} deleted and tank stock adjusted",
+        "purchase_id": purchase_id,
+        "reverted_liters": purchase.qty_liters,
+    }
+
+
 # -------------------------------------------------------------
 # 9. Reports: DSR, VAT Summary, Dealer Margin
 # -------------------------------------------------------------
@@ -1268,6 +1323,28 @@ async def create_expense(data: ExpenseCreate, db: AsyncSession = Depends(get_db)
 
     await db.commit()
     return {"status": "success", "message": f"Expense of ₹{data.amount} recorded"}
+
+
+@router.delete("/expenses/{expense_id}", summary="Delete Expense & Restore Cash On Hand")
+async def delete_expense(expense_id: int, db: AsyncSession = Depends(get_db)):
+    exp = await db.get(Expense, expense_id)
+    if not exp:
+        raise HTTPException(status_code=404, detail=f"Expense #{expense_id} not found")
+
+    # Restore Cash On Hand balance
+    cash_acc_res = await db.execute(select(BankAccount).where(BankAccount.account_name == "CASH ON HAND"))
+    cash_acc = cash_acc_res.scalar_one_or_none()
+    if cash_acc:
+        cash_acc.balance = round(cash_acc.balance + exp.amount, 2)
+
+    await db.delete(exp)
+    await db.commit()
+
+    return {
+        "message": f"Expense #{expense_id} ({exp.category} - ₹{exp.amount}) deleted and cash restored",
+        "expense_id": expense_id,
+        "restored_amount": exp.amount,
+    }
 
 
 # -------------------------------------------------------------

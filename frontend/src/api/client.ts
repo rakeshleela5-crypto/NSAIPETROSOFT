@@ -468,6 +468,17 @@ export async function createPurchase(data: {
   return res.json();
 }
 
+export async function deletePurchase(purchaseId: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/purchases/${purchaseId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Delete purchase failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Reports: DSR, VAT, Profit
 // ---------------------------------------------------------------------------
@@ -538,6 +549,17 @@ export async function createExpense(data: {
   return res.json();
 }
 
+export async function deleteExpense(expenseId: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/expenses/${expenseId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Delete expense failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function createTransfer(data: {
   from_account_id: number;
   to_account_id: number;
@@ -585,6 +607,17 @@ export async function createPaymentReceipt(data: {
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(`Create payment receipt failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deletePaymentReceipt(paymentId: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/payments/${paymentId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Delete payment receipt failed: ${res.status}`);
+  }
   return res.json();
 }
 
