@@ -1083,29 +1083,45 @@ textarea:focus {
 }
 
 /* -------------------------------------------------------------
- * Print Formatting
+ * Print Formatting (Thermal 80mm & A4 Reports)
  * ------------------------------------------------------------- */
 @media print {
   body * {
-    visibility: hidden;
+    visibility: hidden !important;
   }
   .statement-sheet,
   .statement-sheet *,
   .thermal-slip-box,
   .thermal-slip-box *,
   .crystal-report-sheet,
-  .crystal-report-sheet * {
-    visibility: visible;
+  .crystal-report-sheet *,
+  .day-book-print-sheet,
+  .day-book-print-sheet * {
+    visibility: visible !important;
   }
   .statement-sheet,
-  .thermal-slip-box,
-  .crystal-report-sheet {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 0;
+  .crystal-report-sheet,
+  .day-book-print-sheet {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 8mm !important;
+  }
+  .thermal-slip-box {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+    font-family: 'Courier New', Courier, monospace !important;
   }
 }
 

@@ -98,6 +98,7 @@ export interface StationProfile {
   gstin: string;
   phone: string;
   panNo?: string;
+  managerPin?: string;
 }
 
 export const getFinancialYear = (): string => {
@@ -132,6 +133,7 @@ export default function App() {
       pincode: '395003',
       gstin: '24AAACN1234F1Z5',
       phone: '+91 98765 43210',
+      managerPin: '1234',
     };
   });
 
@@ -340,6 +342,25 @@ export default function App() {
   // Credit Sale Print Confirmation Prompt (Frame 0050)
   const [showPrintConfirm, setShowPrintConfirm] = useState<boolean>(false);
   const [lastCreditSlip, setLastCreditSlip] = useState<any>(null);
+
+  // Manager Authorization PIN Modal State
+  const [managerPinModal, setManagerPinModal] = useState<{
+    isOpen: boolean;
+    actionTitle: string;
+    onAuthorized: () => void;
+  } | null>(null);
+  const [managerPinInput, setManagerPinInput] = useState<string>('');
+  const [managerPinError, setManagerPinError] = useState<string>('');
+
+  const requestManagerAuthorization = (actionTitle: string, onAuthorized: () => void) => {
+    setManagerPinInput('');
+    setManagerPinError('');
+    setManagerPinModal({
+      isOpen: true,
+      actionTitle,
+      onAuthorized,
+    });
+  };
 
   // Employee Shift Settlement State (Frame 0210 & 0220)
   const [empSettlementDate, setEmpSettlementDate] = useState<string>(getTodayErpDate());
@@ -952,14 +973,17 @@ export default function App() {
   // Handlers
   const handleSaveRate = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await updateRate(rateProduct, rateValue);
-      showToast(`Rate updated successfully to ₹${rateValue.toFixed(2)}!`);
-      openRateMaster();
-      await loadAllErpData();
-    } catch (err: any) {
-      showToast(err.message || 'Error updating rate');
-    }
+    const prodName = ratesList.find((p) => p.id === rateProduct)?.name || 'Fuel';
+    requestManagerAuthorization(`Change ${prodName} Retail Rate to ₹${rateValue.toFixed(2)}`, async () => {
+      try {
+        await updateRate(rateProduct, rateValue);
+        showToast(`✔ ${prodName} rate updated successfully to ₹${rateValue.toFixed(2)}!`);
+        openRateMaster();
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(err.message || 'Error updating rate');
+      }
+    });
   };
 
   const handleSaveCreditSale = async (e: React.FormEvent) => {
@@ -1060,21 +1084,23 @@ export default function App() {
   };
 
   const handleSaveShiftMeters = async () => {
-    try {
-      await saveShiftMeters({
-        shift_name: shiftName,
-        readings: salesReadings.map((r, i) => ({
-          nozzle_id: r.nozzle_id || (i + 1),
-          opening_meter: r.open,
-          closing_meter: r.close,
-          testing_qty: r.test,
-        })),
-      });
-      showToast('✔ Shift meter readings saved and totalizers updated!');
-      await loadAllErpData();
-    } catch (err: any) {
-      showToast(err.message || 'Error saving shift meters');
-    }
+    requestManagerAuthorization(`Update Dispenser Meter Totalizers (${shiftName} Shift)`, async () => {
+      try {
+        await saveShiftMeters({
+          shift_name: shiftName,
+          readings: salesReadings.map((r, i) => ({
+            nozzle_id: r.nozzle_id || (i + 1),
+            opening_meter: r.open,
+            closing_meter: r.close,
+            testing_qty: r.test,
+          })),
+        });
+        showToast('✔ Shift meter readings saved and totalizers updated!');
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(err.message || 'Error saving shift meters');
+      }
+    });
   };
 
   const handleSaveExpense = async (e: React.FormEvent) => {
@@ -1294,9 +1320,17 @@ export default function App() {
 
   // Station Control Actions
   const handleCloseShift = () => {
-    setShiftStatus('CLOSED');
-    setDispenserLocked(true);
-    showToast(`✔ Shift ${shiftName} CLOSED. Dispenser meters locked!`);
+    requestManagerAuthorization(`Close Shift ${shiftName} & Lock Dispensers`, async () => {
+      setShiftStatus('CLOSED');
+      setDispenserLocked(true);
+      showToast(`✔ Shift ${shiftName} CLOSED. Dispenser meters locked!`);
+      try {
+        const res = await triggerCreateBackup();
+        showToast(`☁ Shift archive snapshot created: ${res.filename}`);
+      } catch (bErr) {
+        console.warn('Shift auto-backup note:', bErr);
+      }
+    });
   };
 
   const handleOpenNextShift = () => {
@@ -2105,6 +2139,53 @@ export default function App() {
                     <button type="submit" className="win-btn-classic win-btn-primary" style={{ flex: 1 }}>Save (F2)</button>
                     <button type="button" className="win-btn-classic" onClick={() => { setCreditSlipNo((parseInt(creditSlipNo) + 1).toString()); setCreditQty(100.0); showToast('New Credit Slip initiated'); }}>New Entry</button>
                     <button type="button" className="win-btn-classic" onClick={() => window.print()}>🖨️ Print Slip</button>
+                  </div>
+
+                  {/* Dedicated 80mm Thermal Receipt for Credit Fuel Dispense */}
+                  <div className="thermal-slip-box" style={{ display: 'none' }}>
+                    <div className="thermal-slip-header">
+                      <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{stationProfile.stationName}</div>
+                      <div style={{ fontSize: '10px', color: '#333' }}>{stationProfile.oilCompany} DEALER</div>
+                      <div>{stationProfile.address ? `${stationProfile.address}, ` : ''}{stationProfile.city}, {stationProfile.state}</div>
+                      <div>GSTIN: {stationProfile.gstin} {stationProfile.phone ? `| PH: ${stationProfile.phone}` : ''}</div>
+                      <div style={{ fontWeight: 'bold', marginTop: '4px', borderTop: '1px dashed #000', paddingTop: '2px' }}>CREDIT FUEL SALE SLIP</div>
+                    </div>
+                    <div className="thermal-slip-row"><span>Bill No: {creditBillNo || 'CB-01'}</span><span>Slip No: {creditSlipNo || '-'}</span></div>
+                    <div className="thermal-slip-row"><span>Date: {creditDate}</span><span>Shift: {creditShift}</span></div>
+                    <div className="thermal-slip-row"><span>Customer: {customers.find((c) => c.id === creditCustId)?.name || 'CREDIT CUSTOMER'}</span></div>
+                    <div className="thermal-slip-row"><span>Vehicle: {creditVehicle || 'N/A'}</span></div>
+                    <div style={{ borderBottom: '1px dashed #000', margin: '4px 0' }} />
+                    <div className="thermal-slip-row">
+                      <span>{ratesList.find((r) => r.id === creditProductId)?.name || 'High Speed Diesel (HSD)'}</span>
+                      <span>{creditQty.toFixed(2)} L</span>
+                    </div>
+                    <div className="thermal-slip-row">
+                      <span>Rate / L:</span>
+                      <span>₹ {creditRate.toFixed(2)}</span>
+                    </div>
+                    <div className="thermal-slip-row">
+                      <span>Gross Amount:</span>
+                      <span>₹ {(creditQty * creditRate).toFixed(2)}</span>
+                    </div>
+                    {creditCashPaid > 0 && (
+                      <div className="thermal-slip-row">
+                        <span>Cash Paid:</span>
+                        <span>- ₹ {creditCashPaid.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div style={{ borderBottom: '1px dashed #000', margin: '4px 0' }} />
+                    <div className="thermal-slip-row" style={{ fontWeight: 'bold', fontSize: '13px' }}>
+                      <span>NET CREDIT DEBIT:</span>
+                      <span>₹ {(creditQty * creditRate - creditCashPaid).toFixed(2)}</span>
+                    </div>
+                    <div className="thermal-slip-row" style={{ fontSize: '10px', color: '#333' }}>
+                      <span>Prior Customer Balance:</span>
+                      <span>₹ {(customers.find((c) => c.id === creditCustId)?.current_outstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="thermal-slip-footer">
+                      <div style={{ marginTop: '20px', borderTop: '1px solid #000', paddingTop: '4px', fontSize: '10px' }}>Driver / Receiver Signature</div>
+                      <div style={{ fontSize: '9px', marginTop: '4px' }}>POWERED BY NSAIPETROSOFT SYSTEM</div>
+                    </div>
                   </div>
                 </form>
               </div>
@@ -4849,6 +4930,12 @@ export default function App() {
                             });
                             showToast(`✔ Shift Settlement Saved to PostgreSQL! Gap: ₹${gap.toFixed(2)}`);
                             await loadAllErpData();
+                            // Automatic Cloud Backup Snapshot on Shift Settlement
+                            try {
+                              triggerCreateBackup().then((res) => {
+                                showToast(`☁ Shift settlement snapshot archived to cloud: ${res.filename}`);
+                              }).catch(() => {});
+                            } catch {}
                           } catch (err: any) {
                             showToast(`⚠ Error saving shift settlement: ${err.message || 'Database error'}`);
                           }
@@ -5732,7 +5819,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', marginTop: '6px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px', marginTop: '6px' }}>
                       <div className="win-form-row">
                         <span className="win-label" style={{ minWidth: '60px' }}>GSTIN No</span>
                         <input
@@ -5755,6 +5842,19 @@ export default function App() {
                           placeholder="+91 98765 43210"
                         />
                       </div>
+                      <div className="win-form-row">
+                        <span className="win-label" style={{ minWidth: '85px', color: '#b71c1c', fontWeight: 'bold' }}>Manager PIN</span>
+                        <input
+                          type="password"
+                          maxLength={8}
+                          className="win-input"
+                          value={profileForm.managerPin || ''}
+                          onChange={(e) => setProfileForm({ ...profileForm, managerPin: e.target.value })}
+                          style={{ flex: 1, letterSpacing: '2px', fontWeight: 'bold' }}
+                          placeholder="Default: 1234"
+                          title="4-digit PIN for Rate & Meter Authorization"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -5773,6 +5873,7 @@ export default function App() {
                           pincode: '395003',
                           gstin: '24AAACN1234F1Z5',
                           phone: '+91 98765 43210',
+                          managerPin: '1234',
                         };
                         setProfileForm(defaultProf);
                         saveStationProfile(defaultProf);
@@ -5993,7 +6094,16 @@ export default function App() {
             </div>
             <div className="win-dialog-footer">
               <span className="hotkeys-hint-red">ESC=Exit</span>
-              <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="win-btn-classic win-btn-primary"
+                  onClick={() => window.print()}
+                >
+                  🖨️ Print Thermal Cash Slip
+                </button>
+                <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -6238,6 +6348,100 @@ export default function App() {
               <span className="hotkeys-hint-red">ESC=Exit | 100% Zero Bandwidth Fees</span>
               <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manager Authorization PIN Security Dialog */}
+      {managerPinModal && managerPinModal.isOpen && (
+        <div className="win-modal-overlay" style={{ zIndex: 12000 }}>
+          <div className="win-form-dialog" style={{ width: '420px', border: '2px solid #b71c1c', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }}>
+            <div className="win-dialog-titlebar" style={{ background: 'linear-gradient(180deg, #d32f2f 0%, #b71c1c 100%)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>🔐</span>
+                <span>Security: Manager Authorization Required</span>
+              </div>
+              <button
+                className="win-titlebar-btn"
+                onClick={() => setManagerPinModal(null)}
+                title="Cancel (ESC)"
+              >
+                ✕
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const targetPin = (stationProfile.managerPin || '1234').trim();
+                if (managerPinInput.trim() === targetPin) {
+                  const cb = managerPinModal.onAuthorized;
+                  setManagerPinModal(null);
+                  setManagerPinInput('');
+                  setManagerPinError('');
+                  cb();
+                } else {
+                  setManagerPinError('Access Denied: Incorrect Manager PIN.');
+                }
+              }}
+              className="win-dialog-body"
+              style={{ padding: '16px' }}
+            >
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '14px' }}>
+                <div style={{ fontSize: '32px' }}>🛡️</div>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#b71c1c', marginBottom: '4px' }}>
+                    Restricted Station Operation
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#222' }}>
+                    Action: <strong>{managerPinModal.actionTitle}</strong>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
+                    Please enter your Manager Security PIN to confirm and commit this operation:
+                  </div>
+                </div>
+              </div>
+
+              <div className="win-form-row" style={{ justifyContent: 'center', marginBottom: '10px' }}>
+                <span className="win-label" style={{ fontWeight: 700 }}>Manager PIN:</span>
+                <input
+                  type="password"
+                  autoFocus
+                  maxLength={8}
+                  className="win-input"
+                  style={{ width: '130px', textAlign: 'center', fontSize: '16px', letterSpacing: '4px', fontWeight: 'bold' }}
+                  value={managerPinInput}
+                  onChange={(e) => {
+                    setManagerPinInput(e.target.value);
+                    setManagerPinError('');
+                  }}
+                  placeholder="••••"
+                />
+              </div>
+
+              {managerPinError && (
+                <div style={{ color: '#d32f2f', fontSize: '11px', textAlign: 'center', fontWeight: 'bold', marginBottom: '10px' }}>
+                  ⚠ {managerPinError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #d4d0c8', paddingTop: '10px' }}>
+                <button
+                  type="submit"
+                  className="win-btn-classic win-btn-primary"
+                  style={{ minWidth: '95px', fontWeight: 700 }}
+                >
+                  Authorize (F2)
+                </button>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ minWidth: '70px' }}
+                  onClick={() => setManagerPinModal(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
