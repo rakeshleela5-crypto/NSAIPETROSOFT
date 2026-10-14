@@ -1300,7 +1300,7 @@ export default function App() {
               <button className="win-dropdown-item" onClick={openSalesDialog}>⛽ Sales Entry (Nozzle Meters)</button>
               <button className="win-dropdown-item" onClick={openCreditDialog}>📋 Credit Customer Sale</button>
               <button className="win-dropdown-item" onClick={openPaymentDialog}>💰 Payment Receipt</button>
-              <button className="win-dropdown-item" onClick={openExpenseBook}>📝 Expence Book</button>
+              <button className="win-dropdown-item" onClick={openExpenseBook}>📝 Expense Book</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('transfer'); setOpenDropdown(null); }}>🔄 Transfer Entry (Cash/Bank)</button>
               <button className="win-dropdown-item" onClick={openPurchaseMaster}>🚛 Purchase Entry (Decanting)</button>
               <button className="win-dropdown-item" onClick={() => openDipDialog()}>📐 DIP REGISTER</button>
@@ -1387,7 +1387,7 @@ export default function App() {
             Payment<br />Receipt
           </div>
           <div className="gel-btn gel-green" onClick={openExpenseBook} title="Daily Expense Book (F5)">
-            Expence<br />Book
+            Expense<br />Book
           </div>
           <div className="gel-btn gel-yellow" onClick={() => setActiveDialog('transfer')} title="Contra Transfer Entry (F6)">
             Transfer<br />Entry
