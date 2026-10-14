@@ -16,6 +16,7 @@ import {
   fetchBackupStatus,
   fetchBackupsList,
   fetchCreditSales,
+  fetchCurrentShift,
   fetchCustomerStatement,
   fetchCustomers,
   fetchDashboard,
@@ -153,22 +154,16 @@ export default function App() {
   ]);
 
   // Payment Receipt State (Frame 0085)
-  const [payReceiptNo, setPayReceiptNo] = useState<string>('00006');
-  const [payCustName, setPayCustName] = useState<string>('LIVAVATI TRANSPORTY');
+  const [payReceiptNo, setPayReceiptNo] = useState<string>('00001');
+  const [payCustName, setPayCustName] = useState<string>('');
   const [payDate, setPayDate] = useState<string>(getTodayErpDate());
-  const [payTotalPurch] = useState<number>(178867.2);
-  const [payTotalPaid, setPayTotalPaid] = useState<number>(15000.0);
-  const [payTotalUnpaid, setPayTotalUnpaid] = useState<number>(163867.2);
+  const [payTotalPurch] = useState<number>(0.0);
+  const [payTotalPaid, setPayTotalPaid] = useState<number>(0.0);
+  const [payTotalUnpaid, setPayTotalUnpaid] = useState<number>(0.0);
   const [payMode, setPayMode] = useState<string>('UPI PAYMENT');
   const [payBank, setPayBank] = useState<string>('PAYTM');
-  const [payAmount, setPayAmount] = useState<number>(50000.0);
-  const [payReceiptsHistory, setPayReceiptsHistory] = useState<any[]>([
-    { shift: 'First', date: getTodayErpDate(), cust: 'LIVAVATI TRANSPORTY', mode: 'CASH', amt: 15000.0 },
-    { shift: 'First', date: getTodayErpDate(), cust: 'PORT TRANSPORT', mode: 'CASH', amt: 6000.0 },
-    { shift: 'First', date: getTodayErpDate(), cust: 'PORT TRANSPORT', mode: 'CASH', amt: 15000.0 },
-    { shift: 'First', date: getTodayErpDate(-1), cust: 'ABC TRANSPORT', mode: 'CHEQUE', amt: 50000.0 },
-    { shift: 'First', date: getTodayErpDate(-1), cust: 'ABC TRANSPORT', mode: 'CASH', amt: 15000.0 },
-  ]);
+  const [payAmount, setPayAmount] = useState<number>(0.0);
+  const [payReceiptsHistory, setPayReceiptsHistory] = useState<any[]>([]);
 
   // Expense Book State
   const [expensesList, setExpensesList] = useState<any[]>([]);
@@ -202,12 +197,12 @@ export default function App() {
   // Cash Denomination Settlement State (Frame 200)
   const [denoms, setDenoms] = useState<DenominationMap>({
     n2000: 0,
-    n500: 321,
-    n200: 112,
-    n100: 214,
+    n500: 0,
+    n200: 0,
+    n100: 0,
     n50: 0,
     n20: 0,
-    n10: 120,
+    n10: 0,
     n5: 0,
     coins: 0,
   });
@@ -409,7 +404,7 @@ export default function App() {
         ],
         active_shift: {
           so_number: '00017',
-          date: '2026-04-17',
+          date: new Date().toISOString().split('T')[0],
           shift_name: 'First',
           status: 'Closed',
         },
@@ -580,7 +575,7 @@ export default function App() {
   const openPaymentDialog = async () => {
     try {
       const data = await fetchPayments();
-      if (data && data.length > 0) {
+      if (data) {
         setPayReceiptsHistory(
           data.map((p) => ({
             shift: p.shift || 'First',
@@ -590,6 +585,10 @@ export default function App() {
             amt: p.amount,
           }))
         );
+      }
+      if (customers.length > 0 && !payCustName) {
+        setPayCustName(customers[0].name);
+        setPayTotalUnpaid(customers[0].current_outstanding || 0.0);
       }
     } catch {
       // Offline fallback state kept
@@ -665,6 +664,40 @@ export default function App() {
   const openSalesDialog = async () => {
     setActiveDialog('sales');
     setOpenDropdown(null);
+    try {
+      const shiftData = await fetchCurrentShift();
+      if (shiftData && shiftData.nozzles && shiftData.nozzles.length > 0) {
+        if (shiftData.so_number) {
+          setShiftNumber(shiftData.so_number.replace(/^SO-/, ''));
+        }
+        if (shiftData.shift_name) {
+          setShiftName(shiftData.shift_name);
+        }
+        setSalesReadings(
+          shiftData.nozzles.map((n) => {
+            const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
+            const amount = Math.round(qty * n.rate * 100) / 100;
+            const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
+            return {
+              emp: shiftData.employees?.[0]?.code || 'AA',
+              nozzle: n.nozzle_name,
+              item: n.product_name,
+              open: n.opening_meter,
+              close: n.closing_meter,
+              test: n.testing,
+              qty: qty,
+              rate: n.rate,
+              amount: amount,
+              vat: vat,
+              lube: 0,
+              nozzle_id: n.nozzle_id,
+            };
+          })
+        );
+      }
+    } catch {
+      // Offline fallback
+    }
     loadData();
   };
 
@@ -887,9 +920,9 @@ export default function App() {
   const handleSaveShiftMeters = async () => {
     try {
       await saveShiftMeters({
-        shift_name: 'First',
+        shift_name: shiftName,
         readings: salesReadings.map((r, i) => ({
-          nozzle_id: i + 1,
+          nozzle_id: r.nozzle_id || (i + 1),
           opening_meter: r.open,
           closing_meter: r.close,
           testing_qty: r.test,
@@ -1331,7 +1364,7 @@ export default function App() {
 
         <div className="win-ribbon-right">
           <span>License : 228 Day(s) Left</span>
-          <span>Finacial Year : 2026-27</span>
+          <span>Financial Year : 2026-27</span>
           <span style={{ fontSize: '11px', color: backendOnline ? '#2e7d32' : '#e67e22' }} title={`API: ${API_BASE_URL}`}>
             ● {backendOnline ? 'Cloud Backend Connected' : 'Local Ready'}
           </span>
@@ -1593,7 +1626,7 @@ export default function App() {
        * 5. Bottom Status Footer Bar
        * ------------------------------------------------------------- */}
       <footer className="win-footer-bar">
-        <span>Sharpnet Technology Pvt Ltd... For Service Support Contact No : +91-63551-90064 :: +91-9586651811</span>
+        <span>NSAIPETROSOFT Petroleum Systems... For Service & Support Contact: +91-63551-90064 :: +91-95866-51811</span>
         <span>Station Shift: {shiftName} | SO: #{shiftNumber} | Status: {shiftStatus}</span>
       </footer>
 
@@ -1700,18 +1733,18 @@ export default function App() {
                     </thead>
                     <tbody>
                       <tr>
-                        <td>16 Apr 2026</td>
+                        <td>{getTodayErpDate(-1)}</td>
                         <td>16</td>
                         <td>First</td>
-                        <td>SHARPNETTECHNOLOGY</td>
-                        <td><button className="win-btn-classic" onClick={() => showToast('✔ Shift Record #16 deleted')}>Delete</button></td>
+                        <td>STATION ADMIN</td>
+                        <td><button className="win-btn-classic" onClick={() => showToast('✔ Shift Record #16 archived')}>Archive</button></td>
                       </tr>
                       <tr>
-                        <td>15 Apr 2026</td>
+                        <td>{getTodayErpDate(-2)}</td>
                         <td>15</td>
                         <td>First</td>
-                        <td>SHARPNETTECHNOLOGY</td>
-                        <td><button className="win-btn-classic" onClick={() => showToast('✔ Shift Record #15 deleted')}>Delete</button></td>
+                        <td>STATION ADMIN</td>
+                        <td><button className="win-btn-classic" onClick={() => showToast('✔ Shift Record #15 archived')}>Archive</button></td>
                       </tr>
                     </tbody>
                   </table>
@@ -1739,7 +1772,7 @@ export default function App() {
                   </div>
                   <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
                     <button className="win-btn-classic" onClick={openCreditDialog}>Credit Entry</button>
-                    <button className="win-btn-classic" onClick={openExpenseBook}>Expence Book</button>
+                    <button className="win-btn-classic" onClick={openExpenseBook}>Expense Book</button>
                     <button className="win-btn-classic" onClick={() => setActiveDialog('denom')}>Cash Settlement</button>
                   </div>
                 </div>
@@ -3050,12 +3083,12 @@ export default function App() {
             </div>
             <div className="win-dialog-body" style={{ lineHeight: '1.6' }}>
               <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>
-                Sharpnet Technology Pvt Ltd — Dedicated Retail Support
+                NSAIPETROSOFT Petroleum Systems — Enterprise Support
               </div>
               <div><strong>Primary Support Helpline:</strong> +91-63551-90064</div>
-              <div><strong>Secondary Support Helpline:</strong> +91-9586651811</div>
-              <div><strong>Working Hours:</strong> Monday – Saturday (09:00 AM – 05:00 PM)</div>
-              <div><strong>Technical Email:</strong> support@sharpnettechnology.com</div>
+              <div><strong>Secondary Support Helpline:</strong> +91-95866-51811</div>
+              <div><strong>Working Hours:</strong> Monday – Saturday (09:00 AM – 06:00 PM)</div>
+              <div><strong>Technical Email:</strong> support@nsaipetrosoft.com</div>
               <div style={{ marginTop: '12px', padding: '8px', background: '#e5f1fb', border: '1px solid #70c0e7', fontSize: '11px' }}>
                 💡 <strong>Instant Shortcuts:</strong> Press <strong>F1</strong> for Sales Entry, <strong>F2</strong> for Rate Master, <strong>F3</strong> for Credit Bills, <strong>F4</strong> for Payment, <strong>F5</strong> for Expense, <strong>F6</strong> for Transfer, <strong>F10</strong> for Reports, and <strong>ESC</strong> to dismiss any window.
               </div>
@@ -3937,7 +3970,7 @@ export default function App() {
 
                 {/* Sheet Footer */}
                 <div style={{ marginTop: '36px', borderTop: '1px solid #999', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555' }}>
-                  <span>Printed By: SHARPNETTECHNOLOGY | Station Shift: {critShift}</span>
+                  <span>Printed By: NSAIPETROSOFT SYSTEM | Station Shift: {critShift}</span>
                   <span>{getTodayErpDate()} {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                   <span style={{ fontWeight: 700 }}>Authorized Signatory: _________________________</span>
                 </div>
@@ -4429,11 +4462,11 @@ export default function App() {
                   value={selectedCustForBill}
                   onChange={(e) => setSelectedCustForBill(e.target.value)}
                 >
-                  <option value="LIVAVATI TRANSPORTY">LIVAVATI TRANSPORTY (Surat)</option>
-                  <option value="PORT TRANSPORT">PORT TRANSPORT (Hazira Port)</option>
-                  <option value="HINESHBHAI">HINESHBHAI (Fleet Owner)</option>
-                  <option value="ABC TRANSPORT">ABC TRANSPORT (Logistics)</option>
-                  <option value="SHREE SAM">SHREE SAM CARRIERS</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name} ({c.city || 'Station Fleet'})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -4447,26 +4480,19 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr onClick={() => setSelectedCustForBill('LIVAVATI TRANSPORTY')} style={{ cursor: 'pointer', background: selectedCustForBill === 'LIVAVATI TRANSPORTY' ? '#cce8ff' : '' }}>
-                      <td style={{ fontWeight: 700 }}>LIVAVATI TRANSPORTY</td>
-                      <td>SURAT</td>
-                      <td className="text-right" style={{ color: '#c0392b', fontWeight: 700 }}>₹ 1,13,867.20</td>
-                    </tr>
-                    <tr onClick={() => setSelectedCustForBill('PORT TRANSPORT')} style={{ cursor: 'pointer', background: selectedCustForBill === 'PORT TRANSPORT' ? '#cce8ff' : '' }}>
-                      <td style={{ fontWeight: 700 }}>PORT TRANSPORT</td>
-                      <td>SURAT</td>
-                      <td className="text-right" style={{ color: '#c0392b', fontWeight: 700 }}>₹ 7,95,532.21</td>
-                    </tr>
-                    <tr onClick={() => setSelectedCustForBill('HINESHBHAI')} style={{ cursor: 'pointer', background: selectedCustForBill === 'HINESHBHAI' ? '#cce8ff' : '' }}>
-                      <td style={{ fontWeight: 700 }}>HINESHBHAI</td>
-                      <td>SURAT</td>
-                      <td className="text-right" style={{ color: '#c0392b', fontWeight: 700 }}>₹ 1,22,450.00</td>
-                    </tr>
-                    <tr onClick={() => setSelectedCustForBill('ABC TRANSPORT')} style={{ cursor: 'pointer', background: selectedCustForBill === 'ABC TRANSPORT' ? '#cce8ff' : '' }}>
-                      <td style={{ fontWeight: 700 }}>ABC TRANSPORT</td>
-                      <td>SURAT</td>
-                      <td className="text-right" style={{ color: '#c0392b', fontWeight: 700 }}>₹ 95,846.39</td>
-                    </tr>
+                    {customers.map((c) => (
+                      <tr
+                        key={c.id}
+                        onClick={() => setSelectedCustForBill(c.name)}
+                        style={{ cursor: 'pointer', background: selectedCustForBill === c.name ? '#cce8ff' : '' }}
+                      >
+                        <td style={{ fontWeight: 700 }}>{c.name}</td>
+                        <td>{c.city || '-'}</td>
+                        <td className="text-right" style={{ color: '#c0392b', fontWeight: 700 }}>
+                          ₹ {c.current_outstanding ? c.current_outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -4616,10 +4642,10 @@ export default function App() {
                 <div style={{ border: '2px solid #506f8c', padding: '10px', background: '#fff' }}>
                   <div style={{ fontWeight: 700, fontSize: '13px', color: '#c0392b' }}>Tank 1: MS (Motor Spirit / Petrol)</div>
                   <div style={{ fontSize: '11px', marginTop: '6px', lineHeight: '1.6' }}>
-                    <div><strong>Total Gross Capacity:</strong> 20,000 Liters</div>
+                    <div><strong>Total Gross Capacity:</strong> {(tanks[0]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
                     <div><strong>Dead Stock Allowance:</strong> 500 Liters (Pump Suction Cutoff)</div>
-                    <div><strong>Safe Filling Limit (Ullage):</strong> 19,000 Liters (95%)</div>
-                    <div><strong>Current Physical Stock:</strong> 13,150 Liters (66%)</div>
+                    <div><strong>Safe Filling Limit (Ullage):</strong> {((tanks[0]?.capacity || 20000) * 0.95).toLocaleString('en-IN')} Liters (95%)</div>
+                    <div><strong>Current Physical Stock:</strong> {tanks[0] ? `${tanks[0].current_stock.toLocaleString('en-IN')} Liters (${tanks[0].percent}%)` : '13,150 Liters (66%)'}</div>
                     <div><strong>Tank Dimensions:</strong> 2.4m Dia × 4.6m Length Double-Walled</div>
                   </div>
                   <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => openDipDialog(1)}>
@@ -4630,10 +4656,10 @@ export default function App() {
                 <div style={{ border: '2px solid #506f8c', padding: '10px', background: '#fff' }}>
                   <div style={{ fontWeight: 700, fontSize: '13px', color: '#2980b9' }}>Tank 2: HSD (High Speed Diesel)</div>
                   <div style={{ fontSize: '11px', marginTop: '6px', lineHeight: '1.6' }}>
-                    <div><strong>Total Gross Capacity:</strong> 20,000 Liters</div>
+                    <div><strong>Total Gross Capacity:</strong> {(tanks[1]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
                     <div><strong>Dead Stock Allowance:</strong> 500 Liters (Pump Suction Cutoff)</div>
-                    <div><strong>Safe Filling Limit (Ullage):</strong> 19,000 Liters (95%)</div>
-                    <div><strong>Current Physical Stock:</strong> 16,890 Liters (84%)</div>
+                    <div><strong>Safe Filling Limit (Ullage):</strong> {((tanks[1]?.capacity || 20000) * 0.95).toLocaleString('en-IN')} Liters (95%)</div>
+                    <div><strong>Current Physical Stock:</strong> {tanks[1] ? `${tanks[1].current_stock.toLocaleString('en-IN')} Liters (${tanks[1].percent}%)` : '16,890 Liters (84%)'}</div>
                     <div><strong>Tank Dimensions:</strong> 2.4m Dia × 4.6m Length Double-Walled</div>
                   </div>
                   <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => openDipDialog(2)}>
@@ -5098,32 +5124,36 @@ export default function App() {
                 {/* Tank 1 MS */}
                 <div className="tank-gauge-card">
                   <div className="tank-cylinder">
-                    <div className="tank-liquid-ms" style={{ height: '66%' }} />
+                    <div className="tank-liquid-ms" style={{ height: `${tanks[0]?.percent || 66}%` }} />
                   </div>
                   <div className="tank-details">
-                    <div style={{ fontWeight: 700, fontSize: '13px', color: '#c0392b' }}>MS Tank 1 (Petrol)</div>
-                    <div><strong>Gross Capacity:</strong> 20,000 Liters</div>
-                    <div><strong>Current Stock:</strong> 13,150 L (66%)</div>
-                    <div><strong>Current Dip:</strong> 142.5 cm</div>
+                    <div style={{ fontWeight: 700, fontSize: '13px', color: '#c0392b' }}>{tanks[0]?.name || 'MS Tank 1'} ({tanks[0]?.product || 'Petrol'})</div>
+                    <div><strong>Gross Capacity:</strong> {(tanks[0]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
+                    <div><strong>Current Stock:</strong> {(tanks[0]?.current_stock || 13150).toLocaleString('en-IN')} L ({tanks[0]?.percent || 66}%)</div>
+                    <div><strong>Current Dip:</strong> {tanks[0]?.dip_cm || 142.5} cm</div>
                     <div><strong>Water Dip:</strong> 0.0 cm (Clear)</div>
-                    <div><strong>Safe Inward Space:</strong> 6,850 Liters</div>
-                    <div style={{ color: '#27ae60', fontWeight: 700, marginTop: '4px' }}>● Sufficient Fuel Available</div>
+                    <div><strong>Safe Inward Space:</strong> {Math.max(0, (tanks[0]?.capacity || 20000) - (tanks[0]?.current_stock || 13150)).toLocaleString('en-IN')} Liters</div>
+                    <div style={{ color: tanks[0]?.is_low ? '#c0392b' : '#27ae60', fontWeight: 700, marginTop: '4px' }}>
+                      ● {tanks[0]?.is_low ? 'Low Stock Alert' : 'Sufficient Fuel Available'}
+                    </div>
                   </div>
                 </div>
 
                 {/* Tank 2 HSD */}
                 <div className="tank-gauge-card">
                   <div className="tank-cylinder">
-                    <div className="tank-liquid-hsd" style={{ height: '84%' }} />
+                    <div className="tank-liquid-hsd" style={{ height: `${tanks[1]?.percent || 84}%` }} />
                   </div>
                   <div className="tank-details">
-                    <div style={{ fontWeight: 700, fontSize: '13px', color: '#0984e3' }}>HSD Tank 1 (Diesel)</div>
-                    <div><strong>Gross Capacity:</strong> 20,000 Liters</div>
-                    <div><strong>Current Stock:</strong> 16,890 L (84%)</div>
-                    <div><strong>Current Dip:</strong> 186.0 cm</div>
+                    <div style={{ fontWeight: 700, fontSize: '13px', color: '#0984e3' }}>{tanks[1]?.name || 'HSD Tank 1'} ({tanks[1]?.product || 'Diesel'})</div>
+                    <div><strong>Gross Capacity:</strong> {(tanks[1]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
+                    <div><strong>Current Stock:</strong> {(tanks[1]?.current_stock || 16890).toLocaleString('en-IN')} L ({tanks[1]?.percent || 84}%)</div>
+                    <div><strong>Current Dip:</strong> {tanks[1]?.dip_cm || 186.0} cm</div>
                     <div><strong>Water Dip:</strong> 0.0 cm (Clear)</div>
-                    <div><strong>Safe Inward Space:</strong> 3,110 Liters</div>
-                    <div style={{ color: '#27ae60', fontWeight: 700, marginTop: '4px' }}>● High Stock Level</div>
+                    <div><strong>Safe Inward Space:</strong> {Math.max(0, (tanks[1]?.capacity || 20000) - (tanks[1]?.current_stock || 16890)).toLocaleString('en-IN')} Liters</div>
+                    <div style={{ color: tanks[1]?.is_low ? '#c0392b' : '#27ae60', fontWeight: 700, marginTop: '4px' }}>
+                      ● {tanks[1]?.is_low ? 'Low Stock Alert' : 'High Stock Level'}
+                    </div>
                   </div>
                 </div>
               </div>

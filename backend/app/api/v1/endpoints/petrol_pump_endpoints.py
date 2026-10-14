@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -452,16 +452,11 @@ async def list_payments(db: AsyncSession = Depends(get_db)):
         select(PaymentReceipt).options(selectinload(PaymentReceipt.customer)).order_by(desc(PaymentReceipt.id)).limit(30)
     )
     payments = res.scalars().all()
-    if not payments:
-        return [
-            {"id": 1, "receipt_no": "RCP-0012", "date": "17-Apr-2026", "shift": "First", "customer": "LIVAVATI TRANSPORTY", "mode": "CHEQUE", "bank": "HDFC CA 0459", "amount": 65000.0},
-            {"id": 2, "receipt_no": "RCP-0011", "date": "16-Apr-2026", "shift": "First", "customer": "PORT TRANSPORT", "mode": "UPI PAYMENT", "bank": "PAYTM", "amount": 28000.0},
-        ]
     return [
         {
             "id": p.id,
             "receipt_no": p.receipt_no,
-            "date": p.date.strftime("%d-%b-%Y") if p.date else "17-Apr-2026",
+            "date": p.date.strftime("%d-%b-%Y") if p.date else date.today().strftime("%d-%b-%Y"),
             "shift": "First",
             "customer": p.customer.name if p.customer else "Customer",
             "mode": p.payment_mode,
@@ -994,30 +989,11 @@ async def list_purchases(db: AsyncSession = Depends(get_db)):
         .limit(20)
     )
     purchases = res.scalars().all()
-    if not purchases:
-        return [
-            {
-                "id": 1,
-                "invoice_no": "PO-991204",
-                "date": "17-Apr-2026",
-                "dealer_name": "BHARAT PETROLEUM CO LTD",
-                "tanker_vehicle_no": "GJ19AS1454",
-                "product": "Diesel (HSD)",
-                "tank": "HSD Tank 1",
-                "qty_kl": 12.0,
-                "qty_liters": 12000.0,
-                "rate_per_kl": 82450.0,
-                "gross_amount": 989400.0,
-                "vat_amount": 147420.6,
-                "final_amount": 1136820.6,
-                "sample_density": 832.4,
-            }
-        ]
     return [
         {
             "id": p.id,
             "invoice_no": p.invoice_no,
-            "date": p.date.strftime("%d-%b-%Y") if p.date else "17-Apr-2026",
+            "date": p.date.strftime("%d-%b-%Y") if p.date else date.today().strftime("%d-%b-%Y"),
             "dealer_name": p.dealer_name,
             "tanker_vehicle_no": p.tanker_vehicle_no,
             "product": p.product.name if p.product else "Fuel",
@@ -1094,9 +1070,11 @@ async def get_vat_summary():
 
 @router.get("/reports/profit-summary", summary="Dealer Margin & P&L Per Liter (LFR)")
 async def get_profit_summary():
+    today = date.today()
+    yesterday = today - timedelta(days=1)
     return [
         {
-            "date": "17-Apr-2026",
+            "date": today.strftime("%d-%b-%Y"),
             "sale_qty": 1587.73,
             "purchase_rate": 90.17,
             "purchase_amt": 143162.76,
@@ -1111,7 +1089,7 @@ async def get_profit_summary():
             "lfr_per_liter": 0.52,
         },
         {
-            "date": "16-Apr-2026",
+            "date": yesterday.strftime("%d-%b-%Y"),
             "sale_qty": 1489.98,
             "purchase_rate": 90.17,
             "purchase_amt": 134348.81,
@@ -1131,7 +1109,7 @@ async def get_profit_summary():
 @router.get("/reports/tds-summary", summary="TDS 0.1% / Section 194Q Statutory Summary (Frame 0360)")
 async def get_tds_summary():
     return {
-        "as_on_date": "31-03-2026",
+        "as_on_date": date.today().strftime("%d-%m-%Y"),
         "purchases": [
             {"item": "Petrol", "purchase_qty": 49000.0, "basic_amount": 3736421.0, "vat_amount": 511889.70, "cess": 169932.43, "tcs": 0.0, "total_amount": 4418242.0},
             {"item": "Diesel", "purchase_qty": 103000.0, "basic_amount": 7524229.31, "vat_amount": 1121110.17, "cess": 345813.57, "tcs": 0.0, "total_amount": 8991151.0},
@@ -1150,9 +1128,11 @@ async def get_tds_summary():
 
 @router.get("/reports/dealer-commission", summary="OMC Dealer Commission Report (Frame 0351)")
 async def get_dealer_commission():
+    today = date.today()
+    month_start = date(today.year, today.month, 1)
     return {
-        "from_date": "2026-03-01",
-        "to_date": "2026-03-31",
+        "from_date": month_start.strftime("%Y-%m-%d"),
+        "to_date": today.strftime("%Y-%m-%d"),
         "items": [
             {"item": "Diesel", "rate": 281.23, "qty": 103.0, "total_amount": 28966.69, "received_amount": 0.0},
             {"item": "Petrol", "rate": 379.67, "qty": 49.0, "total_amount": 18603.83, "received_amount": 0.0},
@@ -1163,9 +1143,11 @@ async def get_dealer_commission():
 
 @router.get("/reports/lfr-summary", summary="Licensee Fee Recovery & TDS 10% Summary (Frame 0337)")
 async def get_lfr_summary():
+    today = date.today()
+    month_start = date(today.year, today.month, 1)
     return {
-        "from_date": "2026-03-01",
-        "to_date": "2026-03-31",
+        "from_date": month_start.strftime("%Y-%m-%d"),
+        "to_date": today.strftime("%Y-%m-%d"),
         "purchases": [
             {"item": "Diesel", "lfr_rate": 436.10, "qty": 103.0, "basic": 38066.36, "cgst": 3425.97, "sgst": 3425.97, "total": 44918.30},
             {"item": "Petrol", "lfr_rate": 523.34, "qty": 49.0, "basic": 21731.92, "cgst": 1955.87, "sgst": 1955.87, "total": 25643.66},
@@ -1184,7 +1166,7 @@ async def get_lfr_summary():
 @router.get("/reports/profit-loss", summary="Profit Loss Summary Report (Frame 0390)")
 async def get_profit_loss():
     return {
-        "as_on_date": "31-03-2026",
+        "as_on_date": date.today().strftime("%d-%m-%Y"),
         "opening_stock": [
             {"item": "Diesel", "qty": 16745.0, "amount": 1279485.45},
             {"item": "Petrol", "qty": 12511.0, "amount": 997376.92},
@@ -1228,12 +1210,6 @@ class ExpenseCreate(BaseModel):
 async def get_expenses(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Expense).order_by(desc(Expense.date), desc(Expense.id)))
     expenses = res.scalars().all()
-    if not expenses:
-        return [
-            {"id": 1, "date": "17-Apr-2026", "category": "Gen-Set Diesel", "amount": 1250.0, "narration": "Power backup gen diesel", "paid_to": "Pump Cash"},
-            {"id": 2, "date": "17-Apr-2026", "category": "Staff Tea & Snacks", "amount": 280.0, "narration": "Morning & evening shift tea", "paid_to": "Ram Tea Stall"},
-            {"id": 3, "date": "16-Apr-2026", "category": "Stationery & Rolls", "amount": 334.0, "narration": "Thermal paper rolls for POS", "paid_to": "Suresh Stationers"},
-        ]
     return [
         {
             "id": e.id,
@@ -1330,10 +1306,14 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
         for s in sales
     ]
 
-    total_purchase = sum(s.amount for s in sales) if sales else 28867.20
-    prev_dues = cust.current_outstanding - total_purchase if cust.current_outstanding > total_purchase else 150000.0
-    paid_period = 65000.0
+    total_purchase = sum(s.amount for s in sales)
+    pmt_res = await db.execute(
+        select(func.sum(PaymentReceipt.amount)).where(PaymentReceipt.customer_id == customer_id)
+    )
+    total_paid = pmt_res.scalar() or 0.0
+    paid_period = round(float(total_paid), 2)
     net_payables = cust.current_outstanding
+    prev_dues = max(0.0, net_payables - total_purchase + paid_period)
 
     return {
         "customer": {
@@ -1345,10 +1325,7 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
             "credit_limit": cust.credit_limit,
             "outstanding": cust.current_outstanding,
         },
-        "bills": bill_rows or [
-            {"date": "17-Apr-2026", "bill_no": "36", "vehicle_no": "GJ19AS1454", "qty": 160.0, "rate": 90.21, "amount": 14433.6, "slip_no": "0"},
-            {"date": "16-Apr-2026", "bill_no": "34", "vehicle_no": "GJ18AS557", "qty": 160.0, "rate": 90.21, "amount": 14433.6, "slip_no": "0"},
-        ],
+        "bills": bill_rows,
         "summary": {
             "total_purchase": round(total_purchase, 2),
             "total_other_lube": 0.0,
@@ -1357,7 +1334,7 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
             "total_paid_period": paid_period,
             "net_payables": round(net_payables, 2),
             "terms": [
-                "(1) Subject To Tapi Jurisdiction",
+                "(1) Subject To Local Jurisdiction",
                 "(2) Query in the Invoice should be notified to us immediately. No claims or discrepancy shall be entertained after 5 days from the Date of INVOICE.",
                 "(3) Outstanding Bill Amount must be paid/cleared in 5 days from the bill date. After that 1.5% interest PM will be applicable.",
             ],
@@ -1373,15 +1350,20 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
 async def get_stamping_reminders(db: AsyncSession = Depends(get_db)):
     nozzles_res = await db.execute(select(Nozzle).options(selectinload(Nozzle.tank)))
     nozzles = nozzles_res.scalars().all()
+    today = date.today()
+    next_due_dt = date(today.year + 1, 5, 15) if today.month > 5 else date(today.year, 5, 15)
+    last_stamped_dt = date(next_due_dt.year - 1, 5, 15)
+    days_rem = (next_due_dt - today).days
+
     reminders = []
     for n in nozzles:
         reminders.append({
             "nozzle_id": n.id,
             "nozzle_name": n.nozzle_name,
             "tank": n.tank.tank_name if n.tank else "Tank",
-            "last_stamped": "15-May-2025",
-            "next_due": "14-May-2026",
-            "days_remaining": 228,
+            "last_stamped": last_stamped_dt.strftime("%d-%b-%Y"),
+            "next_due": next_due_dt.strftime("%d-%b-%Y"),
+            "days_remaining": days_rem,
             "status": "VALID",
         })
     if not reminders:
@@ -1390,9 +1372,9 @@ async def get_stamping_reminders(db: AsyncSession = Depends(get_db)):
                 "nozzle_id": i,
                 "nozzle_name": f"HSD {i}" if i <= 4 else f"MS {i-4}",
                 "tank": "HSD Tank 1" if i <= 4 else "MS Tank 1",
-                "last_stamped": "15-May-2025",
-                "next_due": "14-May-2026",
-                "days_remaining": 228,
+                "last_stamped": last_stamped_dt.strftime("%d-%b-%Y"),
+                "next_due": next_due_dt.strftime("%d-%b-%Y"),
+                "days_remaining": days_rem,
                 "status": "VALID",
             })
     return reminders
