@@ -42,6 +42,11 @@ import {
   updateRate,
 } from './api/client';
 import { exportToCsv } from './utils/exportCsv';
+import {
+  formatErpDate,
+  getCurrentMonthStartErpDate,
+  getTodayErpDate,
+} from './utils/dateUtils';
 import type {
   BackupItem,
   BackupStatusResponse,
@@ -120,20 +125,22 @@ export default function App() {
   const [creditRate, setCreditRate] = useState<number>(90.21);
   const [creditSlipNo, setCreditSlipNo] = useState<string>('0');
   const [creditBillNo, setCreditBillNo] = useState<string>('37');
+  const [creditDate, setCreditDate] = useState<string>(getTodayErpDate());
   const [creditCashPaid, setCreditCashPaid] = useState<number>(0.0);
   const [creditRemark, setCreditRemark] = useState<string>('');
   const [whatsappSlip, setWhatsappSlip] = useState<string | null>(null);
 
   // Past Credit Bills
   const [creditBillsList, setCreditBillsList] = useState<any[]>([
-    { date: '17 Apr 2026', shift: 'First', slip: '0', bill: '36', cust: 'PORT TRANSPORT', vehicle: 'GJ19AS1454', qty: 160.0, total: 15072.0 },
-    { date: '16 Apr 2026', shift: 'First', slip: '0', bill: '35', cust: 'HINESHBHAI', vehicle: 'MH14AS2545', qty: 177.29, total: 16000.0 },
-    { date: '16 Apr 2026', shift: 'First', slip: '0', bill: '34', cust: 'ABC TRANSPORT', vehicle: 'GJ18AS557', qty: 160.0, total: 14440.0 },
-    { date: '16 Apr 2026', shift: 'First', slip: '0', bill: '33', cust: 'ABC TRANSPORT', vehicle: 'GJ01AS7487', qty: 120.0, total: 10830.0 },
-    { date: '15 Apr 2026', shift: 'First', slip: '0', bill: '32', cust: 'SHREE SAM', vehicle: 'GJ15AS8901', qty: 551.02, total: 50000.0 },
+    { date: getTodayErpDate(), shift: 'First', slip: '0', bill: '36', cust: 'PORT TRANSPORT', vehicle: 'GJ19AS1454', qty: 160.0, total: 15072.0 },
+    { date: getTodayErpDate(-1), shift: 'First', slip: '0', bill: '35', cust: 'HINESHBHAI', vehicle: 'MH14AS2545', qty: 177.29, total: 16000.0 },
+    { date: getTodayErpDate(-1), shift: 'First', slip: '0', bill: '34', cust: 'ABC TRANSPORT', vehicle: 'GJ18AS557', qty: 160.0, total: 14440.0 },
+    { date: getTodayErpDate(-1), shift: 'First', slip: '0', bill: '33', cust: 'ABC TRANSPORT', vehicle: 'GJ01AS7487', qty: 120.0, total: 10830.0 },
+    { date: getTodayErpDate(-2), shift: 'First', slip: '0', bill: '32', cust: 'SHREE SAM', vehicle: 'GJ15AS8901', qty: 551.02, total: 50000.0 },
   ]);
 
   // Sales Entry Nozzle Totalizers (Frame 0110)
+  const [salesDate, setSalesDate] = useState<string>(getTodayErpDate());
   const [salesReadings, setSalesReadings] = useState<any[]>([
     { emp: 'AA', nozzle: 'HSD 1', item: 'Diesel', open: 5268.0, close: 6254.0, test: 0, qty: 986.0, rate: 90.21, amount: 88947.06, vat: 11534.48, lube: 0 },
     { emp: 'AA', nozzle: 'HSD 2', item: 'Diesel', open: 10254.0, close: 11254.0, test: 0, qty: 1000.0, rate: 90.21, amount: 90210.0, vat: 11698.25, lube: 0 },
@@ -148,7 +155,7 @@ export default function App() {
   // Payment Receipt State (Frame 0085)
   const [payReceiptNo, setPayReceiptNo] = useState<string>('00006');
   const [payCustName, setPayCustName] = useState<string>('LIVAVATI TRANSPORTY');
-  const [payDate] = useState<string>('17-Apr-2026');
+  const [payDate, setPayDate] = useState<string>(getTodayErpDate());
   const [payTotalPurch] = useState<number>(178867.2);
   const [payTotalPaid, setPayTotalPaid] = useState<number>(15000.0);
   const [payTotalUnpaid, setPayTotalUnpaid] = useState<number>(163867.2);
@@ -156,11 +163,11 @@ export default function App() {
   const [payBank, setPayBank] = useState<string>('PAYTM');
   const [payAmount, setPayAmount] = useState<number>(50000.0);
   const [payReceiptsHistory, setPayReceiptsHistory] = useState<any[]>([
-    { shift: 'First', date: '17 Apr 2026', cust: 'LIVAVATI TRANSPORTY', mode: 'CASH', amt: 15000.0 },
-    { shift: 'First', date: '17 Apr 2026', cust: 'PORT TRANSPORT', mode: 'CASH', amt: 6000.0 },
-    { shift: 'First', date: '17 Apr 2026', cust: 'PORT TRANSPORT', mode: 'CASH', amt: 15000.0 },
-    { shift: 'First', date: '16 Apr 2026', cust: 'ABC TRANSPORT', mode: 'CHEQUE', amt: 50000.0 },
-    { shift: 'First', date: '16 Apr 2026', cust: 'ABC TRANSPORT', mode: 'CASH', amt: 15000.0 },
+    { shift: 'First', date: getTodayErpDate(), cust: 'LIVAVATI TRANSPORTY', mode: 'CASH', amt: 15000.0 },
+    { shift: 'First', date: getTodayErpDate(), cust: 'PORT TRANSPORT', mode: 'CASH', amt: 6000.0 },
+    { shift: 'First', date: getTodayErpDate(), cust: 'PORT TRANSPORT', mode: 'CASH', amt: 15000.0 },
+    { shift: 'First', date: getTodayErpDate(-1), cust: 'ABC TRANSPORT', mode: 'CHEQUE', amt: 50000.0 },
+    { shift: 'First', date: getTodayErpDate(-1), cust: 'ABC TRANSPORT', mode: 'CASH', amt: 15000.0 },
   ]);
 
   // Expense Book State
@@ -266,13 +273,13 @@ export default function App() {
 
   // Set Report Criteria State (Frame 0375)
   const [reportCriteriaRadio, setReportCriteriaRadio] = useState<string>('DSR');
-  const [critFromDate, setCritFromDate] = useState<string>('01-Mar-2026');
-  const [critToDate, setCritToDate] = useState<string>('31-Mar-2026');
+  const [critFromDate, setCritFromDate] = useState<string>(getCurrentMonthStartErpDate());
+  const [critToDate, setCritToDate] = useState<string>(getTodayErpDate());
   const [critCustomer, setCritCustomer] = useState<string>('---Select Any---');
   const [critSupplier, setCritSupplier] = useState<string>('---Select Any---');
   const [critItem, setCritItem] = useState<string>('Diesel');
   const [critInvoiceNo, setCritInvoiceNo] = useState<string>('1409523983');
-  const [critDate, setCritDate] = useState<string>('17-Apr-2026');
+  const [critDate, setCritDate] = useState<string>(getTodayErpDate());
   const [critShift, setCritShift] = useState<string>('First');
   const [critLedger, setCritLedger] = useState<string>('---Select Any---');
   const [critAccountGroup, setCritAccountGroup] = useState<string>('---Select Any---');
@@ -289,7 +296,7 @@ export default function App() {
   const [lastCreditSlip, setLastCreditSlip] = useState<any>(null);
 
   // Employee Shift Settlement State (Frame 0210 & 0220)
-  const [empSettlementDate] = useState<string>('17-Apr-2026');
+  const [empSettlementDate] = useState<string>(getTodayErpDate());
   const [empSettlementShift, setEmpSettlementShift] = useState<string>('First');
   const [empSettlementSaleNo] = useState<string>('00001');
   const [empSettlementEmp, setEmpSettlementEmp] = useState<string>('SANMUKH H CHAUDHARI');
@@ -334,9 +341,9 @@ export default function App() {
     { code: '01', desc: 'High Speed Diesel (HSD BS-VI)', qty: 4000.0, unit: 'Ltr', rate: 72.48, amount: 289920.0, gross: 289920.0, final: 341824.0, freight: 0.0, basicExcise: 0.0, addExci: 0.0 },
   ]);
   const [purPoHistory, setPurPoHistory] = useState<any[]>([
-    { po: 'PO-001', date: '17 Apr 2026', inv: '321578', dealer: 'BHARAT PETROLEUM CO LTD', amount: 341824.0 },
-    { po: 'PO-002', date: '16 Apr 2026', inv: '321512', dealer: 'BHARAT PETROLEUM CO LTD', amount: 489200.0 },
-    { po: 'PO-003', date: '14 Apr 2026', inv: '321480', dealer: 'INDIAN OIL CORP LTD', amount: 250000.0 },
+    { po: 'PO-001', date: getTodayErpDate(), inv: '321578', dealer: 'BHARAT PETROLEUM CO LTD', amount: 341824.0 },
+    { po: 'PO-002', date: getTodayErpDate(-1), inv: '321512', dealer: 'BHARAT PETROLEUM CO LTD', amount: 489200.0 },
+    { po: 'PO-003', date: getTodayErpDate(-3), inv: '321480', dealer: 'INDIAN OIL CORP LTD', amount: 250000.0 },
   ]);
 
   // Select Customer Dialog (Frame 0280)
@@ -532,9 +539,9 @@ export default function App() {
           outstanding: (c as any)?.outstanding || (c as any)?.current_outstanding || 795532.21,
         },
         bills: [
-          { date: '17-Apr-2026', bill_no: '36', vehicle_no: 'GJ19AS1454', qty: 160.0, rate: 90.21, amount: 15072.0, slip_no: '0' },
-          { date: '16-Apr-2026', bill_no: '34', vehicle_no: 'GJ18AS557', qty: 160.0, rate: 90.21, amount: 14440.0, slip_no: '0' },
-          { date: '15-Apr-2026', bill_no: '31', vehicle_no: 'GJ04AT2211', qty: 180.0, rate: 90.21, amount: 16237.8, slip_no: '0' },
+          { date: getTodayErpDate(), bill_no: '36', vehicle_no: 'GJ19AS1454', qty: 160.0, rate: 90.21, amount: 15072.0, slip_no: '0' },
+          { date: getTodayErpDate(-1), bill_no: '34', vehicle_no: 'GJ18AS557', qty: 160.0, rate: 90.21, amount: 14440.0, slip_no: '0' },
+          { date: getTodayErpDate(-2), bill_no: '31', vehicle_no: 'GJ04AT2211', qty: 180.0, rate: 90.21, amount: 16237.8, slip_no: '0' },
         ],
         summary: {
           total_purchase: 45749.8,
@@ -801,7 +808,7 @@ export default function App() {
       });
       setWhatsappSlip(res.whatsapp_preview);
       const newBill = {
-        date: '17 Apr 2026',
+        date: formatErpDate(creditDate),
         shift: 'First',
         slip: creditSlipNo,
         bill: res.bill_no,
@@ -899,7 +906,7 @@ export default function App() {
     e.preventDefault();
     const newExp = {
       id: Date.now(),
-      date: '17-Apr-2026',
+      date: getTodayErpDate(),
       category: expCategory,
       amount: expAmount,
       narration: expNarration,
@@ -1608,7 +1615,7 @@ export default function App() {
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '8px' }}>
                 <div className="win-form-row">
                   <span className="win-label" style={{ minWidth: '40px' }}>Date</span>
-                  <input type="text" className="win-input" defaultValue="17-Apr-2026" style={{ width: '100px' }} />
+                  <input type="text" className="win-input" value={salesDate} onChange={(e) => setSalesDate(e.target.value)} style={{ width: '100px', fontWeight: 600 }} />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label" style={{ minWidth: '40px' }}>Shift</span>
@@ -1782,7 +1789,7 @@ export default function App() {
                 <form onSubmit={handleSaveCreditSale}>
                   <div className="win-form-row">
                     <span className="win-label">Date</span>
-                    <input type="text" className="win-input" defaultValue="17-Apr-2026" style={{ width: '90px' }} />
+                    <input type="text" className="win-input" value={creditDate} onChange={(e) => setCreditDate(e.target.value)} style={{ width: '90px', fontWeight: 600 }} />
                     <span className="win-label" style={{ minWidth: '35px', marginLeft: '6px' }}>Shift</span>
                     <select className="win-select" style={{ width: '70px' }}>
                       <option>First</option>
@@ -2037,7 +2044,7 @@ export default function App() {
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Receipt Date</span>
-                  <input type="text" className="win-input" readOnly value={payDate} style={{ width: '100px' }} />
+                  <input type="text" className="win-input" value={payDate} onChange={(e) => setPayDate(e.target.value)} style={{ width: '100px', fontWeight: 600 }} />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Total Purchase</span>
@@ -2085,7 +2092,7 @@ export default function App() {
                     onClick={async () => {
                       const newReceipt = {
                         shift: 'First',
-                        date: '17 Apr 2026',
+                        date: formatErpDate(payDate),
                         cust: payCustName,
                         mode: payMode,
                         amt: payAmount,
@@ -2882,7 +2889,7 @@ export default function App() {
                     <div><strong>Mobile:</strong> {selectedStatement.customer.mobile}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div><strong>Statement Period:</strong> 01-Apr-2026 to 17-Apr-2026</div>
+                    <div><strong>Statement Period:</strong> {getCurrentMonthStartErpDate()} to {getTodayErpDate()}</div>
                     <div><strong>Code:</strong> {selectedStatement.customer.code}</div>
                     <div><strong>Current Outstanding:</strong> ₹ {selectedStatement.customer.outstanding.toLocaleString('en-IN')}</div>
                   </div>
@@ -3562,7 +3569,7 @@ export default function App() {
                       <tbody>
                         <tr>
                           <td>3215788</td>
-                          <td>17-Apr-2026</td>
+                          <td>{getTodayErpDate()}</td>
                           <td>2,10,480.00</td>
                           <td>27,362.40</td>
                           <td>8,419.20</td>
@@ -3586,7 +3593,7 @@ export default function App() {
                       </thead>
                       <tbody>
                         <tr>
-                          <td>17-Apr-2026 (Shift 1)</td>
+                          <td>{getTodayErpDate()} (Shift 1)</td>
                           <td>High Speed Diesel (HSD)</td>
                           <td>3,19,884.66</td>
                           <td>41,585.00</td>
@@ -3594,7 +3601,7 @@ export default function App() {
                           <td className="text-right">3,74,265.04</td>
                         </tr>
                         <tr>
-                          <td>17-Apr-2026 (Shift 1)</td>
+                          <td>{getTodayErpDate()} (Shift 1)</td>
                           <td>Motor Spirit (MS Petrol)</td>
                           <td>2,68,529.66</td>
                           <td>34,908.86</td>
@@ -3676,7 +3683,7 @@ export default function App() {
                         ) : (
                           <>
                             <tr>
-                              <td>17-Apr-2026</td>
+                              <td>{getTodayErpDate()}</td>
                               <td>High Speed Diesel (HSD)</td>
                               <td className="text-right">3,546.00</td>
                               <td className="text-right">₹ 87.36</td>
@@ -3687,7 +3694,7 @@ export default function App() {
                               <td className="text-right" style={{ fontWeight: 700 }}>₹ 2.85 / L</td>
                             </tr>
                             <tr>
-                              <td>17-Apr-2026</td>
+                              <td>{getTodayErpDate()}</td>
                               <td>Motor Spirit (Petrol MS)</td>
                               <td className="text-right">155.00</td>
                               <td className="text-right">₹ 90.45</td>
@@ -3891,7 +3898,7 @@ export default function App() {
                       </thead>
                       <tbody>
                         <tr>
-                          <td>17-Apr-2026</td>
+                          <td>{getTodayErpDate()}</td>
                           <td>TXN-001</td>
                           <td>Customer Fuel Dispensing (HSD)</td>
                           <td>First</td>
@@ -3902,7 +3909,7 @@ export default function App() {
                           <td className="text-right">₹ 0.00</td>
                         </tr>
                         <tr>
-                          <td>17-Apr-2026</td>
+                          <td>{getTodayErpDate()}</td>
                           <td>TXN-002</td>
                           <td>Bharat Petroleum Inward Tanker</td>
                           <td>First</td>
@@ -3913,7 +3920,7 @@ export default function App() {
                           <td className="text-right">₹ 2,89,920.00</td>
                         </tr>
                         <tr>
-                          <td>17-Apr-2026</td>
+                          <td>{getTodayErpDate()}</td>
                           <td>TXN-003</td>
                           <td>Customer Payment LIVAVATI TRANSPORTY</td>
                           <td>First</td>
@@ -3931,7 +3938,7 @@ export default function App() {
                 {/* Sheet Footer */}
                 <div style={{ marginTop: '36px', borderTop: '1px solid #999', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#555' }}>
                   <span>Printed By: SHARPNETTECHNOLOGY | Station Shift: {critShift}</span>
-                  <span>17-Apr-2026 12:45:10 PM</span>
+                  <span>{getTodayErpDate()} {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                   <span style={{ fontWeight: 700 }}>Authorized Signatory: _________________________</span>
                 </div>
               </div>
@@ -4298,7 +4305,7 @@ export default function App() {
                   SHIFT CASHIER TALLY & DAY BOOK RECONCILIATION
                 </div>
                 <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, marginBottom: '12px' }}>
-                  Date: 17-Apr-2026 | Shift: First | Attendant: SANMUKH H CHAUDHARI | Machine: MPD 1
+                  Date: {getTodayErpDate()} | Shift: {shiftName} | Attendant: SANMUKH H CHAUDHARI | Machine: MPD 1
                 </div>
 
                 {/* 2 Columns: Left = Cash Notes, Right = Credit + Cards + Expenses */}
@@ -4828,7 +4835,7 @@ export default function App() {
             <div className="win-dialog-body">
               <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '14px', marginBottom: '14px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
-                  <div><strong>Station Date:</strong> 17-Apr-2026</div>
+                  <div><strong>Station Date:</strong> {getTodayErpDate()}</div>
                   <div><strong>SO Counter:</strong> #{shiftNumber}</div>
                   <div><strong>Active Shift:</strong> {shiftName} Shift</div>
                   <div>
