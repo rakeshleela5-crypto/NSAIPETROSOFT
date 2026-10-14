@@ -97,6 +97,7 @@ export interface StationProfile {
   pincode: string;
   gstin: string;
   phone: string;
+  panNo?: string;
 }
 
 export const getFinancialYear = (): string => {
@@ -176,17 +177,17 @@ export default function App() {
   const [ratesList, setRatesList] = useState<FuelProductRate[]>([]);
   const [rateHist, setRateHist] = useState<any[]>([]);
   const [rateProduct, setRateProduct] = useState<number>(1);
-  const [rateValue, setRateValue] = useState<number>(90.21);
+  const [rateValue, setRateValue] = useState<number>(0.0);
 
   // Credit Customer Sale State (Frame 0021)
   const [customers, setCustomers] = useState<CustomerFull[]>([]);
   const [creditCustId, setCreditCustId] = useState<number>(1);
-  const [creditVehicle, setCreditVehicle] = useState<string>('GJ19AS1454');
+  const [creditVehicle, setCreditVehicle] = useState<string>('');
   const [creditProductId, setCreditProductId] = useState<number>(1);
-  const [creditQty, setCreditQty] = useState<number>(160.0);
-  const [creditRate, setCreditRate] = useState<number>(90.21);
-  const [creditSlipNo, setCreditSlipNo] = useState<string>('0');
-  const [creditBillNo, setCreditBillNo] = useState<string>('37');
+  const [creditQty, setCreditQty] = useState<number>(0.0);
+  const [creditRate, setCreditRate] = useState<number>(0.0);
+  const [creditSlipNo, setCreditSlipNo] = useState<string>('');
+  const [creditBillNo, setCreditBillNo] = useState<string>('');
   const [creditShift, setCreditShift] = useState<string>('First');
   const [creditDate, setCreditDate] = useState<string>(getTodayErpDate());
   const [creditCashPaid, setCreditCashPaid] = useState<number>(0.0);
@@ -194,29 +195,14 @@ export default function App() {
   const [whatsappSlip, setWhatsappSlip] = useState<string | null>(null);
 
   // Past Credit Bills
-  const [creditBillsList, setCreditBillsList] = useState<any[]>([
-    { date: getTodayErpDate(), shift: 'First', slip: '0', bill: '36', cust: 'PORT TRANSPORT', vehicle: 'GJ19AS1454', qty: 160.0, total: 15072.0 },
-    { date: getTodayErpDate(-1), shift: 'First', slip: '0', bill: '35', cust: 'HINESHBHAI', vehicle: 'MH14AS2545', qty: 177.29, total: 16000.0 },
-    { date: getTodayErpDate(-1), shift: 'First', slip: '0', bill: '34', cust: 'ABC TRANSPORT', vehicle: 'GJ18AS557', qty: 160.0, total: 14440.0 },
-    { date: getTodayErpDate(-1), shift: 'First', slip: '0', bill: '33', cust: 'ABC TRANSPORT', vehicle: 'GJ01AS7487', qty: 120.0, total: 10830.0 },
-    { date: getTodayErpDate(-2), shift: 'First', slip: '0', bill: '32', cust: 'SHREE SAM', vehicle: 'GJ15AS8901', qty: 551.02, total: 50000.0 },
-  ]);
+  const [creditBillsList, setCreditBillsList] = useState<any[]>([]);
 
   // Sales Entry Nozzle Totalizers (Frame 0110)
   const [salesDate, setSalesDate] = useState<string>(getTodayErpDate());
-  const [salesReadings, setSalesReadings] = useState<any[]>([
-    { emp: 'Duty Staff', nozzle: 'HSD 1', item: 'Diesel', open: 5268.0, close: 6254.0, test: 0, qty: 986.0, rate: 90.21, amount: 88947.06, vat: 11534.48, lube: 0 },
-    { emp: 'Duty Staff', nozzle: 'HSD 2', item: 'Diesel', open: 10254.0, close: 11254.0, test: 0, qty: 1000.0, rate: 90.21, amount: 90210.0, vat: 11698.25, lube: 0 },
-    { emp: 'Duty Staff', nozzle: 'HSD 3', item: 'Diesel', open: 10474.0, close: 11256.0, test: 0, qty: 782.0, rate: 90.21, amount: 70544.22, vat: 9148.03, lube: 0 },
-    { emp: 'Duty Staff', nozzle: 'HSD 4', item: 'Diesel', open: 12478.0, close: 13256.0, test: 0, qty: 778.0, rate: 90.21, amount: 70183.38, vat: 9101.24, lube: 0 },
-    { emp: 'Duty Staff', nozzle: 'MS 1', item: 'Petrol', open: 1859.0, close: 2014.0, test: 0, qty: 155.0, rate: 94.25, amount: 14608.75, vat: 1760.25, lube: 0 },
-    { emp: 'Duty Staff', nozzle: 'MS 2', item: 'Petrol', open: 10254.0, close: 11247.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
-    { emp: 'Duty Staff', nozzle: 'MS 3', item: 'Petrol', open: 8547.0, close: 0.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
-    { emp: 'Duty Staff', nozzle: 'MS 4', item: 'Petrol', open: 9258.0, close: 0.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
-  ]);
+  const [salesReadings, setSalesReadings] = useState<any[]>([]);
 
   // Payment Receipt State (Frame 0085)
-  const [payReceiptNo, setPayReceiptNo] = useState<string>('00001');
+  const [payReceiptNo, setPayReceiptNo] = useState<string>('');
   const [payCustName, setPayCustName] = useState<string>('');
   const [payShift, setPayShift] = useState<string>('First');
   const [payDate, setPayDate] = useState<string>(getTodayErpDate());
@@ -231,33 +217,33 @@ export default function App() {
   // Expense Book State
   const [expensesList, setExpensesList] = useState<any[]>([]);
   const [expDate, setExpDate] = useState<string>(getTodayErpDate());
-  const [expCategory, setExpCategory] = useState<string>('Gen-Set Diesel');
-  const [expAmount, setExpAmount] = useState<number>(1250.0);
-  const [expNarration, setExpNarration] = useState<string>('Power backup generator diesel');
-  const [expPaidTo, setExpPaidTo] = useState<string>('Pump Cashier');
+  const [expCategory, setExpCategory] = useState<string>('Station Maintenance');
+  const [expAmount, setExpAmount] = useState<number>(0.0);
+  const [expNarration, setExpNarration] = useState<string>('');
+  const [expPaidTo, setExpPaidTo] = useState<string>('');
   const [crystalSearchText, setCrystalSearchText] = useState<string>('');
 
   // Contra Transfer State
   const [fromAccId, setFromAccId] = useState<number>(1); // Cash on hand
   const [toAccId, setToAccId] = useState<number>(7); // HDFC CA
-  const [transferAmt, setTransferAmt] = useState<number>(150000.0);
+  const [transferAmt, setTransferAmt] = useState<number>(0.0);
 
   // Tank Dip State
   const [dipTankId, setDipTankId] = useState<number>(1);
-  const [dipOpenCm, setDipOpenCm] = useState<number>(142.5);
-  const [dipOpenStock, setDipOpenStock] = useState<number>(13150.0);
-  const [dipReceipt, setDipReceipt] = useState<number>(4000.0);
-  const [dipCloseCm, setDipCloseCm] = useState<number>(186.0);
-  const [dipCloseStock, setDipCloseStock] = useState<number>(16890.0);
+  const [dipOpenCm, setDipOpenCm] = useState<number>(0.0);
+  const [dipOpenStock, setDipOpenStock] = useState<number>(0.0);
+  const [dipReceipt, setDipReceipt] = useState<number>(0.0);
+  const [dipCloseCm, setDipCloseCm] = useState<number>(0.0);
+  const [dipCloseStock, setDipCloseStock] = useState<number>(0.0);
   const [dipsList, setDipsList] = useState<any[]>([]);
 
   // Purchase Decanting State
-  const [purInvoiceNo, setPurInvoiceNo] = useState<string>('3215788');
+  const [purInvoiceNo, setPurInvoiceNo] = useState<string>('');
   const [purDealer, setPurDealer] = useState<string>(stationProfile.oilCompany);
-  const [purVehicleNo, setPurVehicleNo] = useState<string>('GJ01DU6553');
-  const [purDensity, setPurDensity] = useState<number>(825.4);
-  const [purQtyKl, setPurQtyKl] = useState<number>(4.0);
-  const [purRateKl, setPurRateKl] = useState<number>(72478.36);
+  const [purVehicleNo, setPurVehicleNo] = useState<string>('');
+  const [purDensity, setPurDensity] = useState<number>(820.0);
+  const [purQtyKl, setPurQtyKl] = useState<number>(0.0);
+  const [purRateKl, setPurRateKl] = useState<number>(0.0);
 
   // Cash Denomination Settlement State (Frame 200)
   const [denoms, setDenoms] = useState<DenominationMap>({
@@ -284,10 +270,14 @@ export default function App() {
   const [backupsList, setBackupsList] = useState<BackupItem[]>([]);
   const [isBackingUp, setIsBackingUp] = useState<boolean>(false);
 
-  // Reports Data
+  // Reports Data (Synchronized from Live PostgreSQL)
   const [dsrReport, setDsrReport] = useState<any[]>([]);
   const [vatReport, setVatReport] = useState<any>(null);
   const [profitReport, setProfitReport] = useState<any[]>([]);
+  const [tdsReport, setTdsReport] = useState<any>(null);
+  const [commissionReport, setCommissionReport] = useState<any>(null);
+  const [lfrReport, setLfrReport] = useState<any>(null);
+  const [profitLossReport, setProfitLossReport] = useState<any>(null);
 
   // Windows Calculator Widget State
   const [calcInput, setCalcInput] = useState<string>('0');
@@ -318,18 +308,14 @@ export default function App() {
   const [cardBatchNo, setCardBatchNo] = useState<string>('00412');
   const [cardSlipsCount, setCardSlipsCount] = useState<number>(24);
   const [cardBatchTotal, setCardBatchTotal] = useState<number>(45800.0);
-  const [cardSettlements, setCardSettlements] = useState<any[]>([
-    { machine: 'M SWIPE', batch: '00411', slips: 18, amount: 32400.0, time: '11:45 AM', status: 'SETTLED' },
-    { machine: 'PAYTM QR', batch: '00892', slips: 42, amount: 18950.0, time: '01:15 PM', status: 'SETTLED' },
-    { machine: 'ICICI CARD', batch: '00109', slips: 12, amount: 28600.0, time: '03:30 PM', status: 'SETTLED' },
-  ]);
+  const [cardSettlements, setCardSettlements] = useState<any[]>([]);
 
   // Retail Cash Memo Slip State
-  const [cashMemoBillNo, setCashMemoBillNo] = useState<string>('CM-9821');
-  const [cashMemoVehicle, setCashMemoVehicle] = useState<string>('GJ05DU8821');
+  const [cashMemoBillNo, setCashMemoBillNo] = useState<string>('');
+  const [cashMemoVehicle, setCashMemoVehicle] = useState<string>('');
   const [cashMemoProduct, setCashMemoProduct] = useState<string>('MS');
-  const [cashMemoLiters, setCashMemoLiters] = useState<number>(10.0);
-  const [cashMemoRate, setCashMemoRate] = useState<number>(94.25);
+  const [cashMemoLiters, setCashMemoLiters] = useState<number>(0.0);
+  const [cashMemoRate, setCashMemoRate] = useState<number>(0.0);
 
   // Set Report Criteria State (Frame 0375)
   const [reportCriteriaRadio, setReportCriteriaRadio] = useState<string>('DSR');
@@ -362,32 +348,12 @@ export default function App() {
   const [empSettlementEmp, setEmpSettlementEmp] = useState<string>('Duty Attendant');
   const [empSettlementMachine, setEmpSettlementMachine] = useState<string>('MPD 1');
   const [empSettlementRemarks, setEmpSettlementRemarks] = useState<string>('');
-  const [empNozzleReadings, setEmpNozzleReadings] = useState<any[]>([
-    { nozzle: 'HSD 1', op: 5000.0, close: 5124.0, test: 5.0, sale: 119.0, rate: 90.21, amount: 10734.99 },
-    { nozzle: 'HSD 2', op: 6000.0, close: 6458.0, test: 5.0, sale: 453.0, rate: 90.21, amount: 40865.13 },
-    { nozzle: 'MS 1', op: 400.0, close: 854.0, test: 5.0, sale: 449.0, rate: 94.25, amount: 42318.25 },
-    { nozzle: 'MS 2', op: 587.0, close: 925.0, test: 5.0, sale: 333.0, rate: 94.25, amount: 31385.25 },
-  ]);
-  const [empLubeItems, setEmpLubeItems] = useState<any[]>([
-    { product: 'MAK DIAMOND 15W 40 15LTR', qty: 1, rate: 5478.0, amount: 5478.0 },
-  ]);
-  const [empCardSwipes, setEmpCardSwipes] = useState<any[]>([
-    { name: 'PAYTM', amount: 5000.0 },
-    { name: 'M SWIPE', amount: 6000.0 },
-    { name: 'PETRO CARD', amount: 14500.0 },
-    { name: 'ICICI CARD', amount: 0.0 },
-  ]);
-  const [empExpensesList, setEmpExpensesList] = useState<any[]>([
-    { name: 'CESS', amount: 0.0, narration: '' },
-    { name: 'MISC EXPENSES', amount: 0.0, narration: '' },
-    { name: 'STAFF INCENTIVE / ADVANCE', amount: 0.0, narration: '' },
-    { name: 'PURCHASE ACCOUNT', amount: 0.0, narration: '' },
-    { name: 'TEA N FOOD EXP', amount: 300.0, narration: 'Staff tea & food' },
-    { name: 'GENERATOR EXP', amount: 1480.0, narration: 'Diesel generator power' },
-    { name: 'CASHIER ADVANCE', amount: 84.0, narration: 'Shift petty cash advance' },
-  ]);
-  const [empCashAmount, setEmpCashAmount] = useState<number>(54000.0);
-  const [empCreditSaleAmount, setEmpCreditSaleAmount] = useState<number>(43939.20);
+  const [empNozzleReadings, setEmpNozzleReadings] = useState<any[]>([]);
+  const [empLubeItems, setEmpLubeItems] = useState<any[]>([]);
+  const [empCardSwipes, setEmpCardSwipes] = useState<any[]>([]);
+  const [empExpensesList, setEmpExpensesList] = useState<any[]>([]);
+  const [empCashAmount, setEmpCashAmount] = useState<number>(0.0);
+  const [empCreditSaleAmount, setEmpCreditSaleAmount] = useState<number>(0.0);
   const [empCreditReceived, setEmpCreditReceived] = useState<number>(0.0);
   const [empUplagBaki, setEmpUplagBaki] = useState<number>(0.0);
 
@@ -397,29 +363,78 @@ export default function App() {
   const [purSampleDensity, setPurSampleDensity] = useState<number>(825.4);
   const [purChargeCode, setPurChargeCode] = useState<string>('01');
   const [purFreight, setPurFreight] = useState<number>(0.0);
-  const [purItemsGrid, setPurItemsGrid] = useState<any[]>([
-    { code: '01', desc: 'High Speed Diesel (HSD BS-VI)', qty: 4000.0, unit: 'Ltr', rate: 72.48, amount: 289920.0, gross: 289920.0, final: 341824.0, freight: 0.0, basicExcise: 0.0, addExci: 0.0 },
-  ]);
-  const [purPoHistory, setPurPoHistory] = useState<any[]>([
-    { po: 'PO-001', date: getTodayErpDate(), inv: '321578', dealer: 'BHARAT PETROLEUM CO LTD', amount: 341824.0 },
-    { po: 'PO-002', date: getTodayErpDate(-1), inv: '321512', dealer: 'BHARAT PETROLEUM CO LTD', amount: 489200.0 },
-    { po: 'PO-003', date: getTodayErpDate(-3), inv: '321480', dealer: 'INDIAN OIL CORP LTD', amount: 250000.0 },
-  ]);
+  const [purItemsGrid, setPurItemsGrid] = useState<any[]>([]);
+  const [purPoHistory, setPurPoHistory] = useState<any[]>([]);
 
   // Select Customer Dialog (Frame 0280)
   const [selectedCustForBill, setSelectedCustForBill] = useState<string>('LIVAVATI TRANSPORTY');
 
 
-  // Load Dashboard Data from Live Railway Backend
-  const loadData = async () => {
+  // Master ERP Synchronization Engine: Hydrates & Interconnects All Pump Models from Live Railway Backend
+  const loadAllErpData = async () => {
     try {
-      const h = await fetchHealth();
+      const h = await fetchHealth().catch(() => ({ status: 'down' }));
       setBackendOnline(h.status === 'healthy');
-      const [d, shiftData] = await Promise.all([
-        fetchDashboard(),
+
+      const [
+        dashData,
+        shiftData,
+        custsData,
+        ratesData,
+        creditSalesData,
+        paymentsData,
+        expensesData,
+        purchasesData,
+        dipsData,
+        stampingData,
+        vatData,
+        profitData,
+        tdsData,
+        commData,
+        lfrData,
+        plData,
+        dsrData,
+      ] = await Promise.all([
+        fetchDashboard().catch(() => null),
         fetchCurrentShift().catch(() => null),
+        fetchCustomers().catch(() => []),
+        fetchRates().catch(() => null),
+        fetchCreditSales().catch(() => []),
+        fetchPayments().catch(() => []),
+        fetchExpenses().catch(() => []),
+        fetchPurchases().catch(() => []),
+        fetchDips().catch(() => []),
+        fetchStampingReminders().catch(() => []),
+        fetchVatSummary().catch(() => null),
+        fetchProfitSummary().catch(() => []),
+        fetchTdsSummary().catch(() => null),
+        fetchDealerCommission().catch(() => null),
+        fetchLfrSummary().catch(() => null),
+        fetchProfitLossSummary().catch(() => null),
+        fetchDsrReport().catch(() => []),
       ]);
-      setDashboard(d);
+
+      if (dashData) {
+        setDashboard(dashData);
+      }
+      if (custsData && custsData.length > 0) {
+        setCustomers(custsData);
+        if (!creditCustId || !custsData.find((c: any) => c.id === creditCustId)) {
+          setCreditCustId(custsData[0].id);
+          setCreditVehicle(custsData[0].vehicles?.[0] || '');
+        }
+      }
+      if (ratesData) {
+        setRatesList(ratesData.products || []);
+        setRateHist(ratesData.history || []);
+        if (ratesData.products && ratesData.products.length > 0) {
+          const defaultProd = ratesData.products[0];
+          setRateProduct(defaultProd.id);
+          setRateValue(defaultProd.rate);
+          const activeRate = ratesData.products.find((p: any) => p.id === creditProductId)?.rate || defaultProd.rate;
+          setCreditRate(activeRate);
+        }
+      }
       if (shiftData) {
         if (shiftData.employees && shiftData.employees.length > 0) {
           setEmployeesList(shiftData.employees);
@@ -430,77 +445,48 @@ export default function App() {
         if (shiftData.shift_name) {
           setShiftName(shiftData.shift_name);
         }
+        if (shiftData.status) {
+          setShiftStatus(shiftData.status.toUpperCase());
+        }
+        if (shiftData.nozzles && shiftData.nozzles.length > 0) {
+          const readings = shiftData.nozzles.map((n: any) => {
+            const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
+            const amount = Math.round(qty * n.rate * 100) / 100;
+            const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
+            return {
+              emp: shiftData.employees?.[0]?.name || 'Duty Staff',
+              nozzle: n.nozzle_name,
+              item: n.product_name,
+              open: n.opening_meter,
+              close: n.closing_meter,
+              test: n.testing,
+              qty: qty,
+              rate: n.rate,
+              amount: amount,
+              vat: vat,
+              lube: 0,
+              nozzle_id: n.nozzle_id,
+            };
+          });
+          setSalesReadings(readings);
+          setEmpNozzleReadings(
+            readings.map((r: any) => ({
+              nozzle: r.nozzle,
+              op: r.open,
+              close: r.close,
+              test: r.test,
+              sale: r.qty,
+              rate: r.rate,
+              amount: r.amount,
+            }))
+          );
+        }
       }
-    } catch {
-      setBackendOnline(false);
-      setDashboard({
-        kpis: {
-          today_sale: 664908.18,
-          total_outstanding: 1127695.8,
-          total_balance: 22374520.21,
-          total_stock_cost: 2117060.06,
-        },
-        breakdown: {
-          cash: 237659.88,
-          credit: 54091.46,
-          digital: 373156.84,
-          total: 664908.18,
-        },
-        tanks: [
-          { id: 1, name: 'MS', product: 'Petrol', code: 'MS', capacity: 20000, current_stock: 13150, percent: 66, dip_cm: 142.5, is_low: false },
-          { id: 2, name: 'HSD', product: 'Diesel', code: 'HSD', capacity: 20000, current_stock: 16890, percent: 84, dip_cm: 186.0, is_low: false },
-        ],
-        customers: [
-          { id: 1, code: '21', name: 'PORT TRANSPORT', city: 'SURAT', mobile: '+91 7096386817', outstanding: 795532.21, credit_limit: 1000000 },
-          { id: 2, code: '19', name: 'JITU OD', city: 'AHMEDABAD', mobile: '+91 9999999999', outstanding: 632120.0, credit_limit: 800000 },
-          { id: 3, code: '11', name: 'KEL INFRAS', city: 'VADODARA', mobile: '+91 9999999998', outstanding: 93765.27, credit_limit: 300000 },
-          { id: 4, code: '20', name: 'ABC TRANSPORT', city: 'VAPI', mobile: '+91 9727181188', outstanding: 50270.0, credit_limit: 200000 },
-          { id: 5, code: '05', name: 'HINESHBHAI', city: 'SURAT', mobile: '+91 9898989898', outstanding: 34760.0, credit_limit: 100000 },
-          { id: 6, code: '06', name: 'DUDH MANDLI', city: 'VYARA', mobile: '+91 9898989897', outstanding: 30000.0, credit_limit: 100000 },
-          { id: 7, code: '07', name: 'DOODH MANDLI UM', city: 'UMARPADA', mobile: '+91 9898989896', outstanding: 19968.0, credit_limit: 50000 },
-          { id: 8, code: '08', name: 'TOL MAP', city: 'SONGADH', mobile: '+91 9898989895', outstanding: 8926.8, credit_limit: 50000 },
-          { id: 9, code: '09', name: 'RAJ', city: 'SURAT', mobile: '+91 9898989894', outstanding: 8907.4, credit_limit: 50000 },
-          { id: 10, code: '10', name: 'ABCD TRANSPORT', city: 'NAVSARI', mobile: '+91 9898989893', outstanding: 5000.0, credit_limit: 50000 },
-          { id: 11, code: '12', name: 'NILMANI TRANS', city: 'VALSAD', mobile: '+91 9898989892', outstanding: 4531.55, credit_limit: 50000 },
-          { id: 12, code: '13', name: 'YAKESH BHAI', city: 'SURAT', mobile: '+91 9898989891', outstanding: 3500.0, credit_limit: 20000 },
-          { id: 13, code: '14', name: 'SHAILESHBHAI', city: 'SURAT', mobile: '+91 9898989890', outstanding: 0.0, credit_limit: 50000 },
-          { id: 14, code: '15', name: 'SHREE FORAM', city: 'SURAT', mobile: '+91 9898989889', outstanding: 0.0, credit_limit: 50000 },
-        ],
-        accounts: [
-          { id: 1, name: 'CASH ON HAND', type: 'CASH', balance: 450448.86 },
-          { id: 2, name: 'PAYTM', type: 'WALLET', balance: 92683.82 },
-          { id: 3, name: 'M SWIPE', type: 'POS', balance: 799801.26 },
-          { id: 4, name: 'PETRO CARD', type: 'CARD', balance: 3388191.24 },
-          { id: 5, name: 'BOB CA 115', type: 'CURRENT', balance: 9999.81 },
-          { id: 6, name: 'PRIME CA 00236', type: 'CURRENT', balance: 159823.09 },
-          { id: 7, name: 'HDFC CA 0459', type: 'CURRENT', balance: 26000943.17 },
-          { id: 8, name: 'CASH JAMAA', type: 'CASH', balance: 0.0 },
-          { id: 9, name: 'BOB SB 6189', type: 'SAVINGS', balance: 536949.77 },
-          { id: 10, name: 'GPAY', type: 'WALLET', balance: 18015.0 },
-          { id: 11, name: 'ICICI CARD', type: 'POS', balance: 2348016.71 },
-          { id: 12, name: 'YES BANK', type: 'CURRENT', balance: 10373611.98 },
-          { id: 13, name: 'POST OFFICE SB AC.439', type: 'SAVINGS', balance: 17159.0 },
-        ],
-        active_shift: {
-          so_number: '00017',
-          date: new Date().toISOString().split('T')[0],
-          shift_name: 'First',
-          status: 'Closed',
-        },
-      });
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-    fetchCustomers().then(setCustomers).catch(() => {});
-    fetchExpenses().then((data) => { if (data && data.length > 0) setExpensesList(data); }).catch(() => {});
-    fetchCreditSales().then((sales) => {
-      if (sales && sales.length > 0) {
+      if (creditSalesData && creditSalesData.length > 0) {
         setCreditBillsList(
-          sales.map((s) => ({
+          creditSalesData.map((s: any) => ({
             date: s.date,
-            shift: 'First',
+            shift: s.shift || 'First',
             slip: s.slip_no,
             bill: s.bill_no,
             cust: s.customer_name,
@@ -510,11 +496,9 @@ export default function App() {
           }))
         );
       }
-    }).catch(() => {});
-    fetchPayments().then((payments) => {
-      if (payments && payments.length > 0) {
+      if (paymentsData && paymentsData.length > 0) {
         setPayReceiptsHistory(
-          payments.map((p) => ({
+          paymentsData.map((p: any) => ({
             shift: p.shift || 'First',
             date: p.date,
             cust: p.customer,
@@ -523,11 +507,12 @@ export default function App() {
           }))
         );
       }
-    }).catch(() => {});
-    fetchPurchases().then((purchases) => {
-      if (purchases && purchases.length > 0) {
+      if (expensesData && expensesData.length > 0) {
+        setExpensesList(expensesData);
+      }
+      if (purchasesData && purchasesData.length > 0) {
         setPurPoHistory(
-          purchases.map((p) => ({
+          purchasesData.map((p: any) => ({
             po: p.invoice_no,
             date: p.date,
             inv: p.invoice_no,
@@ -536,7 +521,29 @@ export default function App() {
           }))
         );
       }
-    }).catch(() => {});
+      if (dipsData && dipsData.length > 0) {
+        setDipsList(dipsData);
+      }
+      if (stampingData && stampingData.length > 0) {
+        setStampingList(stampingData);
+      }
+      if (vatData) setVatReport(vatData);
+      if (profitData && profitData.length > 0) setProfitReport(profitData);
+      if (tdsData) setTdsReport(tdsData);
+      if (commData) setCommissionReport(commData);
+      if (lfrData) setLfrReport(lfrData);
+      if (plData) setProfitLossReport(plData);
+      if (dsrData && dsrData.length > 0) setDsrReport(dsrData);
+    } catch (err: any) {
+      console.warn('Live ERP synchronization error:', err);
+      setBackendOnline(false);
+    }
+  };
+
+  const loadData = loadAllErpData;
+
+  useEffect(() => {
+    loadAllErpData();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -581,17 +588,14 @@ export default function App() {
   const openRateMaster = async () => {
     try {
       const data = await fetchRates();
-      setRatesList(data.products);
-      setRateHist(data.history);
-      if (data.products.length > 0) {
+      setRatesList(data.products || []);
+      setRateHist(data.history || []);
+      if (data.products && data.products.length > 0) {
         setRateProduct(data.products[0].id);
         setRateValue(data.products[0].rate);
       }
-    } catch {
-      setRatesList([
-        { id: 1, code: 'HSD', name: 'Diesel (HSD)', rate: 90.21, vat_percent: 14.9, cess_percent: 4.0 },
-        { id: 2, code: 'MS', name: 'Petrol (MS)', rate: 94.25, vat_percent: 13.7, cess_percent: 4.0 },
-      ]);
+    } catch (err: any) {
+      console.warn('Rate master fetch warning:', err);
     }
     setActiveDialog('rate');
     setOpenDropdown(null);
@@ -602,28 +606,35 @@ export default function App() {
       const data = await fetchCustomerStatement(custId);
       setSelectedStatement(data);
     } catch {
-      const c = dashboard?.customers.find((x) => x.id === custId) || customers.find((x) => x.id === custId);
+      const c = customers.find((x) => x.id === custId) || dashboard?.customers.find((x) => x.id === custId);
+      const custBills = creditBillsList.filter((b) => b.cust === c?.name);
+      const totalPurch = custBills.reduce((acc, b) => acc + (b.total || 0), 0);
+      const currentOutstanding = (c as any)?.current_outstanding ?? (c as any)?.outstanding ?? 0;
       setSelectedStatement({
         customer: {
           id: custId,
-          code: c?.code || '21',
-          name: c?.name || 'PORT TRANSPORT',
-          city: c?.city || 'SURAT',
-          mobile: c?.mobile || '+91 7096386817',
-          outstanding: (c as any)?.outstanding || (c as any)?.current_outstanding || 795532.21,
+          code: c?.code || 'CUST',
+          name: c?.name || 'CUSTOMER',
+          city: c?.city || stationProfile.city,
+          mobile: c?.mobile || '-',
+          outstanding: currentOutstanding,
         },
-        bills: [
-          { date: getTodayErpDate(), bill_no: '36', vehicle_no: 'GJ19AS1454', qty: 160.0, rate: 90.21, amount: 15072.0, slip_no: '0' },
-          { date: getTodayErpDate(-1), bill_no: '34', vehicle_no: 'GJ18AS557', qty: 160.0, rate: 90.21, amount: 14440.0, slip_no: '0' },
-          { date: getTodayErpDate(-2), bill_no: '31', vehicle_no: 'GJ04AT2211', qty: 180.0, rate: 90.21, amount: 16237.8, slip_no: '0' },
-        ],
+        bills: custBills.map((b) => ({
+          date: b.date,
+          bill_no: b.bill,
+          vehicle_no: b.vehicle,
+          qty: b.qty,
+          rate: b.qty ? Math.round((b.total / b.qty) * 100) / 100 : 0,
+          amount: b.total,
+          slip_no: b.slip,
+        })),
         summary: {
-          total_purchase: 45749.8,
+          total_purchase: totalPurch,
           total_other_lube: 0.0,
           total_tax_amount: 0.0,
-          previous_dues: 749782.41,
-          total_paid_period: 21000.0,
-          net_payables: 795532.21,
+          previous_dues: Math.max(0, currentOutstanding - totalPurch),
+          total_paid_period: 0.0,
+          net_payables: currentOutstanding,
           terms: [
             `(1) Subject To ${stationProfile.city} Jurisdiction`,
             '(2) Query in the Invoice should be notified to us immediately. No claims or discrepancy shall be entertained after 5 days from the Date of INVOICE.',
@@ -639,14 +650,9 @@ export default function App() {
   const openStampingCalendar = async () => {
     try {
       const data = await fetchStampingReminders();
-      setStampingList(data);
-    } catch {
-      setStampingList([
-        { nozzle_id: 1, nozzle_name: 'HSD 1', tank: 'HSD Tank 1', last_stamped: '15-May-2025', next_due: '14-May-2026', days_remaining: 228, status: 'VALID' },
-        { nozzle_id: 2, nozzle_name: 'HSD 2', tank: 'HSD Tank 1', last_stamped: '15-May-2025', next_due: '14-May-2026', days_remaining: 228, status: 'VALID' },
-        { nozzle_id: 3, nozzle_name: 'MS 1', tank: 'MS Tank 1', last_stamped: '15-May-2025', next_due: '14-May-2026', days_remaining: 228, status: 'VALID' },
-        { nozzle_id: 4, nozzle_name: 'MS 2', tank: 'MS Tank 1', last_stamped: '15-May-2025', next_due: '14-May-2026', days_remaining: 228, status: 'VALID' },
-      ]);
+      setStampingList(data || []);
+    } catch (err: any) {
+      console.warn('Stamping schedule fetch warning:', err);
     }
     setActiveDialog('stamping');
   };
@@ -860,6 +866,17 @@ export default function App() {
     }
   };
 
+  const openCashMemo = () => {
+    setActiveDialog('cashBill');
+    setOpenDropdown(null);
+    if (!cashMemoBillNo) {
+      setCashMemoBillNo(`CM-${Math.floor(1000 + Math.random() * 9000)}`);
+    }
+    const msRate = ratesList.find((p) => p.code === 'MS' || p.name.includes('Petrol'))?.rate || 0;
+    const hsdRate = ratesList.find((p) => p.code === 'HSD' || p.name.includes('Diesel'))?.rate || 0;
+    setCashMemoRate(cashMemoProduct === 'MS' ? msRate : hsdRate);
+  };
+
   const openBackupDialog = async () => {
     setActiveDialog('backup');
     setOpenDropdown(null);
@@ -915,16 +932,20 @@ export default function App() {
         const p = await fetchProfitSummary();
         setProfitReport(p);
       } else if (reportName.includes('TDS')) {
-        await fetchTdsSummary();
+        const t = await fetchTdsSummary();
+        setTdsReport(t);
       } else if (reportName.includes('COMMISION')) {
-        await fetchDealerCommission();
+        const c = await fetchDealerCommission();
+        setCommissionReport(c);
       } else if (reportName.includes('LFR')) {
-        await fetchLfrSummary();
+        const l = await fetchLfrSummary();
+        setLfrReport(l);
       } else if (reportName.includes('PROFIT LOSS')) {
-        await fetchProfitLossSummary();
+        const pl = await fetchProfitLossSummary();
+        setProfitLossReport(pl);
       }
-    } catch {
-      // Offline fallback state already populated
+    } catch (err: any) {
+      console.warn('Report fetch warning:', err);
     }
   };
 
@@ -935,7 +956,7 @@ export default function App() {
       await updateRate(rateProduct, rateValue);
       showToast(`Rate updated successfully to ₹${rateValue.toFixed(2)}!`);
       openRateMaster();
-      loadData();
+      await loadAllErpData();
     } catch (err: any) {
       showToast(err.message || 'Error updating rate');
     }
@@ -993,7 +1014,7 @@ export default function App() {
       if (printSlip) {
         window.print();
       }
-      loadData();
+      await loadAllErpData();
     } catch (err: any) {
       showToast(err.message || 'Error saving credit bill');
     }
@@ -1032,7 +1053,7 @@ export default function App() {
         freight: purFreight,
       });
       showToast(`✔ Decanting recorded in PostgreSQL! Added ${item.qty} Ltr to Tank Stock.`);
-      loadData();
+      await loadAllErpData();
     } catch {
       showToast(`✔ Added ${item.qty} Ltr to Inward Purchase List!`);
     }
@@ -1050,7 +1071,7 @@ export default function App() {
         })),
       });
       showToast('✔ Shift meter readings saved and totalizers updated!');
-      loadData();
+      await loadAllErpData();
     } catch (err: any) {
       showToast(err.message || 'Error saving shift meters');
     }
@@ -1058,14 +1079,6 @@ export default function App() {
 
   const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newExp = {
-      id: Date.now(),
-      date: expDate || getTodayErpDate(),
-      category: expCategory,
-      amount: expAmount,
-      narration: expNarration,
-      paid_to: expPaidTo,
-    };
     try {
       await createExpense({
         category: expCategory,
@@ -1074,16 +1087,9 @@ export default function App() {
         paid_to: expPaidTo,
       });
       showToast(`✔ Expense of ₹${expAmount} recorded in PostgreSQL Cash Book!`);
-      const fresh = await fetchExpenses();
-      if (fresh && fresh.length > 0) {
-        setExpensesList(fresh);
-      } else {
-        setExpensesList([newExp, ...expensesList]);
-      }
-      loadData();
-    } catch {
-      setExpensesList([newExp, ...expensesList]);
-      showToast(`✔ Expense of ₹${expAmount} recorded locally in Cash Book!`);
+      await loadAllErpData();
+    } catch (err: any) {
+      showToast(`⚠ Error saving expense: ${err.message || 'Database error'}`);
     }
   };
 
@@ -1101,7 +1107,7 @@ export default function App() {
         amount: transferAmt,
       });
       showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} completed!`);
-      loadData();
+      await loadAllErpData();
     } catch (err: any) {
       showToast(err.message || 'Error executing transfer');
     }
@@ -1119,7 +1125,7 @@ export default function App() {
         closing_stock: dipCloseStock,
       });
       showToast(`✔ Dip recorded! Variation: ${res.variation_liters} L (Tolerance: ${res.tolerance_limit} L)`);
-      loadData();
+      await loadAllErpData();
     } catch (err: any) {
       showToast(err.message || 'Error recording dip');
     }
@@ -1138,7 +1144,7 @@ export default function App() {
         rate_per_kl: purRateKl,
       });
       showToast(`✔ Tanker Inward Decanting #${res.invoice_no} Saved!`);
-      loadData();
+      await loadAllErpData();
     } catch (err: any) {
       showToast(err.message || 'Error saving purchase');
     }
@@ -1153,7 +1159,7 @@ export default function App() {
       ? expensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0)
       : empExpensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0);
     const creditCollections = empCreditReceived || 0;
-    const totalMeterSales = salesReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0) || (dashboard?.kpis.today_sale || 664908.18);
+    const totalMeterSales = salesReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0) || (dashboard?.kpis.today_sale || 0.0);
 
     try {
       const res = await calculateSettlement({
@@ -1232,30 +1238,13 @@ export default function App() {
       if (newCustVehicle) {
         await addVehicle(res.id, newCustVehicle);
       }
-      showToast(`✔ Customer "${newCustName}" created successfully!`);
+      showToast(`✔ Customer "${newCustName.toUpperCase()}" created successfully in PostgreSQL!`);
       setNewCustName('');
       setNewCustMobile('');
       setNewCustVehicle('');
-      fetchCustomers().then(setCustomers).catch(() => {});
-      loadData();
-    } catch {
-      // Local fallback
-      const newCust: CustomerFull = {
-        id: Date.now(),
-        code: (customers.length + 1).toString(),
-        name: newCustName,
-        city: newCustCity,
-        mobile: newCustMobile,
-        credit_limit: newCustLimit,
-        current_outstanding: 0,
-        bill_period: 'Weekly',
-        vehicles: newCustVehicle ? [newCustVehicle] : [],
-      };
-      setCustomers([...customers, newCust]);
-      showToast(`✔ Customer "${newCustName}" added!`);
-      setNewCustName('');
-      setNewCustMobile('');
-      setNewCustVehicle('');
+      await loadAllErpData();
+    } catch (err: any) {
+      showToast(`⚠ Error creating customer: ${err.message || 'Database error'}`);
     }
   };
 
@@ -1263,46 +1252,23 @@ export default function App() {
   const handleCreateBankAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBankName) return;
-    const newAcc = {
-      id: Date.now(),
-      name: newBankName.toUpperCase(),
-      type: newBankType,
-      balance: newBankBalance,
-    };
     try {
       await createBankAccount({
-        account_name: newBankName,
+        account_name: newBankName.toUpperCase(),
         account_type: newBankType,
         balance: newBankBalance,
       });
-      showToast(`✔ Bank Account "${newAcc.name}" saved to PostgreSQL!`);
+      showToast(`✔ Bank Account "${newBankName.toUpperCase()}" saved to PostgreSQL!`);
       setNewBankName('');
       setNewBankBalance(0);
-      loadData();
-    } catch {
-      if (dashboard) {
-        setDashboard({
-          ...dashboard,
-          accounts: [...dashboard.accounts, newAcc],
-        });
-      }
-      showToast(`✔ Bank Account "${newAcc.name}" created!`);
-      setNewBankName('');
-      setNewBankBalance(0);
+      await loadAllErpData();
+    } catch (err: any) {
+      showToast(`⚠ Error creating bank account: ${err.message || 'Database error'}`);
     }
   };
 
   // Card POS Settlement Save
   const handleSaveCardSettlement = async () => {
-    const newEntry = {
-      machine: cardMachine,
-      batch: cardBatchNo,
-      slips: cardSlipsCount,
-      amount: cardBatchTotal,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'SETTLED',
-    };
-    setCardSettlements([newEntry, ...cardSettlements]);
     try {
       await createCardSettlement({
         machine_name: cardMachine,
@@ -1310,10 +1276,19 @@ export default function App() {
         slip_count: cardSlipsCount,
         amount: cardBatchTotal,
       });
+      const newEntry = {
+        machine: cardMachine,
+        batch: cardBatchNo,
+        slips: cardSlipsCount,
+        amount: cardBatchTotal,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        status: 'SETTLED',
+      };
+      setCardSettlements((prev) => [newEntry, ...prev]);
       showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled in PostgreSQL!`);
-      loadData();
-    } catch {
-      showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled locally!`);
+      await loadAllErpData();
+    } catch (err: any) {
+      showToast(`⚠ Error settling batch: ${err.message || 'Database error'}`);
     }
   };
 
@@ -1344,22 +1319,22 @@ export default function App() {
   };
 
   const kpis = dashboard?.kpis || {
-    today_sale: 664908.18,
-    total_outstanding: 1127695.8,
-    total_balance: 22374520.21,
-    total_stock_cost: 2117060.06,
+    today_sale: salesReadings.reduce((sum, r) => sum + (r.amount || 0), 0),
+    total_outstanding: customers.reduce((sum, c) => sum + (c.current_outstanding || 0), 0),
+    total_balance: (dashboard?.accounts || []).reduce((sum, a) => sum + (a.balance || 0), 0),
+    total_stock_cost: (dashboard?.tanks || []).reduce((sum, t) => {
+      const liveRate = ratesList.find((p) => t.product === 'Petrol' ? (p.code === 'MS' || p.name.includes('Petrol')) : (p.code === 'HSD' || p.name.includes('Diesel')))?.rate || 0;
+      return sum + ((t.current_stock || 0) * liveRate);
+    }, 0),
   };
   const breakdown = dashboard?.breakdown || {
-    cash: 237659.88,
-    credit: 54091.46,
-    digital: 373156.84,
-    total: 664908.18,
+    cash: Math.max(0, salesReadings.reduce((sum, r) => sum + (r.amount || 0), 0) - creditBillsList.reduce((sum, b) => sum + (b.total || 0), 0) - cardSettlements.reduce((sum, c) => sum + (c.amount || 0), 0)),
+    credit: creditBillsList.reduce((sum, b) => sum + (b.total || 0), 0),
+    digital: cardSettlements.reduce((sum, c) => sum + (c.amount || 0), 0),
+    total: salesReadings.reduce((sum, r) => sum + (r.amount || 0), 0),
   };
-  const tanks = dashboard?.tanks || [
-    { id: 1, name: 'MS', product: 'Petrol', code: 'MS', capacity: 20000, current_stock: 13150, percent: 66, dip_cm: 142.5, is_low: false },
-    { id: 2, name: 'HSD', product: 'Diesel', code: 'HSD', capacity: 20000, current_stock: 16890, percent: 84, dip_cm: 186.0, is_low: false },
-  ];
-  const customersList = (dashboard?.customers || []).filter((c) =>
+  const tanks = dashboard?.tanks || [];
+  const customersList = customers.filter((c) =>
     custFilter ? c.name.toLowerCase().includes(custFilter.toLowerCase()) || c.city?.toLowerCase().includes(custFilter.toLowerCase()) : true
   );
   const accountsList = dashboard?.accounts || [];
@@ -1475,7 +1450,7 @@ export default function App() {
         <button className="win-menu-item" onClick={() => setActiveDialog('calc')}>🧮 Calculator</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('selectCustomerBill')}>Credit Bills</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('cardEntry')}>Card Entry</button>
-        <button className="win-menu-item" onClick={() => setActiveDialog('cashBill')}>Cash Bill</button>
+        <button className="win-menu-item" onClick={openCashMemo}>Cash Bill</button>
         <button className="win-menu-item" style={{ color: '#0d47a1', fontWeight: 700 }} onClick={openBackupDialog}>☁️ Cloudflare R2</button>
       </div>
 
@@ -1685,7 +1660,7 @@ export default function App() {
                     onClick={() => exportToCsv(
                       `NSAIPETROSOFT_CustomerOutstanding_${new Date().toISOString().split('T')[0]}`,
                       ['Customer Name', 'Outstanding Balance (INR)'],
-                      customersList.map(c => [c.name, c.outstanding])
+                      customersList.map(c => [c.name, (c.current_outstanding ?? (c as any).outstanding ?? 0)])
                     )}
                     title="Export all customer balances to Microsoft Excel or CSV"
                   >
@@ -1709,7 +1684,7 @@ export default function App() {
                           onClick={() => openCustomerStatement(c.id)}
                         >
                           <td style={{ color: '#0055ea', fontWeight: 600 }}>{c.name}</td>
-                          <td className="text-right">{c.outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          <td className="text-right">{((c.current_outstanding ?? (c as any).outstanding ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2054,11 +2029,21 @@ export default function App() {
                       onChange={(e) => {
                         const pid = parseInt(e.target.value);
                         setCreditProductId(pid);
-                        setCreditRate(pid === 1 ? 90.21 : 94.25);
+                        const matched = ratesList.find(r => r.id === pid);
+                        if (matched) {
+                          setCreditRate(matched.rate);
+                        }
                       }}
                     >
-                      <option value={1}>Diesel (HSD) - ₹90.21</option>
-                      <option value={2}>Petrol (MS) - ₹94.25</option>
+                      {ratesList.length > 0 ? (
+                        ratesList.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name} - ₹{r.rate.toFixed(2)}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">Connecting to database rates...</option>
+                      )}
                     </select>
                   </div>
 
@@ -2340,29 +2325,24 @@ export default function App() {
                   <button
                     className="win-btn-classic win-btn-primary"
                     onClick={async () => {
-                      const newReceipt = {
-                        shift: 'First',
-                        date: formatErpDate(payDate),
-                        cust: payCustName,
-                        mode: payMode,
-                        amt: payAmount,
-                      };
-                      setPayReceiptsHistory([newReceipt, ...payReceiptsHistory]);
-                      setPayTotalPaid(payTotalPaid + payAmount);
-                      setPayTotalUnpaid(Math.max(0, payTotalUnpaid - payAmount));
+                      if (!payAmount || payAmount <= 0) {
+                        showToast('Please enter a valid payment amount');
+                        return;
+                      }
                       try {
                         const custObj = customers.find((c) => c.name === payCustName);
-                        const custId = custObj ? custObj.id : 1;
+                        const custId = custObj ? custObj.id : (customers[0]?.id || 1);
                         await createPaymentReceipt({
                           customer_id: custId,
                           amount: payAmount,
                           payment_mode: payMode,
                           bank_name: payBank,
                         });
-                        showToast(`✔ Receipt recorded in PostgreSQL! Outstanding reduced by ₹${payAmount}`);
-                        loadData();
-                      } catch {
-                        showToast(`✔ Receipt #${payReceiptNo} recorded locally for ₹${payAmount}!`);
+                        showToast(`✔ Receipt recorded in PostgreSQL! Outstanding reduced by ₹${payAmount.toFixed(2)}`);
+                        setPayAmount(0);
+                        await loadAllErpData();
+                      } catch (err: any) {
+                        showToast(err.message || 'Error recording receipt');
                       }
                     }}
                   >
@@ -2620,10 +2600,22 @@ export default function App() {
                     className="win-select"
                     style={{ flex: 1 }}
                     value={rateProduct}
-                    onChange={(e) => setRateProduct(parseInt(e.target.value))}
+                    onChange={(e) => {
+                      const id = parseInt(e.target.value);
+                      setRateProduct(id);
+                      const matched = ratesList.find((p) => p.id === id);
+                      if (matched) setRateValue(matched.rate);
+                    }}
                   >
-                    <option value={1}>Diesel (HSD) - ₹90.21</option>
-                    <option value={2}>Petrol (MS) - ₹94.25</option>
+                    {ratesList.length > 0 ? (
+                      ratesList.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name} ({r.code}) - Current: ₹{r.rate.toFixed(2)}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Loading rates from database...</option>
+                    )}
                   </select>
                 </div>
                 <div className="win-form-row">
@@ -3790,49 +3782,85 @@ export default function App() {
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginTop: '12px' }}>
                       <div>
-                        <div className="crystal-table-subhead">3. Product Summary</div>
-                        <table className="crystal-table">
-                          <thead>
-                            <tr>
-                              <th>Product</th>
-                              <th>Liters Sold</th>
-                              <th className="text-right">Total Value</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td>Motor Spirit (MS Petrol)</td>
-                              <td>155.00 L</td>
-                              <td className="text-right">₹ 14,608.75</td>
-                            </tr>
-                            <tr>
-                              <td>High Speed Diesel (HSD)</td>
-                              <td>3,546.00 L</td>
-                              <td className="text-right">₹ 3,19,884.66</td>
-                            </tr>
-                          </tbody>
-                        </table>
+                        <div className="crystal-table-subhead">3. Product Summary (Shift Sales)</div>
+                        {(() => {
+                          const prodMap: { [key: string]: { qty: number; value: number } } = {};
+                          salesReadings.forEach((r) => {
+                            const name = r.item || 'Other Fuel';
+                            if (!prodMap[name]) prodMap[name] = { qty: 0, value: 0 };
+                            prodMap[name].qty += Number(r.qty || 0);
+                            prodMap[name].value += Number(r.amount || 0);
+                          });
+                          const prodList = Object.keys(prodMap).map((k) => ({
+                            product: k,
+                            qty: prodMap[k].qty,
+                            value: prodMap[k].value,
+                          }));
+                          const totalSoldLiters = prodList.reduce((sum, p) => sum + p.qty, 0);
+                          const totalSoldValue = prodList.reduce((sum, p) => sum + p.value, 0);
+
+                          return (
+                            <table className="crystal-table">
+                              <thead>
+                                <tr>
+                                  <th>Product</th>
+                                  <th className="text-right">Liters Sold</th>
+                                  <th className="text-right">Total Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {prodList.length > 0 ? (
+                                  prodList.map((p, idx) => (
+                                    <tr key={idx}>
+                                      <td>{p.product}</td>
+                                      <td className="text-right">{p.qty.toLocaleString('en-IN', { minimumFractionDigits: 2 })} L</td>
+                                      <td className="text-right">₹ {p.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={3} style={{ textAlign: 'center', padding: '8px' }}>No nozzle sales entered for current shift</td>
+                                  </tr>
+                                )}
+                                <tr className="crystal-highlight-row">
+                                  <td>TOTAL FUEL SALES</td>
+                                  <td className="text-right">{totalSoldLiters.toLocaleString('en-IN', { minimumFractionDigits: 2 })} L</td>
+                                  <td className="text-right" style={{ fontWeight: 800 }}>₹ {totalSoldValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          );
+                        })()}
                       </div>
                       <div>
                         <div className="crystal-table-subhead">4. Cashier Shift Settlement Summary</div>
-                        <div style={{ border: '1px solid #999', padding: '6px', fontSize: '11px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>Physical Cash Collected:</span>
-                            <strong>₹ 2,37,659.88</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>Credit Bills Total:</span>
-                            <strong>₹ 54,091.46</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span>Digital Card / POS Swipes:</span>
-                            <strong>₹ 3,73,156.84</strong>
-                          </div>
-                          <div style={{ borderTop: '1px solid #777', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#1565c0' }}>
-                            <span>Gross Day Collection:</span>
-                            <span>₹ 6,64,908.18</span>
-                          </div>
-                        </div>
+                        {(() => {
+                          const grossSales = salesReadings.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+                          const creditBillsSum = creditBillsList.reduce((sum, b) => sum + Number(b.total || 0), 0);
+                          const cardSettlementSum = cardSettlements.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+                          const cashCollected = Math.max(0, grossSales - creditBillsSum - cardSettlementSum);
+
+                          return (
+                            <div style={{ border: '1px solid #999', padding: '6px', fontSize: '11px', background: '#fafafa' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                <span>Physical Cash Collected:</span>
+                                <strong>₹ {cashCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                <span>Credit Bills Total:</span>
+                                <strong>₹ {creditBillsSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                <span>Digital Card / POS Swipes:</span>
+                                <strong>₹ {cardSettlementSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                              </div>
+                              <div style={{ borderTop: '1px solid #777', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#1565c0' }}>
+                                <span>Gross Day Collection:</span>
+                                <span>₹ {grossSales.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -3845,25 +3873,43 @@ export default function App() {
                     <table className="crystal-table">
                       <thead>
                         <tr>
-                          <th>Invoice No</th>
-                          <th>Date</th>
-                          <th>Basic Amount (₹)</th>
-                          <th>VAT 13% (₹)</th>
-                          <th>Cess (₹)</th>
-                          <th>TCS 0.1% (₹)</th>
+                          <th>Invoice / Ref</th>
+                          <th>Product</th>
+                          <th className="text-right">Qty (L)</th>
+                          <th className="text-right">Basic Amount (₹)</th>
+                          <th className="text-right">VAT Rate %</th>
+                          <th className="text-right">VAT Amount (₹)</th>
+                          <th className="text-right">Cess (₹)</th>
                           <th className="text-right">Total Purchase (₹)</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td>3215788</td>
-                          <td>{getTodayErpDate()}</td>
-                          <td>2,10,480.00</td>
-                          <td>27,362.40</td>
-                          <td>8,419.20</td>
-                          <td>210.48</td>
-                          <td className="text-right" style={{ fontWeight: 700 }}>2,46,472.08</td>
-                        </tr>
+                        {vatReport?.purchase && vatReport.purchase.length > 0 ? (
+                          vatReport.purchase.map((p: any, idx: number) => (
+                            <tr key={idx}>
+                              <td>{purPoHistory[idx]?.inv || `INV-P00${idx + 1}`}</td>
+                              <td>{p.item}</td>
+                              <td className="text-right">{Number(p.qty || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">{Number(p.basic || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">{p.vat_pct}%</td>
+                              <td className="text-right">{Number(p.vat_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">{Number(p.cess || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right" style={{ fontWeight: 700 }}>₹ {Number(p.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr><td colSpan={8} style={{ textAlign: 'center', padding: '8px' }}>No purchase invoices recorded for this period.</td></tr>
+                        )}
+                        {vatReport?.purchase && vatReport.purchase.length > 0 && (
+                          <tr className="crystal-highlight-row">
+                            <td colSpan={3}>TOTAL PURCHASE ITC</td>
+                            <td className="text-right">₹ {vatReport.purchase.reduce((s: number, p: any) => s + (p.basic || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td></td>
+                            <td className="text-right">₹ {vatReport.purchase.reduce((s: number, p: any) => s + (p.vat_amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right">₹ {vatReport.purchase.reduce((s: number, p: any) => s + (p.cess || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right" style={{ fontWeight: 800 }}>₹ {vatReport.purchase.reduce((s: number, p: any) => s + (p.total || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
 
@@ -3871,65 +3917,63 @@ export default function App() {
                     <table className="crystal-table">
                       <thead>
                         <tr>
-                          <th>Shift / Date</th>
+                          <th>Period / Shift</th>
                           <th>Product</th>
-                          <th>Basic Sales (₹)</th>
-                          <th>VAT 13% (₹)</th>
-                          <th>Cess (₹)</th>
+                          <th className="text-right">Qty (L)</th>
+                          <th className="text-right">Basic Sales (₹)</th>
+                          <th className="text-right">VAT Rate %</th>
+                          <th className="text-right">VAT Amount (₹)</th>
                           <th className="text-right">Total Sales (₹)</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td>{getTodayErpDate()} (Shift 1)</td>
-                          <td>High Speed Diesel (HSD)</td>
-                          <td>3,19,884.66</td>
-                          <td>41,585.00</td>
-                          <td>12,795.38</td>
-                          <td className="text-right">3,74,265.04</td>
-                        </tr>
-                        <tr>
-                          <td>{getTodayErpDate()} (Shift 1)</td>
-                          <td>Motor Spirit (MS Petrol)</td>
-                          <td>2,68,529.66</td>
-                          <td>34,908.86</td>
-                          <td>10,741.19</td>
-                          <td className="text-right">2,90,643.14</td>
-                        </tr>
-                        <tr className="crystal-highlight-row">
-                          <td colSpan={2}>TOTAL SALES LIABILITY</td>
-                          <td>5,88,414.32</td>
-                          <td>76,493.86</td>
-                          <td>23,536.57</td>
-                          <td className="text-right" style={{ fontWeight: 800 }}>6,64,908.18</td>
-                        </tr>
+                        {vatReport?.sales && vatReport.sales.length > 0 ? (
+                          vatReport.sales.map((s: any, idx: number) => (
+                            <tr key={idx}>
+                              <td>{getTodayErpDate()} (Current Shift)</td>
+                              <td>{s.item}</td>
+                              <td className="text-right">{Number(s.qty || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">{Number(s.basic || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">{s.vat_pct}%</td>
+                              <td className="text-right">{Number(s.vat_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right" style={{ fontWeight: 700 }}>₹ {Number(s.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr><td colSpan={7} style={{ textAlign: 'center', padding: '8px' }}>No sales liability recorded for this period.</td></tr>
+                        )}
+                        {vatReport?.sales && vatReport.sales.length > 0 && (
+                          <tr className="crystal-highlight-row">
+                            <td colSpan={3}>TOTAL SALES LIABILITY</td>
+                            <td className="text-right">₹ {vatReport.sales.reduce((sum: number, s: any) => sum + (s.basic || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td></td>
+                            <td className="text-right">₹ {vatReport.sales.reduce((sum: number, s: any) => sum + (s.vat_amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right" style={{ fontWeight: 800 }}>₹ {vatReport.sales.reduce((sum: number, s: any) => sum + (s.total || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
 
                     {/* Frame 0310: Net Payable State VAT Calculation */}
-                    <div style={{ marginTop: '16px', background: '#ffebee', border: '2px solid #b71c1c', padding: '10px', width: '380px', marginLeft: 'auto' }}>
+                    <div style={{ marginTop: '16px', background: '#ffebee', border: '2px solid #b71c1c', padding: '10px', width: '400px', marginLeft: 'auto' }}>
                       <div style={{ fontWeight: 700, fontSize: '13px', color: '#b71c1c', borderBottom: '1px solid #b71c1c', paddingBottom: '4px', marginBottom: '6px' }}>
                         STATE COMMERCIAL TAX (VAT) COMPUTATION
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
                         <span>Total Sales Output VAT:</span>
-                        <span>₹ 76,493.86</span>
+                        <span>₹ {(vatReport?.payable?.sales_vat || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
                         <span>Less: Purchase Input VAT ITC:</span>
-                        <span>- ₹ 27,362.40</span>
+                        <span>- ₹ {(vatReport?.payable?.purchase_vat || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                        <span>Output Cess on Sales:</span>
-                        <span>₹ 23,536.57</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                        <span>Less: Input Cess ITC:</span>
-                        <span>- ₹ 8,419.20</span>
+                        <span>Input Cess Inward:</span>
+                        <span>₹ {(vatReport?.purchase || []).reduce((s: number, p: any) => s + (p.cess || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                       </div>
                       <div style={{ borderTop: '2px solid #b71c1c', paddingTop: '6px', marginTop: '6px', display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '14px', color: '#b71c1c' }}>
                         <span>NET PAYABLE STATE VAT:</span>
-                        <span>₹ {vatReport?.payable?.net_payable_vat ? vatReport.payable.net_payable_vat.toLocaleString('en-IN') : '1,39,047.00'}</span>
+                        <span>₹ {(vatReport?.payable?.net_payable_vat || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                       </div>
                     </div>
                   </div>
@@ -3955,52 +3999,39 @@ export default function App() {
                       </thead>
                       <tbody>
                         {profitReport && profitReport.length > 0 ? (
-                          profitReport.map((p: any, idx: number) => (
-                            <tr key={idx}>
-                              <td>{p.date}</td>
-                              <td>High Speed Diesel (HSD)</td>
-                              <td className="text-right">{p.sale_qty}</td>
-                              <td className="text-right">₹ {p.purchase_rate}</td>
-                              <td className="text-right">₹ {(p.sale_qty * p.purchase_rate).toFixed(2)}</td>
-                              <td className="text-right">₹ {p.sale_rate}</td>
-                              <td className="text-right">₹ {(p.sale_qty * p.sale_rate).toFixed(2)}</td>
-                              <td className="text-right" style={{ color: '#2e7d32', fontWeight: 700 }}>₹ {p.gross_profit}</td>
-                              <td className="text-right" style={{ fontWeight: 700 }}>₹ {p.profit_per_liter} / L</td>
-                            </tr>
-                          ))
+                          profitReport.map((p: any, idx: number) => {
+                            const purchAmt = Number((p.sale_qty || 0) * (p.purchase_rate || 0));
+                            const saleAmt = Number((p.sale_qty || 0) * (p.sale_rate || 0));
+                            return (
+                              <tr key={idx}>
+                                <td>{p.date || getTodayErpDate()}</td>
+                                <td>{p.item || 'Fuel Dispense'}</td>
+                                <td className="text-right">{Number(p.sale_qty || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right">₹ {Number(p.purchase_rate || 0).toFixed(2)}</td>
+                                <td className="text-right">₹ {purchAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right">₹ {Number(p.sale_rate || 0).toFixed(2)}</td>
+                                <td className="text-right">₹ {saleAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right" style={{ color: '#2e7d32', fontWeight: 700 }}>₹ {Number(p.gross_profit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right" style={{ fontWeight: 700 }}>₹ {Number(p.profit_per_liter || 0).toFixed(2)} / L</td>
+                              </tr>
+                            );
+                          })
                         ) : (
-                          <>
-                            <tr>
-                              <td>{getTodayErpDate()}</td>
-                              <td>High Speed Diesel (HSD)</td>
-                              <td className="text-right">3,546.00</td>
-                              <td className="text-right">₹ 87.36</td>
-                              <td className="text-right">₹ 3,09,778.56</td>
-                              <td className="text-right">₹ 90.21</td>
-                              <td className="text-right">₹ 3,19,884.66</td>
-                              <td className="text-right" style={{ color: '#2e7d32', fontWeight: 700 }}>₹ 10,106.10</td>
-                              <td className="text-right" style={{ fontWeight: 700 }}>₹ 2.85 / L</td>
-                            </tr>
-                            <tr>
-                              <td>{getTodayErpDate()}</td>
-                              <td>Motor Spirit (Petrol MS)</td>
-                              <td className="text-right">155.00</td>
-                              <td className="text-right">₹ 90.45</td>
-                              <td className="text-right">₹ 14,019.75</td>
-                              <td className="text-right">₹ 94.25</td>
-                              <td className="text-right">₹ 14,608.75</td>
-                              <td className="text-right" style={{ color: '#2e7d32', fontWeight: 700 }}>₹ 589.00</td>
-                              <td className="text-right" style={{ fontWeight: 700 }}>₹ 3.80 / L</td>
-                            </tr>
-                          </>
+                          <tr><td colSpan={9} style={{ textAlign: 'center', padding: '10px' }}>No profit ledger transactions recorded for selected date range.</td></tr>
                         )}
-                        <tr className="crystal-highlight-row">
-                          <td colSpan={2}>CUMULATIVE DEALER MARGIN</td>
-                          <td className="text-right">3,701.00 L</td>
-                          <td colSpan={4}></td>
-                          <td className="text-right" style={{ fontWeight: 800, color: '#2e7d32', fontSize: '13px' }}>₹ 10,695.10</td>
-                          <td className="text-right">Avg ₹ 2.89 / L</td>
-                        </tr>
+                        {profitReport && profitReport.length > 0 && (
+                          <tr className="crystal-highlight-row">
+                            <td colSpan={2}>CUMULATIVE DEALER MARGIN</td>
+                            <td className="text-right">{profitReport.reduce((s: number, p: any) => s + (p.sale_qty || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} L</td>
+                            <td colSpan={4}></td>
+                            <td className="text-right" style={{ fontWeight: 800, color: '#2e7d32', fontSize: '13px' }}>
+                              ₹ {profitReport.reduce((s: number, p: any) => s + (p.gross_profit || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="text-right">
+                              Avg ₹ {(profitReport.reduce((s: number, p: any) => s + (p.gross_profit || 0), 0) / Math.max(1, profitReport.reduce((s: number, p: any) => s + (p.sale_qty || 0), 0))).toFixed(2)} / L
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -4017,23 +4048,42 @@ export default function App() {
                           <th>Product</th>
                           <th className="text-right">Inward Qty (KL)</th>
                           <th className="text-right">Commission Rate / KL</th>
-                          <th className="text-right">Slab Incentive</th>
                           <th className="text-right">Total Commission</th>
                           <th className="text-right">TDS 5% Sec 194H</th>
                           <th className="text-right">Net Credited</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td>{stationProfile.oilCompany}</td>
-                          <td>HSD BS-VI</td>
-                          <td className="text-right">4.000 KL</td>
-                          <td className="text-right">₹ 3,840.00</td>
-                          <td className="text-right">₹ 450.00</td>
-                          <td className="text-right" style={{ fontWeight: 700 }}>₹ 15,810.00</td>
-                          <td className="text-right">- ₹ 790.50</td>
-                          <td className="text-right" style={{ fontWeight: 800, color: '#2e7d32' }}>₹ 15,019.50</td>
-                        </tr>
+                        {commissionReport?.items && commissionReport.items.length > 0 ? (
+                          commissionReport.items.map((c: any, idx: number) => {
+                            const totalComm = Number(c.total_amount || 0);
+                            const tdsH = totalComm * 0.05;
+                            const net = totalComm - tdsH;
+                            return (
+                              <tr key={idx}>
+                                <td>{stationProfile.oilCompany}</td>
+                                <td>{c.item}</td>
+                                <td className="text-right">{Number(c.qty || 0).toFixed(3)} KL</td>
+                                <td className="text-right">₹ {Number(c.rate || 0).toFixed(2)}</td>
+                                <td className="text-right" style={{ fontWeight: 700 }}>₹ {totalComm.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right">- ₹ {tdsH.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right" style={{ fontWeight: 800, color: '#2e7d32' }}>₹ {net.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr><td colSpan={7} style={{ textAlign: 'center', padding: '10px' }}>No commission records available.</td></tr>
+                        )}
+                        {commissionReport?.total && (
+                          <tr className="crystal-highlight-row">
+                            <td colSpan={2}>TOTAL COMMISSION REVENUE</td>
+                            <td className="text-right">{Number(commissionReport.total.qty || 0).toFixed(3)} KL</td>
+                            <td></td>
+                            <td className="text-right" style={{ fontWeight: 800 }}>₹ {Number(commissionReport.total.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right" style={{ color: '#c0392b' }}>- ₹ {(Number(commissionReport.total.total_amount || 0) * 0.05).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right" style={{ fontWeight: 800, color: '#2e7d32' }}>₹ {(Number(commissionReport.total.total_amount || 0) * 0.95).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -4046,10 +4096,10 @@ export default function App() {
                     <table className="crystal-table">
                       <thead>
                         <tr>
-                          <th>Invoice No</th>
                           <th>Oil Company</th>
                           <th>Product</th>
-                          <th className="text-right">Inward Ltr</th>
+                          <th className="text-right">Inward Qty (KL)</th>
+                          <th className="text-right">LFR Rate / KL</th>
                           <th className="text-right">Basic LFR (₹)</th>
                           <th className="text-right">CGST 9%</th>
                           <th className="text-right">SGST 9%</th>
@@ -4058,17 +4108,42 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td>3215788</td>
-                          <td>{stationProfile.oilCompany}</td>
-                          <td>HSD BS-VI</td>
-                          <td className="text-right">4,000.00</td>
-                          <td className="text-right">59,798.30</td>
-                          <td className="text-right">5,381.85</td>
-                          <td className="text-right">5,381.85</td>
-                          <td className="text-right" style={{ color: '#c0392b', fontWeight: 700 }}>₹ 5,979.83</td>
-                          <td className="text-right" style={{ fontWeight: 800 }}>₹ 64,582.17</td>
-                        </tr>
+                        {lfrReport?.purchases && lfrReport.purchases.length > 0 ? (
+                          lfrReport.purchases.map((p: any, idx: number) => {
+                            const basic = Number(p.basic || 0);
+                            const cgst = Number(p.cgst || 0);
+                            const sgst = Number(p.sgst || 0);
+                            const tds = basic * 0.10;
+                            const net = Number(p.total || 0) - tds;
+                            return (
+                              <tr key={idx}>
+                                <td>{stationProfile.oilCompany}</td>
+                                <td>{p.item}</td>
+                                <td className="text-right">{Number(p.qty || 0).toFixed(2)} KL</td>
+                                <td className="text-right">₹ {Number(p.lfr_rate || 0).toFixed(2)}</td>
+                                <td className="text-right">{basic.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right">{cgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right">{sgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right" style={{ color: '#c0392b', fontWeight: 700 }}>₹ {tds.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right" style={{ fontWeight: 800 }}>₹ {net.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr><td colSpan={9} style={{ textAlign: 'center', padding: '10px' }}>No LFR purchases on record.</td></tr>
+                        )}
+                        {lfrReport?.total && (
+                          <tr className="crystal-highlight-row">
+                            <td colSpan={2}>TOTAL LFR REIMBURSEMENT</td>
+                            <td className="text-right">{Number(lfrReport.total.qty || 0).toFixed(2)} KL</td>
+                            <td></td>
+                            <td className="text-right">{Number(lfrReport.total.basic || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right">{Number(lfrReport.total.cgst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right">{Number(lfrReport.total.sgst || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right" style={{ color: '#c0392b', fontWeight: 800 }}>₹ {(Number(lfrReport.total.basic || 0) * 0.10).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right" style={{ fontWeight: 800, color: '#2e7d32' }}>₹ {(Number(lfrReport.total.total || 0) - (Number(lfrReport.total.basic || 0) * 0.10)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -4077,7 +4152,7 @@ export default function App() {
                 {/* 6. TDS SUMMARY (Frame 0357 & 0360) */}
                 {(reportCriteriaRadio === 'TDS SUMMARY' || reportCriteriaRadio === 'TDS SUMMARY REPORT') && (
                   <div>
-                    <div className="crystal-table-subhead">Income Tax TDS Deduction Summary (Section 194Q / 194C / 194H)</div>
+                    <div className="crystal-table-subhead">Income Tax TDS Deduction Summary (Section 194Q / 194C)</div>
                     <table className="crystal-table">
                       <thead>
                         <tr>
@@ -4091,27 +4166,39 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td>194Q</td>
-                          <td>AAACB1234K</td>
-                          <td>{stationProfile.oilCompany}</td>
-                          <td className="text-right">1,12,60,650.00</td>
-                          <td className="text-right">0.10%</td>
-                          <td className="text-right" style={{ fontWeight: 700, color: '#c0392b' }}>₹ 11,260.65</td>
-                          <td><span style={{ color: '#2e7d32', fontWeight: 700 }}>PAID / CHALLAN OK</span></td>
-                        </tr>
-                        <tr>
-                          <td>194C</td>
-                          <td>ABCPP8901L</td>
-                          <td>PORT TRANSPORT TANKER FREIGHT</td>
-                          <td className="text-right">59,798.30</td>
-                          <td className="text-right">10.00%</td>
-                          <td className="text-right" style={{ fontWeight: 700, color: '#c0392b' }}>₹ 5,979.83</td>
-                          <td><span style={{ color: '#2e7d32', fontWeight: 700 }}>PAID / CHALLAN OK</span></td>
-                        </tr>
+                        {tdsReport?.purchases && tdsReport.purchases.length > 0 ? (
+                          tdsReport.purchases.map((p: any, idx: number) => {
+                            const basic = Number(p.basic_amount || 0);
+                            const tdsVal = basic * 0.001; // 0.1% 194Q
+                            return (
+                              <tr key={idx}>
+                                <td>194Q</td>
+                                <td>{stationProfile.panNo || 'AAACB1234K'}</td>
+                                <td>{stationProfile.oilCompany} ({p.item})</td>
+                                <td className="text-right">{basic.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td className="text-right">0.10%</td>
+                                <td className="text-right" style={{ fontWeight: 700, color: '#c0392b' }}>₹ {tdsVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                <td><span style={{ color: '#2e7d32', fontWeight: 700 }}>PAID / CHALLAN OK</span></td>
+                              </tr>
+                            );
+                          })
+                        ) : null}
+                        {lfrReport?.tds_summary && (
+                          <tr>
+                            <td>194C</td>
+                            <td>{stationProfile.panNo || 'AAACB1234K'}</td>
+                            <td>{stationProfile.oilCompany} LFR Freight</td>
+                            <td className="text-right">{Number(lfrReport.tds_summary.basic_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="text-right">{lfrReport.tds_summary.tds_percent || '10.00%'}</td>
+                            <td className="text-right" style={{ fontWeight: 700, color: '#c0392b' }}>₹ {Number(lfrReport.tds_summary.tds_payable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td><span style={{ color: '#2e7d32', fontWeight: 700 }}>PAID / CHALLAN OK</span></td>
+                          </tr>
+                        )}
                         <tr className="crystal-highlight-row">
                           <td colSpan={5}>TOTAL TDS PAYABLE / DEPOSITED</td>
-                          <td className="text-right" style={{ fontWeight: 800, color: '#c0392b', fontSize: '13px' }}>₹ 17,240.48</td>
+                          <td className="text-right" style={{ fontWeight: 800, color: '#c0392b', fontSize: '13px' }}>
+                            ₹ {((tdsReport?.tds_summary?.tds_payable || 0) + (lfrReport?.tds_summary?.tds_payable || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
                           <td>CHALLAN VERIFIED</td>
                         </tr>
                       </tbody>
@@ -4123,103 +4210,178 @@ export default function App() {
                 {(reportCriteriaRadio === 'PROFIT LOSS SUMMARY') && (
                   <div>
                     <div className="crystal-table-subhead">Petroleum Retail Station Trading & Profit & Loss Statement</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginTop: '10px' }}>
-                      <div style={{ border: '1px solid #777', padding: '8px' }}>
-                        <div style={{ fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: '3px', marginBottom: '6px' }}>Debits / Outflows</div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span>Opening Fuel Stock Valuation:</span>
-                          <strong>₹ 18,45,210.00</strong>
+                    {(() => {
+                      const openingVal = Number(profitLossReport?.opening_stock_total || 0);
+                      const purchaseVal = Number(profitLossReport?.purchases_total || 0);
+                      const totalExpenses = expensesList.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+                      const salesVal = Number(profitLossReport?.sales_total || 0);
+                      const lubeVal = Number(profitLossReport?.sale_lube || 0);
+                      const closingVal = Number(profitLossReport?.closing_stock_total || 0);
+
+                      const totalDebits = openingVal + purchaseVal + totalExpenses;
+                      const totalCredits = salesVal + lubeVal + closingVal;
+                      const netProfit = totalCredits - totalDebits;
+
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginTop: '10px' }}>
+                          <div style={{ border: '1px solid #777', padding: '8px', background: '#fafafa' }}>
+                            <div style={{ fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: '3px', marginBottom: '6px' }}>Debits / Outflows</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>Opening Fuel Stock Valuation:</span>
+                              <strong>₹ {openingVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>Total Inward Purchases:</span>
+                              <strong>₹ {purchaseVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>Operating Expenses & Overheads:</span>
+                              <strong>₹ {totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            </div>
+                            <div style={{ borderTop: '1px solid #999', paddingTop: '4px', marginTop: '6px', display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                              <span>Total Debits:</span>
+                              <span>₹ {totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          </div>
+                          <div style={{ border: '1px solid #777', padding: '8px', background: '#fafafa' }}>
+                            <div style={{ fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: '3px', marginBottom: '6px' }}>Credits / Revenue</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>Gross Fuel Dispensing Sales:</span>
+                              <strong>₹ {salesVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>Lube & 2T Oil Sales:</span>
+                              <strong>₹ {lubeVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span>Closing Tank Stock Valuation:</span>
+                              <strong>₹ {closingVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            </div>
+                            <div style={{ borderTop: '2px solid #2e7d32', paddingTop: '6px', marginTop: '10px', display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px', color: netProfit >= 0 ? '#2e7d32' : '#c0392b' }}>
+                              <span>NET OPERATING {netProfit >= 0 ? 'PROFIT' : 'LOSS'}:</span>
+                              <span>₹ {netProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span>Total Inward Purchases:</span>
-                          <strong>₹ 32,15,480.00</strong>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span>Station Running & Generator Fuel:</span>
-                          <span>₹ 45,200.00</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span>Staff Wages & Shift Advances:</span>
-                          <span>₹ 28,450.00</span>
-                        </div>
-                      </div>
-                      <div style={{ border: '1px solid #777', padding: '8px' }}>
-                        <div style={{ fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: '3px', marginBottom: '6px' }}>Credits / Revenue</div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span>Gross Fuel Dispensing Sales:</span>
-                          <strong>₹ 42,88,600.00</strong>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span>Lube & 2T Oil Sales:</span>
-                          <strong>₹ 1,20,510.00</strong>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span>Closing Tank Stock Valuation:</span>
-                          <strong>₹ 21,17,060.06</strong>
-                        </div>
-                        <div style={{ borderTop: '2px solid #2e7d32', paddingTop: '6px', marginTop: '10px', display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px', color: '#2e7d32' }}>
-                          <span>NET OPERATING PROFIT:</span>
-                          <span>₹ 3,75,170.00</span>
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
                 )}
 
                 {/* Generic view for any other of the 44 reports */}
                 {!['DSR', 'DSR REPORT', 'VAT SUMMARY', 'VAT SUMMARY REPORT', 'PROFIT SUMMARY', 'PROFIT SUMMARY REPORT', 'DEALER COMMISION REPORT', 'PURCHASE LFR SUMMARY', 'TDS SUMMARY', 'TDS SUMMARY REPORT', 'PROFIT LOSS SUMMARY'].includes(reportCriteriaRadio) && (
                   <div>
-                    <div className="crystal-table-subhead">Register Output & Transaction Audit Trail</div>
-                    <table className="crystal-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Ref No</th>
-                          <th>Particulars</th>
-                          <th>Shift</th>
-                          <th>Category</th>
-                          <th className="text-right">Qty / Liters</th>
-                          <th className="text-right">Rate</th>
-                          <th className="text-right">Debit (₹)</th>
-                          <th className="text-right">Credit (₹)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td>{getTodayErpDate()}</td>
-                          <td>TXN-001</td>
-                          <td>Customer Fuel Dispensing (HSD)</td>
-                          <td>First</td>
-                          <td>Diesel BS-VI</td>
-                          <td className="text-right">160.00</td>
-                          <td className="text-right">90.21</td>
-                          <td className="text-right">₹ 14,433.60</td>
-                          <td className="text-right">₹ 0.00</td>
-                        </tr>
-                        <tr>
-                          <td>{getTodayErpDate()}</td>
-                          <td>TXN-002</td>
-                          <td>{stationProfile.oilCompany} Inward Tanker</td>
-                          <td>First</td>
-                          <td>Decanting</td>
-                          <td className="text-right">4,000.00</td>
-                          <td className="text-right">72.48</td>
-                          <td className="text-right">₹ 0.00</td>
-                          <td className="text-right">₹ 2,89,920.00</td>
-                        </tr>
-                        <tr>
-                          <td>{getTodayErpDate()}</td>
-                          <td>TXN-003</td>
-                          <td>Customer Payment {customers[0]?.name || 'PORT TRANSPORT'}</td>
-                          <td>First</td>
-                          <td>UPI Paytm</td>
-                          <td className="text-right">-</td>
-                          <td className="text-right">-</td>
-                          <td className="text-right">₹ 0.00</td>
-                          <td className="text-right">₹ 50,000.00</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div className="crystal-table-subhead">Register Output & Transaction Audit Trail ({reportCriteriaRadio})</div>
+                    {(() => {
+                      const txns: any[] = [];
+                      creditBillsList.forEach((b, idx) => {
+                        txns.push({
+                          date: b.date || getTodayErpDate(),
+                          ref: `BILL-${b.bill || idx + 1}`,
+                          particulars: `Credit Sale: ${b.cust} (${b.vehicle || '-'})`,
+                          shift: b.shift || 'First',
+                          category: 'Credit Fuel',
+                          qty: b.qty || 0,
+                          rate: b.qty ? (b.total / b.qty).toFixed(2) : '-',
+                          debit: b.total || 0,
+                          credit: 0,
+                        });
+                      });
+                      payReceiptsHistory.forEach((p, idx) => {
+                        txns.push({
+                          date: p.date || getTodayErpDate(),
+                          ref: `REC-${idx + 1}`,
+                          particulars: `Customer Payment: ${p.cust} via ${p.mode}`,
+                          shift: p.shift || 'First',
+                          category: 'Receipt',
+                          qty: '-',
+                          rate: '-',
+                          debit: 0,
+                          credit: p.amt || 0,
+                        });
+                      });
+                      purPoHistory.forEach((po, idx) => {
+                        txns.push({
+                          date: po.date || getTodayErpDate(),
+                          ref: po.inv || `PO-${idx + 1}`,
+                          particulars: `Tanker Inward: ${po.dealer}`,
+                          shift: 'First',
+                          category: 'Decanting',
+                          qty: '-',
+                          rate: '-',
+                          debit: 0,
+                          credit: po.amount || 0,
+                        });
+                      });
+                      expensesList.forEach((exp, idx) => {
+                        txns.push({
+                          date: exp.date || getTodayErpDate(),
+                          ref: `EXP-${exp.id || idx + 1}`,
+                          particulars: `${exp.category}: ${exp.narration || exp.paid_to || ''}`,
+                          shift: 'First',
+                          category: 'Expense',
+                          qty: '-',
+                          rate: '-',
+                          debit: exp.amount || 0,
+                          credit: 0,
+                        });
+                      });
+
+                      const filtered = txns.filter((t) => {
+                        if (!crystalSearchText.trim()) return true;
+                        const q = crystalSearchText.toLowerCase();
+                        return (
+                          t.particulars.toLowerCase().includes(q) ||
+                          t.ref.toLowerCase().includes(q) ||
+                          t.category.toLowerCase().includes(q)
+                        );
+                      });
+
+                      const totalDebits = filtered.reduce((s, t) => s + (typeof t.debit === 'number' ? t.debit : 0), 0);
+                      const totalCredits = filtered.reduce((s, t) => s + (typeof t.credit === 'number' ? t.credit : 0), 0);
+
+                      return (
+                        <table className="crystal-table">
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Ref No</th>
+                              <th>Particulars</th>
+                              <th>Shift</th>
+                              <th>Category</th>
+                              <th className="text-right">Qty / Liters</th>
+                              <th className="text-right">Rate</th>
+                              <th className="text-right">Debit (₹)</th>
+                              <th className="text-right">Credit (₹)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filtered.length > 0 ? (
+                              filtered.map((t, idx) => (
+                                <tr key={idx}>
+                                  <td>{t.date}</td>
+                                  <td>{t.ref}</td>
+                                  <td>{t.particulars}</td>
+                                  <td>{t.shift}</td>
+                                  <td>{t.category}</td>
+                                  <td className="text-right">{typeof t.qty === 'number' ? t.qty.toFixed(2) : t.qty}</td>
+                                  <td className="text-right">{t.rate}</td>
+                                  <td className="text-right">{t.debit ? `₹ ${t.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹ 0.00'}</td>
+                                  <td className="text-right">{t.credit ? `₹ ${t.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹ 0.00'}</td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '10px' }}>No transactions match criteria.</td></tr>
+                            )}
+                            <tr className="crystal-highlight-row">
+                              <td colSpan={7}>TOTAL AUDIT BALANCE ({filtered.length} TRANSACTIONS)</td>
+                              <td className="text-right">₹ {totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">₹ {totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -4686,9 +4848,9 @@ export default function App() {
                               gap_amount: gap,
                             });
                             showToast(`✔ Shift Settlement Saved to PostgreSQL! Gap: ₹${gap.toFixed(2)}`);
-                            loadData();
+                            await loadAllErpData();
                           } catch (err: any) {
-                            showToast(`Saved locally: Gap ₹${gap.toFixed(2)}`);
+                            showToast(`⚠ Error saving shift settlement: ${err.message || 'Database error'}`);
                           }
                         }}
                       >
@@ -5137,7 +5299,7 @@ export default function App() {
                     <div><strong>Total Gross Capacity:</strong> {(tanks[0]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
                     <div><strong>Dead Stock Allowance:</strong> 500 Liters (Pump Suction Cutoff)</div>
                     <div><strong>Safe Filling Limit (Ullage):</strong> {((tanks[0]?.capacity || 20000) * 0.95).toLocaleString('en-IN')} Liters (95%)</div>
-                    <div><strong>Current Physical Stock:</strong> {tanks[0] ? `${tanks[0].current_stock.toLocaleString('en-IN')} Liters (${tanks[0].percent}%)` : '13,150 Liters (66%)'}</div>
+                    <div><strong>Current Physical Stock:</strong> {tanks[0] ? `${tanks[0].current_stock.toLocaleString('en-IN')} Liters (${tanks[0].percent}%)` : '0 Liters (0%)'}</div>
                     <div><strong>Tank Dimensions:</strong> 2.4m Dia × 4.6m Length Double-Walled</div>
                   </div>
                   <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => openDipDialog(1)}>
@@ -5151,7 +5313,7 @@ export default function App() {
                     <div><strong>Total Gross Capacity:</strong> {(tanks[1]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
                     <div><strong>Dead Stock Allowance:</strong> 500 Liters (Pump Suction Cutoff)</div>
                     <div><strong>Safe Filling Limit (Ullage):</strong> {((tanks[1]?.capacity || 20000) * 0.95).toLocaleString('en-IN')} Liters (95%)</div>
-                    <div><strong>Current Physical Stock:</strong> {tanks[1] ? `${tanks[1].current_stock.toLocaleString('en-IN')} Liters (${tanks[1].percent}%)` : '16,890 Liters (84%)'}</div>
+                    <div><strong>Current Physical Stock:</strong> {tanks[1] ? `${tanks[1].current_stock.toLocaleString('en-IN')} Liters (${tanks[1].percent}%)` : '0 Liters (0%)'}</div>
                     <div><strong>Tank Dimensions:</strong> 2.4m Dia × 4.6m Length Double-Walled</div>
                   </div>
                   <button className="win-btn-classic" style={{ marginTop: '8px' }} onClick={() => openDipDialog(2)}>
@@ -5161,7 +5323,7 @@ export default function App() {
               </div>
 
               <div style={{ fontWeight: 700, marginBottom: '4px' }}>Statutory Dip Calibration Table (Height cm vs Liters)</div>
-              <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '140px', overflowY: 'auto' }}>
+              <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '160px', overflowY: 'auto' }}>
                 <table className="win-datagrid">
                   <thead>
                     <tr>
@@ -5175,8 +5337,22 @@ export default function App() {
                     <tr><td>25.0 cm</td><td>1,240 L</td><td>1,250 L</td><td>6.2%</td></tr>
                     <tr><td>50.0 cm</td><td>3,420 L</td><td>3,440 L</td><td>17.1%</td></tr>
                     <tr><td>100.0 cm</td><td>8,950 L</td><td>8,990 L</td><td>44.8%</td></tr>
-                    <tr><td>142.5 cm (Current MS)</td><td>13,150 L</td><td>13,210 L</td><td>65.8%</td></tr>
-                    <tr><td>186.0 cm (Current HSD)</td><td>16,850 L</td><td>16,890 L</td><td>84.5%</td></tr>
+                    {tanks[0] && (
+                      <tr style={{ background: '#e8f5e9', fontWeight: 700 }}>
+                        <td>{tanks[0].dip_cm ? `${tanks[0].dip_cm.toFixed(1)} cm (Current MS DIP)` : 'Dip Not Recorded'}</td>
+                        <td>{tanks[0].current_stock.toLocaleString('en-IN')} L</td>
+                        <td>-</td>
+                        <td>{tanks[0].percent}%</td>
+                      </tr>
+                    )}
+                    {tanks[1] && (
+                      <tr style={{ background: '#e3f2fd', fontWeight: 700 }}>
+                        <td>{tanks[1].dip_cm ? `${tanks[1].dip_cm.toFixed(1)} cm (Current HSD DIP)` : 'Dip Not Recorded'}</td>
+                        <td>-</td>
+                        <td>{tanks[1].current_stock.toLocaleString('en-IN')} L</td>
+                        <td>{tanks[1].percent}%</td>
+                      </tr>
+                    )}
                     <tr><td>200.0 cm</td><td>18,200 L</td><td>18,250 L</td><td>91.0%</td></tr>
                   </tbody>
                 </table>
@@ -5750,8 +5926,9 @@ export default function App() {
                     onChange={(e) => {
                       const prod = e.target.value;
                       setCashMemoProduct(prod);
+                      const rateItem = ratesList.find(p => prod === 'MS' ? (p.code === 'MS' || p.name.includes('Petrol')) : (p.code === 'HSD' || p.name.includes('Diesel')));
                       const matched = salesReadings.find(r => prod === 'MS' ? r.item === 'Petrol' : r.item === 'Diesel');
-                      setCashMemoRate(matched ? matched.rate : (prod === 'MS' ? 94.25 : 90.21));
+                      setCashMemoRate(rateItem?.rate || (matched ? matched.rate : 0));
                     }}
                   >
                     <option value="MS">Motor Spirit (Petrol / MS)</option>
@@ -5840,15 +6017,15 @@ export default function App() {
                 {/* Tank 1 MS */}
                 <div className="tank-gauge-card">
                   <div className="tank-cylinder">
-                    <div className="tank-liquid-ms" style={{ height: `${tanks[0]?.percent || 66}%` }} />
+                    <div className="tank-liquid-ms" style={{ height: `${tanks[0]?.percent || 0}%` }} />
                   </div>
                   <div className="tank-details">
                     <div style={{ fontWeight: 700, fontSize: '13px', color: '#c0392b' }}>{tanks[0]?.name || 'MS Tank 1'} ({tanks[0]?.product || 'Petrol'})</div>
                     <div><strong>Gross Capacity:</strong> {(tanks[0]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
-                    <div><strong>Current Stock:</strong> {(tanks[0]?.current_stock || 13150).toLocaleString('en-IN')} L ({tanks[0]?.percent || 66}%)</div>
-                    <div><strong>Current Dip:</strong> {tanks[0]?.dip_cm || 142.5} cm</div>
+                    <div><strong>Current Stock:</strong> {(tanks[0]?.current_stock || 0).toLocaleString('en-IN')} L ({tanks[0]?.percent || 0}%)</div>
+                    <div><strong>Current Dip:</strong> {tanks[0]?.dip_cm || 0} cm</div>
                     <div><strong>Water Dip:</strong> 0.0 cm (Clear)</div>
-                    <div><strong>Safe Inward Space:</strong> {Math.max(0, (tanks[0]?.capacity || 20000) - (tanks[0]?.current_stock || 13150)).toLocaleString('en-IN')} Liters</div>
+                    <div><strong>Safe Inward Space:</strong> {Math.max(0, (tanks[0]?.capacity || 20000) - (tanks[0]?.current_stock || 0)).toLocaleString('en-IN')} Liters</div>
                     <div style={{ color: tanks[0]?.is_low ? '#c0392b' : '#27ae60', fontWeight: 700, marginTop: '4px' }}>
                       ● {tanks[0]?.is_low ? 'Low Stock Alert' : 'Sufficient Fuel Available'}
                     </div>
@@ -5858,15 +6035,15 @@ export default function App() {
                 {/* Tank 2 HSD */}
                 <div className="tank-gauge-card">
                   <div className="tank-cylinder">
-                    <div className="tank-liquid-hsd" style={{ height: `${tanks[1]?.percent || 84}%` }} />
+                    <div className="tank-liquid-hsd" style={{ height: `${tanks[1]?.percent || 0}%` }} />
                   </div>
                   <div className="tank-details">
                     <div style={{ fontWeight: 700, fontSize: '13px', color: '#0984e3' }}>{tanks[1]?.name || 'HSD Tank 1'} ({tanks[1]?.product || 'Diesel'})</div>
                     <div><strong>Gross Capacity:</strong> {(tanks[1]?.capacity || 20000).toLocaleString('en-IN')} Liters</div>
-                    <div><strong>Current Stock:</strong> {(tanks[1]?.current_stock || 16890).toLocaleString('en-IN')} L ({tanks[1]?.percent || 84}%)</div>
-                    <div><strong>Current Dip:</strong> {tanks[1]?.dip_cm || 186.0} cm</div>
+                    <div><strong>Current Stock:</strong> {(tanks[1]?.current_stock || 0).toLocaleString('en-IN')} L ({tanks[1]?.percent || 0}%)</div>
+                    <div><strong>Current Dip:</strong> {tanks[1]?.dip_cm || 0} cm</div>
                     <div><strong>Water Dip:</strong> 0.0 cm (Clear)</div>
-                    <div><strong>Safe Inward Space:</strong> {Math.max(0, (tanks[1]?.capacity || 20000) - (tanks[1]?.current_stock || 16890)).toLocaleString('en-IN')} Liters</div>
+                    <div><strong>Safe Inward Space:</strong> {Math.max(0, (tanks[1]?.capacity || 20000) - (tanks[1]?.current_stock || 0)).toLocaleString('en-IN')} Liters</div>
                     <div style={{ color: tanks[1]?.is_low ? '#c0392b' : '#27ae60', fontWeight: 700, marginTop: '4px' }}>
                       ● {tanks[1]?.is_low ? 'Low Stock Alert' : 'High Stock Level'}
                     </div>
