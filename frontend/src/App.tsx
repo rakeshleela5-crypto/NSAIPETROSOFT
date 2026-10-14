@@ -170,6 +170,7 @@ export default function App() {
 
   // Search filter for dashboard customer grid
   const [custFilter, setCustFilter] = useState<string>('');
+  const [importFromApp, setImportFromApp] = useState<boolean>(false);
 
   // Rate Master State
   const [ratesList, setRatesList] = useState<FuelProductRate[]>([]);
@@ -186,6 +187,7 @@ export default function App() {
   const [creditRate, setCreditRate] = useState<number>(90.21);
   const [creditSlipNo, setCreditSlipNo] = useState<string>('0');
   const [creditBillNo, setCreditBillNo] = useState<string>('37');
+  const [creditShift, setCreditShift] = useState<string>('First');
   const [creditDate, setCreditDate] = useState<string>(getTodayErpDate());
   const [creditCashPaid, setCreditCashPaid] = useState<number>(0.0);
   const [creditRemark, setCreditRemark] = useState<string>('');
@@ -203,21 +205,22 @@ export default function App() {
   // Sales Entry Nozzle Totalizers (Frame 0110)
   const [salesDate, setSalesDate] = useState<string>(getTodayErpDate());
   const [salesReadings, setSalesReadings] = useState<any[]>([
-    { emp: 'AA', nozzle: 'HSD 1', item: 'Diesel', open: 5268.0, close: 6254.0, test: 0, qty: 986.0, rate: 90.21, amount: 88947.06, vat: 11534.48, lube: 0 },
-    { emp: 'AA', nozzle: 'HSD 2', item: 'Diesel', open: 10254.0, close: 11254.0, test: 0, qty: 1000.0, rate: 90.21, amount: 90210.0, vat: 11698.25, lube: 0 },
-    { emp: 'AA', nozzle: 'HSD 3', item: 'Diesel', open: 10474.0, close: 11256.0, test: 0, qty: 782.0, rate: 90.21, amount: 70544.22, vat: 9148.03, lube: 0 },
-    { emp: 'AA', nozzle: 'HSD 4', item: 'Diesel', open: 12478.0, close: 13256.0, test: 0, qty: 778.0, rate: 90.21, amount: 70183.38, vat: 9101.24, lube: 0 },
-    { emp: 'AA', nozzle: 'MS 1', item: 'Petrol', open: 1859.0, close: 2014.0, test: 0, qty: 155.0, rate: 94.25, amount: 14608.75, vat: 1760.25, lube: 0 },
-    { emp: 'AA', nozzle: 'MS 2', item: 'Petrol', open: 10254.0, close: 11247.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
-    { emp: 'AA', nozzle: 'MS 3', item: 'Petrol', open: 8547.0, close: 0.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
-    { emp: 'AA', nozzle: 'MS 4', item: 'Petrol', open: 9258.0, close: 0.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'HSD 1', item: 'Diesel', open: 5268.0, close: 6254.0, test: 0, qty: 986.0, rate: 90.21, amount: 88947.06, vat: 11534.48, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'HSD 2', item: 'Diesel', open: 10254.0, close: 11254.0, test: 0, qty: 1000.0, rate: 90.21, amount: 90210.0, vat: 11698.25, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'HSD 3', item: 'Diesel', open: 10474.0, close: 11256.0, test: 0, qty: 782.0, rate: 90.21, amount: 70544.22, vat: 9148.03, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'HSD 4', item: 'Diesel', open: 12478.0, close: 13256.0, test: 0, qty: 778.0, rate: 90.21, amount: 70183.38, vat: 9101.24, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'MS 1', item: 'Petrol', open: 1859.0, close: 2014.0, test: 0, qty: 155.0, rate: 94.25, amount: 14608.75, vat: 1760.25, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'MS 2', item: 'Petrol', open: 10254.0, close: 11247.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'MS 3', item: 'Petrol', open: 8547.0, close: 0.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
+    { emp: 'Duty Staff', nozzle: 'MS 4', item: 'Petrol', open: 9258.0, close: 0.0, test: 0, qty: 0.0, rate: 94.25, amount: 0.0, vat: 0.0, lube: 0 },
   ]);
 
   // Payment Receipt State (Frame 0085)
   const [payReceiptNo, setPayReceiptNo] = useState<string>('00001');
   const [payCustName, setPayCustName] = useState<string>('');
+  const [payShift, setPayShift] = useState<string>('First');
   const [payDate, setPayDate] = useState<string>(getTodayErpDate());
-  const [payTotalPurch] = useState<number>(0.0);
+  const [payTotalPurch, setPayTotalPurch] = useState<number>(0.0);
   const [payTotalPaid, setPayTotalPaid] = useState<number>(0.0);
   const [payTotalUnpaid, setPayTotalUnpaid] = useState<number>(0.0);
   const [payMode, setPayMode] = useState<string>('UPI PAYMENT');
@@ -227,10 +230,12 @@ export default function App() {
 
   // Expense Book State
   const [expensesList, setExpensesList] = useState<any[]>([]);
+  const [expDate, setExpDate] = useState<string>(getTodayErpDate());
   const [expCategory, setExpCategory] = useState<string>('Gen-Set Diesel');
   const [expAmount, setExpAmount] = useState<number>(1250.0);
   const [expNarration, setExpNarration] = useState<string>('Power backup generator diesel');
   const [expPaidTo, setExpPaidTo] = useState<string>('Pump Cashier');
+  const [crystalSearchText, setCrystalSearchText] = useState<string>('');
 
   // Contra Transfer State
   const [fromAccId, setFromAccId] = useState<number>(1); // Cash on hand
@@ -351,28 +356,28 @@ export default function App() {
   const [lastCreditSlip, setLastCreditSlip] = useState<any>(null);
 
   // Employee Shift Settlement State (Frame 0210 & 0220)
-  const [empSettlementDate] = useState<string>(getTodayErpDate());
+  const [empSettlementDate, setEmpSettlementDate] = useState<string>(getTodayErpDate());
   const [empSettlementShift, setEmpSettlementShift] = useState<string>('First');
-  const [empSettlementSaleNo] = useState<string>('00001');
+  const [empSettlementSaleNo, setEmpSettlementSaleNo] = useState<string>('00001');
   const [empSettlementEmp, setEmpSettlementEmp] = useState<string>('Duty Attendant');
   const [empSettlementMachine, setEmpSettlementMachine] = useState<string>('MPD 1');
   const [empSettlementRemarks, setEmpSettlementRemarks] = useState<string>('');
-  const [empNozzleReadings] = useState<any[]>([
+  const [empNozzleReadings, setEmpNozzleReadings] = useState<any[]>([
     { nozzle: 'HSD 1', op: 5000.0, close: 5124.0, test: 5.0, sale: 119.0, rate: 90.21, amount: 10734.99 },
     { nozzle: 'HSD 2', op: 6000.0, close: 6458.0, test: 5.0, sale: 453.0, rate: 90.21, amount: 40865.13 },
     { nozzle: 'MS 1', op: 400.0, close: 854.0, test: 5.0, sale: 449.0, rate: 94.25, amount: 42318.25 },
     { nozzle: 'MS 2', op: 587.0, close: 925.0, test: 5.0, sale: 333.0, rate: 94.25, amount: 31385.25 },
   ]);
-  const [empLubeItems] = useState<any[]>([
+  const [empLubeItems, setEmpLubeItems] = useState<any[]>([
     { product: 'MAK DIAMOND 15W 40 15LTR', qty: 1, rate: 5478.0, amount: 5478.0 },
   ]);
-  const [empCardSwipes] = useState<any[]>([
+  const [empCardSwipes, setEmpCardSwipes] = useState<any[]>([
     { name: 'PAYTM', amount: 5000.0 },
     { name: 'M SWIPE', amount: 6000.0 },
     { name: 'PETRO CARD', amount: 14500.0 },
     { name: 'ICICI CARD', amount: 0.0 },
   ]);
-  const [empExpensesList] = useState<any[]>([
+  const [empExpensesList, setEmpExpensesList] = useState<any[]>([
     { name: 'CESS', amount: 0.0, narration: '' },
     { name: 'MISC EXPENSES', amount: 0.0, narration: '' },
     { name: 'STAFF INCENTIVE / ADVANCE', amount: 0.0, narration: '' },
@@ -1055,7 +1060,7 @@ export default function App() {
     e.preventDefault();
     const newExp = {
       id: Date.now(),
-      date: getTodayErpDate(),
+      date: expDate || getTodayErpDate(),
       category: expCategory,
       amount: expAmount,
       narration: expNarration,
@@ -1784,11 +1789,18 @@ export default function App() {
                   </select>
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}>
-                  <input type="checkbox" onChange={(e) => showToast(e.target.checked ? 'Wireless IoT Dispenser Auto-Sync Enabled' : 'Manual Entry Mode')} /> Import Entry From App
+                  <input
+                    type="checkbox"
+                    checked={importFromApp}
+                    onChange={(e) => {
+                      setImportFromApp(e.target.checked);
+                      showToast(e.target.checked ? 'Wireless IoT Dispenser Auto-Sync Enabled' : 'Manual Entry Mode');
+                    }}
+                  /> Import Entry From App
                 </label>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <span style={{ fontWeight: 700 }}>SO NO.</span>
-                  <input type="text" className="win-input" readOnly value={shiftNumber} style={{ width: '70px', fontWeight: 700 }} />
+                  <input type="text" className="win-input" value={shiftNumber} onChange={(e) => setShiftNumber(e.target.value)} style={{ width: '70px', fontWeight: 700 }} />
                 </div>
               </div>
 
@@ -1812,8 +1824,23 @@ export default function App() {
                   <tbody>
                     {salesReadings.map((r, i) => (
                       <tr key={i}>
-                        <td>{r.emp}</td>
-                        <td>{r.nozzle}</td>
+                        <td>
+                          <select
+                            className="win-select"
+                            style={{ fontSize: '11px', padding: '1px 2px' }}
+                            value={r.emp}
+                            onChange={(e) => {
+                              const copy = [...salesReadings];
+                              copy[i].emp = e.target.value;
+                              setSalesReadings(copy);
+                            }}
+                          >
+                            {employeesList.map((emp) => (
+                              <option key={emp.id} value={emp.name}>{emp.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
                         <td>{r.item}</td>
                         <td>{r.open.toFixed(3)}</td>
                         <td>
@@ -1833,7 +1860,24 @@ export default function App() {
                             }}
                           />
                         </td>
-                        <td>{r.test}</td>
+                        <td>
+                          <input
+                            type="number"
+                            step="0.1"
+                            className="win-input"
+                            style={{ width: '50px' }}
+                            value={r.test}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              const copy = [...salesReadings];
+                              copy[i].test = val;
+                              copy[i].qty = Math.max(0, copy[i].close - copy[i].open - val);
+                              copy[i].amount = copy[i].qty * copy[i].rate;
+                              copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
+                              setSalesReadings(copy);
+                            }}
+                          />
+                        </td>
                         <td style={{ fontWeight: 700, color: '#1565c0' }}>{r.qty.toFixed(2)}</td>
                         <td>{r.rate}</td>
                         <td style={{ fontWeight: 700 }}>₹ {r.amount.toFixed(2)}</td>
@@ -1915,7 +1959,7 @@ export default function App() {
                   onClick={() => exportToCsv(
                     `NSAIPETROSOFT_ShiftReadings_${new Date().toISOString().split('T')[0]}`,
                     ['Nozzle Name', 'Product', 'Opening Meter', 'Closing Meter', 'Testing (Ltrs)', 'Sale Qty (Ltrs)', 'Rate (INR)', 'Total Amount (INR)'],
-                    salesReadings.map(s => [s.nozzle_name, s.product, s.opening, s.closing, s.testing, s.qty, s.rate, s.amount])
+                    salesReadings.map(s => [s.nozzle || s.nozzle_name, s.item || s.product, s.open ?? s.opening, s.close ?? s.closing, s.test ?? s.testing, s.qty, s.rate, s.amount])
                   )}
                   title="Export nozzle meter readings to Microsoft Excel or CSV"
                 >
@@ -1950,7 +1994,12 @@ export default function App() {
                     <span className="win-label">Date</span>
                     <input type="text" className="win-input" value={creditDate} onChange={(e) => setCreditDate(e.target.value)} style={{ width: '90px', fontWeight: 600 }} />
                     <span className="win-label" style={{ minWidth: '35px', marginLeft: '6px' }}>Shift</span>
-                    <select className="win-select" style={{ width: '70px' }}>
+                    <select
+                      className="win-select"
+                      style={{ width: '70px' }}
+                      value={creditShift}
+                      onChange={(e) => setCreditShift(e.target.value)}
+                    >
                       <option>First</option>
                       <option>Second</option>
                     </select>
@@ -2014,8 +2063,15 @@ export default function App() {
                   </div>
 
                   <div className="win-form-row">
-                    <span className="win-label">Rate</span>
-                    <input type="text" className="win-input" readOnly value={`₹ ${creditRate}`} style={{ width: '80px' }} />
+                    <span className="win-label">Rate (₹)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="win-input"
+                      value={creditRate}
+                      onChange={(e) => setCreditRate(parseFloat(e.target.value) || 0)}
+                      style={{ width: '80px', fontWeight: 600 }}
+                    />
                     <span className="win-label" style={{ minWidth: '35px', marginLeft: '6px' }}>Qty</span>
                     <input
                       type="number"
@@ -2193,13 +2249,49 @@ export default function App() {
               <div>
                 <div className="win-form-row">
                   <span className="win-label">Shift</span>
-                  <select className="win-select" style={{ width: '75px' }}><option>First</option></select>
+                  <select
+                    className="win-select"
+                    style={{ width: '75px' }}
+                    value={payShift}
+                    onChange={(e) => setPayShift(e.target.value)}
+                  >
+                    <option>First</option>
+                    <option>Second</option>
+                  </select>
                   <span className="win-label" style={{ minWidth: '70px', marginLeft: '6px' }}>Receipt No.</span>
-                  <input type="text" className="win-input" readOnly value={payReceiptNo} style={{ width: '65px', fontWeight: 700 }} />
+                  <input
+                    type="text"
+                    className="win-input"
+                    value={payReceiptNo}
+                    onChange={(e) => setPayReceiptNo(e.target.value)}
+                    style={{ width: '65px', fontWeight: 700 }}
+                  />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Customer</span>
-                  <input type="text" className="win-input" style={{ flex: 1 }} value={payCustName} onChange={(e) => setPayCustName(e.target.value)} />
+                  <select
+                    className="win-select"
+                    style={{ flex: 1, fontWeight: 600 }}
+                    value={payCustName}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      setPayCustName(name);
+                      const matched = customers.find((c) => c.name === name);
+                      if (matched) {
+                        const bal = matched.current_outstanding || (matched as any).outstanding || 0;
+                        setPayTotalUnpaid(bal);
+                        setPayTotalPurch(bal + 15000);
+                        setPayTotalPaid(15000);
+                      }
+                    }}
+                  >
+                    <option value="">-- Select Customer Account --</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name} (Bal: ₹{(c.current_outstanding || (c as any).outstanding || 0).toLocaleString('en-IN')})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Receipt Date</span>
@@ -2207,15 +2299,15 @@ export default function App() {
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Total Purchase</span>
-                  <input type="text" className="win-input" readOnly value={payTotalPurch.toFixed(2)} />
+                  <input type="number" step="0.01" className="win-input" value={payTotalPurch} onChange={(e) => setPayTotalPurch(parseFloat(e.target.value) || 0)} />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Total Paid</span>
-                  <input type="text" className="win-input" readOnly value={payTotalPaid.toFixed(2)} />
+                  <input type="number" step="0.01" className="win-input" value={payTotalPaid} onChange={(e) => setPayTotalPaid(parseFloat(e.target.value) || 0)} />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Total Unpaid</span>
-                  <input type="text" className="win-input" readOnly value={payTotalUnpaid.toFixed(2)} style={{ color: '#c0392b', fontWeight: 700 }} />
+                  <input type="number" step="0.01" className="win-input" value={payTotalUnpaid} onChange={(e) => setPayTotalUnpaid(parseFloat(e.target.value) || 0)} style={{ color: '#c0392b', fontWeight: 700 }} />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label">Payment Mode</span>
@@ -2229,10 +2321,9 @@ export default function App() {
                 <div className="win-form-row">
                   <span className="win-label">Receiving Bank</span>
                   <select className="win-select" style={{ flex: 1 }} value={payBank} onChange={(e) => setPayBank(e.target.value)}>
-                    <option>PAYTM</option>
-                    <option>HDFC CA 0459</option>
-                    <option>CASH ON HAND</option>
-                    <option>ICICI CARD</option>
+                    {accountsList.map((a) => (
+                      <option key={a.id} value={a.name}>{a.name} ({a.type})</option>
+                    ))}
                   </select>
                 </div>
                 <div className="win-form-row">
@@ -2361,6 +2452,10 @@ export default function App() {
             </div>
             <div className="win-dialog-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '12px' }}>
               <form onSubmit={handleSaveExpense}>
+                <div className="win-form-row">
+                  <span className="win-label">Date</span>
+                  <input type="text" className="win-input" value={expDate} onChange={(e) => setExpDate(e.target.value)} style={{ flex: 1 }} />
+                </div>
                 <div className="win-form-row">
                   <span className="win-label">Category</span>
                   <select className="win-select" style={{ flex: 1 }} value={expCategory} onChange={(e) => setExpCategory(e.target.value)}>
@@ -2622,8 +2717,18 @@ export default function App() {
                 <div className="win-form-row">
                   <span className="win-label">Tank</span>
                   <select className="win-select" style={{ flex: 1 }} value={dipTankId} onChange={(e) => setDipTankId(parseInt(e.target.value))}>
-                    <option value={1}>MS Tank 1 (Petrol) - Cap: 20000L</option>
-                    <option value={2}>HSD Tank 1 (Diesel) - Cap: 20000L</option>
+                    {tanks.length > 0 ? (
+                      tanks.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.product}) - Cap: {t.capacity.toLocaleString('en-IN')}L
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value={1}>MS Tank 1 (Petrol) - Cap: 20000L</option>
+                        <option value={2}>HSD Tank 1 (Diesel) - Cap: 20000L</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div className="win-form-row">
@@ -2916,7 +3021,7 @@ export default function App() {
                       onClick={() => exportToCsv(
                         `NSAIPETROSOFT_InwardPurchases_${new Date().toISOString().split('T')[0]}`,
                         ['PO No', 'Date', 'Invoice No', 'Oil Company / Dealer', 'Total Amount (INR)'],
-                        purPoHistory.map(p => [p.po_no, p.date, p.inv_no, p.dealer, p.amount])
+                        purPoHistory.map(p => [p.po || p.po_no || '', p.date, p.inv || p.inv_no || '', p.dealer, p.amount])
                       )}
                       title="Export tanker decanting purchases to Microsoft Excel or CSV"
                     >
@@ -3434,9 +3539,14 @@ export default function App() {
                     <span className="win-label" style={{ minWidth: '70px' }}>Supplier</span>
                     <select className="win-select" value={critSupplier} onChange={(e) => setCritSupplier(e.target.value)} style={{ flex: 1 }}>
                       <option>---Select Any---</option>
+                      {stationProfile.oilCompany && (
+                        <option value={stationProfile.oilCompany}>{stationProfile.oilCompany}</option>
+                      )}
                       <option>BHARAT PETROLEUM CO LTD</option>
                       <option>INDIAN OIL CORPORATION LTD</option>
                       <option>HINDUSTAN PETROLEUM CO LTD</option>
+                      <option>NAYARA ENERGY LIMITED</option>
+                      <option>RELIANCE BP MOBILITY LTD</option>
                     </select>
                   </div>
                   <div className="win-form-row">
@@ -3580,7 +3690,25 @@ export default function App() {
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <span>Find:</span>
-                <input type="text" className="win-input" placeholder="Search report..." style={{ height: '18px', width: '110px' }} />
+                <input
+                  type="text"
+                  className="win-input"
+                  value={crystalSearchText}
+                  onChange={(e) => setCrystalSearchText(e.target.value)}
+                  placeholder="Search report..."
+                  style={{ height: '18px', width: '120px' }}
+                />
+                {crystalSearchText && (
+                  <button
+                    type="button"
+                    className="crystal-tool-btn"
+                    onClick={() => setCrystalSearchText('')}
+                    title="Clear search"
+                    style={{ height: '18px', padding: '0 4px', fontSize: '10px' }}
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             </div>
 
@@ -4131,7 +4259,7 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1.5fr 1fr 1.5fr', gap: '8px', marginBottom: '10px' }}>
                 <div className="win-form-row">
                   <span className="win-label" style={{ minWidth: '35px' }}>Date</span>
-                  <input type="text" className="win-input" value={empSettlementDate} readOnly style={{ flex: 1 }} />
+                  <input type="text" className="win-input" value={empSettlementDate} onChange={(e) => setEmpSettlementDate(e.target.value)} style={{ flex: 1 }} />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label" style={{ minWidth: '35px' }}>Shift</span>
@@ -4142,7 +4270,7 @@ export default function App() {
                 </div>
                 <div className="win-form-row">
                   <span className="win-label" style={{ minWidth: '50px' }}>Sale No</span>
-                  <input type="text" className="win-input" value={empSettlementSaleNo} readOnly style={{ flex: 1, fontWeight: 700 }} />
+                  <input type="text" className="win-input" value={empSettlementSaleNo} onChange={(e) => setEmpSettlementSaleNo(e.target.value)} style={{ flex: 1, fontWeight: 700 }} />
                 </div>
                 <div className="win-form-row">
                   <span className="win-label" style={{ minWidth: '70px' }}>Employee</span>
@@ -4194,8 +4322,72 @@ export default function App() {
                             <tr key={i}>
                               <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
                               <td className="text-right">{Number(op).toFixed(1)}</td>
-                              <td className="text-right">{Number(cl).toFixed(1)}</td>
-                              <td className="text-right">{Number(tst).toFixed(1)}</td>
+                              <td className="text-right" style={{ padding: '2px' }}>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  className="win-input text-right"
+                                  style={{ width: '65px', height: '19px', padding: '1px 2px', fontSize: '11px', fontWeight: 600 }}
+                                  value={cl}
+                                  onChange={(e) => {
+                                    const newCl = parseFloat(e.target.value) || 0;
+                                    if (salesReadings.length > 0) {
+                                      const updated = [...salesReadings];
+                                      const curr = { ...updated[i] };
+                                      curr.close = newCl;
+                                      const o = curr.open ?? curr.op ?? 0;
+                                      const t = curr.test ?? 0;
+                                      curr.qty = Math.max(0, parseFloat((newCl - o - t).toFixed(2)));
+                                      curr.amount = parseFloat((curr.qty * (curr.rate || 0)).toFixed(2));
+                                      updated[i] = curr;
+                                      setSalesReadings(updated);
+                                    } else {
+                                      const updated = [...empNozzleReadings];
+                                      const curr = { ...updated[i] };
+                                      curr.close = newCl;
+                                      const o = curr.op ?? curr.open ?? 0;
+                                      const t = curr.test ?? 0;
+                                      curr.sale = Math.max(0, parseFloat((newCl - o - t).toFixed(2)));
+                                      curr.amount = parseFloat((curr.sale * (curr.rate || 0)).toFixed(2));
+                                      updated[i] = curr;
+                                      setEmpNozzleReadings(updated);
+                                    }
+                                  }}
+                                />
+                              </td>
+                              <td className="text-right" style={{ padding: '2px' }}>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  className="win-input text-right"
+                                  style={{ width: '45px', height: '19px', padding: '1px 2px', fontSize: '11px' }}
+                                  value={tst}
+                                  onChange={(e) => {
+                                    const newTst = parseFloat(e.target.value) || 0;
+                                    if (salesReadings.length > 0) {
+                                      const updated = [...salesReadings];
+                                      const curr = { ...updated[i] };
+                                      curr.test = newTst;
+                                      const o = curr.open ?? curr.op ?? 0;
+                                      const c = curr.close ?? 0;
+                                      curr.qty = Math.max(0, parseFloat((c - o - newTst).toFixed(2)));
+                                      curr.amount = parseFloat((curr.qty * (curr.rate || 0)).toFixed(2));
+                                      updated[i] = curr;
+                                      setSalesReadings(updated);
+                                    } else {
+                                      const updated = [...empNozzleReadings];
+                                      const curr = { ...updated[i] };
+                                      curr.test = newTst;
+                                      const o = curr.op ?? curr.open ?? 0;
+                                      const c = curr.close ?? 0;
+                                      curr.sale = Math.max(0, parseFloat((c - o - newTst).toFixed(2)));
+                                      curr.amount = parseFloat((curr.sale * (curr.rate || 0)).toFixed(2));
+                                      updated[i] = curr;
+                                      setEmpNozzleReadings(updated);
+                                    }
+                                  }}
+                                />
+                              </td>
                               <td className="text-right" style={{ fontWeight: 700, color: '#1565c0' }}>{Number(sale).toFixed(2)}</td>
                               <td className="text-right">{r.rate}</td>
                               <td className="text-right" style={{ fontWeight: 700 }}>{Number(amt).toFixed(2)}</td>
@@ -4223,10 +4415,26 @@ export default function App() {
                   </div>
 
                   {/* Table 2: Lube oil sales */}
-                  <div style={{ fontWeight: 700, fontSize: '11px', color: '#b71c1c', marginBottom: '4px' }}>
-                    2. Lube Sales (Lubricant Packs)
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '11px', color: '#b71c1c' }}>
+                      2. Lube Sales (Lubricant Packs)
+                    </div>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ fontSize: '10px', height: '18px', padding: '0 4px' }}
+                      onClick={() => {
+                        setEmpLubeItems([
+                          ...empLubeItems,
+                          { product: 'MAK 4T PLUS 20W 40 900ML', qty: 1, rate: 365.0, amount: 365.0 }
+                        ]);
+                        showToast('✔ Lube item added to settlement');
+                      }}
+                    >
+                      + Add Pack
+                    </button>
                   </div>
-                  <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '75px', overflowY: 'auto', marginBottom: '8px' }}>
+                  <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '85px', overflowY: 'auto', marginBottom: '8px' }}>
                     <table className="win-datagrid">
                       <thead>
                         <tr>
@@ -4240,7 +4448,21 @@ export default function App() {
                         {empLubeItems.map((l, i) => (
                           <tr key={i}>
                             <td>{l.product}</td>
-                            <td className="text-right">{l.qty}</td>
+                            <td className="text-right" style={{ padding: '2px' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                className="win-input text-right"
+                                style={{ width: '45px', height: '19px', padding: '1px 2px', fontSize: '11px' }}
+                                value={l.qty}
+                                onChange={(e) => {
+                                  const newQty = parseInt(e.target.value) || 0;
+                                  const updated = [...empLubeItems];
+                                  updated[i] = { ...updated[i], qty: newQty, amount: parseFloat((newQty * updated[i].rate).toFixed(2)) };
+                                  setEmpLubeItems(updated);
+                                }}
+                              />
+                            </td>
                             <td className="text-right">{l.rate.toFixed(2)}</td>
                             <td className="text-right" style={{ fontWeight: 700 }}>{l.amount.toFixed(2)}</td>
                           </tr>
@@ -4255,19 +4477,33 @@ export default function App() {
                       <div style={{ fontWeight: 700, fontSize: '11px', color: '#2e7d32', marginBottom: '4px' }}>
                         3. Card Swipe / POS
                       </div>
-                      <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '110px', overflowY: 'auto' }}>
+                      <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '115px', overflowY: 'auto' }}>
                         <table className="win-datagrid">
                           <thead>
                             <tr>
                               <th>Card Name</th>
-                              <th className="text-right">Amount</th>
+                              <th className="text-right">Amount (₹)</th>
                             </tr>
                           </thead>
                           <tbody>
                             {empCardSwipes.map((c, i) => (
                               <tr key={i}>
                                 <td>{c.name}</td>
-                                <td className="text-right" style={{ fontWeight: 700 }}>{c.amount.toFixed(2)}</td>
+                                <td className="text-right" style={{ padding: '2px' }}>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    className="win-input text-right"
+                                    style={{ width: '75px', height: '19px', padding: '1px 3px', fontSize: '11px', fontWeight: 600 }}
+                                    value={c.amount}
+                                    onChange={(e) => {
+                                      const newAmt = parseFloat(e.target.value) || 0;
+                                      const updated = [...empCardSwipes];
+                                      updated[i] = { ...updated[i], amount: newAmt };
+                                      setEmpCardSwipes(updated);
+                                    }}
+                                  />
+                                </td>
                               </tr>
                             ))}
                             <tr style={{ background: '#e8f8f5', fontWeight: 800 }}>
@@ -4282,19 +4518,33 @@ export default function App() {
                       <div style={{ fontWeight: 700, fontSize: '11px', color: '#e65100', marginBottom: '4px' }}>
                         4. Daily Expenses
                       </div>
-                      <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '110px', overflowY: 'auto' }}>
+                      <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '115px', overflowY: 'auto' }}>
                         <table className="win-datagrid">
                           <thead>
                             <tr>
                               <th>Exp Name</th>
-                              <th className="text-right">Amount</th>
+                              <th className="text-right">Amount (₹)</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {empExpensesList.filter((e) => e.amount > 0).map((e, i) => (
+                            {empExpensesList.map((e, i) => (
                               <tr key={i}>
                                 <td>{e.name}</td>
-                                <td className="text-right" style={{ fontWeight: 700, color: '#c0392b' }}>{e.amount.toFixed(2)}</td>
+                                <td className="text-right" style={{ padding: '2px' }}>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    className="win-input text-right"
+                                    style={{ width: '70px', height: '19px', padding: '1px 3px', fontSize: '11px', color: '#c0392b', fontWeight: 600 }}
+                                    value={e.amount}
+                                    onChange={(ev) => {
+                                      const newAmt = parseFloat(ev.target.value) || 0;
+                                      const updated = [...empExpensesList];
+                                      updated[i] = { ...updated[i], amount: newAmt };
+                                      setEmpExpensesList(updated);
+                                    }}
+                                  />
+                                </td>
                               </tr>
                             ))}
                             <tr style={{ background: '#fff3e0', fontWeight: 800 }}>
@@ -4312,13 +4562,18 @@ export default function App() {
                 <div className="win-groupbox" style={{ padding: '10px' }}>
                   <span className="win-groupbox-title">Collection Summary & Tally</span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {/* Cash Collection Row with Green Add Button */}
+                    {/* Cash Collection Row with Direct Input & Green Add Button */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', border: '1px solid #7f9db9', padding: '6px' }}>
                       <div>
-                        <div style={{ fontSize: '11px', fontWeight: 700 }}>Physical Cash Collection</div>
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#2e7d32' }}>
-                          ₹ {empCashAmount.toFixed(2)}
-                        </div>
+                        <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '2px' }}>Physical Cash Collection</div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="win-input"
+                          value={empCashAmount}
+                          onChange={(e) => setEmpCashAmount(parseFloat(e.target.value) || 0)}
+                          style={{ width: '120px', fontWeight: 800, color: '#2e7d32', fontSize: '13px' }}
+                        />
                       </div>
                       <button
                         type="button"
