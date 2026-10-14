@@ -189,6 +189,7 @@ export interface CreditSaleItem {
   slip_no: string;
   date: string;
   customer_name: string;
+  customer_mobile?: string;
   vehicle_no: string;
   product: string;
   qty: number;

@@ -48,6 +48,12 @@ import {
 } from './api/client';
 import { exportToCsv } from './utils/exportCsv';
 import {
+  formatCreditSaleWhatsApp,
+  formatPaymentReceiptWhatsApp,
+  formatStatementWhatsApp,
+  openWhatsAppChat,
+} from './utils/whatsapp';
+import {
   formatErpDate,
   getCurrentMonthStartErpDate,
   getTodayErpDate,
@@ -199,6 +205,7 @@ export default function App() {
   const [creditCashPaid, setCreditCashPaid] = useState<number>(0.0);
   const [creditRemark, setCreditRemark] = useState<string>('');
   const [whatsappSlip, setWhatsappSlip] = useState<string | null>(null);
+  const [creditRecipientMobile, setCreditRecipientMobile] = useState<string>('');
 
   // Past Credit Bills
   const [creditBillsList, setCreditBillsList] = useState<any[]>([]);
@@ -519,6 +526,7 @@ export default function App() {
             slip: s.slip_no,
             bill: s.bill_no,
             cust: s.customer_name,
+            mobile: s.customer_mobile || '',
             vehicle: s.vehicle_no,
             qty: s.qty,
             total: s.amount,
@@ -533,6 +541,7 @@ export default function App() {
             shift: p.shift || 'First',
             date: p.date,
             cust: p.customer,
+            mobile: p.customer_mobile || '',
             mode: p.mode,
             amt: p.amount,
           }))
@@ -771,6 +780,7 @@ export default function App() {
             slip: s.slip_no,
             bill: s.bill_no,
             cust: s.customer_name,
+            mobile: s.customer_mobile || '',
             vehicle: s.vehicle_no,
             qty: s.qty,
             total: s.amount,
@@ -779,6 +789,7 @@ export default function App() {
       }
       if (custs && custs.length > 0) {
         setCustomers(custs);
+        setCreditRecipientMobile(custs[0]?.mobile || '');
       }
     } catch {
       // Offline fallback
@@ -1023,14 +1034,34 @@ export default function App() {
         cash_paid: creditCashPaid,
         remarks: creditRemark,
       });
-      setWhatsappSlip(res.whatsapp_preview);
+      const custObj = customers.find((c) => c.id === creditCustId);
+      const prodObj = ratesList.find((r) => r.id === creditProductId);
+      const formattedWa = formatCreditSaleWhatsApp({
+        stationName: stationProfile.stationName,
+        stationCity: stationProfile.city,
+        billNo: res.bill_no,
+        slipNo: creditSlipNo,
+        date: formatErpDate(creditDate),
+        customerName: custObj?.name || 'CUSTOMER',
+        vehicleNo: creditVehicle,
+        productName: prodObj?.name || 'High Speed Diesel (HSD)',
+        qty: creditQty,
+        rate: creditRate,
+        amount: creditQty * creditRate,
+        cashPaid: creditCashPaid,
+        balanceAfter: res.new_balance,
+      });
+      setWhatsappSlip(formattedWa);
+      setCreditRecipientMobile(res.customer_mobile || custObj?.mobile || '');
+
       const newBill = {
         id: res.id,
         date: formatErpDate(creditDate),
         shift: 'First',
         slip: creditSlipNo,
         bill: res.bill_no,
-        cust: customers.find((c) => c.id === creditCustId)?.name || 'CUSTOMER',
+        cust: custObj?.name || 'CUSTOMER',
+        mobile: res.customer_mobile || custObj?.mobile || '',
         vehicle: creditVehicle,
         qty: creditQty,
         total: creditQty * creditRate - creditCashPaid,
@@ -1733,8 +1764,9 @@ export default function App() {
                   <table className="win-datagrid">
                     <thead>
                       <tr>
-                        <th style={{ width: '65%' }}>Customer Name</th>
-                        <th className="text-right">Outstanding</th>
+                        <th style={{ width: '55%' }}>Customer Name</th>
+                        <th className="text-right" style={{ width: '30%' }}>Outstanding</th>
+                        <th style={{ width: '15%', textAlign: 'center' }}>WA</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1743,10 +1775,26 @@ export default function App() {
                           key={c.id}
                           style={{ cursor: 'pointer' }}
                           title="Click to view Customer Statement of Accounts"
-                          onClick={() => openCustomerStatement(c.id)}
                         >
-                          <td style={{ color: '#0055ea', fontWeight: 600 }}>{c.name}</td>
-                          <td className="text-right">{((c.current_outstanding ?? (c as any).outstanding ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          <td style={{ color: '#0055ea', fontWeight: 600 }} onClick={() => openCustomerStatement(c.id)}>{c.name}</td>
+                          <td className="text-right" onClick={() => openCustomerStatement(c.id)}>{((c.current_outstanding ?? (c as any).outstanding ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ height: '17px', padding: '0 3px', fontSize: '10px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                              title={`Send instant WhatsApp balance reminder to ${c.name} (${c.mobile || 'No mobile'})`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const bal = (c.current_outstanding ?? (c as any).outstanding ?? 0);
+                                const msg = `⛽ *${stationProfile.stationName.toUpperCase()}*\nDear *${c.name}*,\nYour current unbilled fuel outstanding balance is *₹${bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*.\nKindly arrange remittance at your earliest convenience.\nThank you!`;
+                                openWhatsAppChat(c.mobile || '', msg);
+                                showToast(`📲 Opening WhatsApp reminder for ${c.name}...`);
+                              }}
+                            >
+                              📲
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -2169,8 +2217,41 @@ export default function App() {
                   </div>
 
                   {whatsappSlip && (
-                    <div style={{ background: '#e8f8f5', border: '1px solid #2ecc71', padding: '6px', fontSize: '11px', marginTop: '6px' }}>
-                      📲 WhatsApp Slip for {lastCreditSlip?.cust || 'Customer'}: {whatsappSlip.slice(0, 50)}...
+                    <div style={{ background: '#e8f8f5', border: '1px solid #2ecc71', padding: '8px', borderRadius: '3px', marginTop: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 700, color: '#16a085', fontSize: '11px' }}>
+                          📲 WhatsApp Delivery Slip for {lastCreditSlip?.cust || 'Customer'}
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#555' }}>
+                          Customer Mobile: <b>{creditRecipientMobile || 'Not Set'}</b>
+                        </span>
+                      </div>
+                      <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '10px', background: '#fff', border: '1px solid #c8e6c9', padding: '6px', maxHeight: '100px', overflowY: 'auto', color: '#2c3e50', lineHeight: '1.4' }}>
+                        {whatsappSlip}
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: '#333', fontWeight: 600 }}>Recipient Mobile:</span>
+                        <input
+                          type="text"
+                          className="win-input"
+                          placeholder="e.g. 9845012345"
+                          style={{ width: '130px', fontSize: '11px', height: '22px' }}
+                          value={creditRecipientMobile}
+                          onChange={(e) => setCreditRecipientMobile(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="win-btn-classic"
+                          style={{ background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700, height: '22px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                          onClick={() => {
+                            const mobile = creditRecipientMobile || customers.find((c) => c.id === creditCustId)?.mobile || '';
+                            openWhatsAppChat(mobile, whatsappSlip);
+                            showToast('📲 WhatsApp chat opened with pre-filled delivery slip!');
+                          }}
+                        >
+                          📲 Dispatch WhatsApp Slip
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -2253,31 +2334,61 @@ export default function App() {
                           <td className="text-right">{b.qty.toFixed(2)}</td>
                           <td className="text-right" style={{ fontWeight: 700 }}>{b.total.toFixed(2)}</td>
                           <td>
-                            <button
-                              className="win-btn-classic"
-                              style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
-                              onClick={() => {
-                                requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${Number(b.total || 0).toFixed(2)})`, async () => {
-                                  try {
-                                    if (b.id) {
-                                      await deleteCreditSale(b.id);
-                                    } else {
-                                      const latest = await fetchCreditSales();
-                                      const found = latest.find((x) => x.bill_no === b.bill || x.slip_no === b.slip);
-                                      if (found && found.id) {
-                                        await deleteCreditSale(found.id);
+                            <div style={{ display: 'flex', gap: '3px' }}>
+                              <button
+                                className="win-btn-classic"
+                                style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
+                                onClick={() => {
+                                  requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${Number(b.total || 0).toFixed(2)})`, async () => {
+                                    try {
+                                      if (b.id) {
+                                        await deleteCreditSale(b.id);
+                                      } else {
+                                        const latest = await fetchCreditSales();
+                                        const found = latest.find((x) => x.bill_no === b.bill || x.slip_no === b.slip);
+                                        if (found && found.id) {
+                                          await deleteCreditSale(found.id);
+                                        }
                                       }
+                                      showToast(`✔ Credit Bill #${b.bill} permanently deleted & balance reversed!`);
+                                      await loadAllErpData();
+                                    } catch (err: any) {
+                                      showToast(`⚠ Error deleting bill: ${err.message || 'Database error'}`);
                                     }
-                                    showToast(`✔ Credit Bill #${b.bill} permanently deleted & balance reversed!`);
-                                    await loadAllErpData();
-                                  } catch (err: any) {
-                                    showToast(`⚠ Error deleting bill: ${err.message || 'Database error'}`);
-                                  }
-                                });
-                              }}
-                            >
-                              Delete
-                            </button>
+                                  });
+                                }}
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
+                                className="win-btn-classic"
+                                style={{ height: '18px', padding: '0 3px', fontSize: '10px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                                title={`Send this slip to customer (${b.mobile || 'Registered Mobile'}) via WhatsApp`}
+                                onClick={() => {
+                                  const cust = customers.find((c) => c.name === b.cust);
+                                  const phone = b.mobile || cust?.mobile || '';
+                                  const text = formatCreditSaleWhatsApp({
+                                    stationName: stationProfile.stationName,
+                                    stationCity: stationProfile.city,
+                                    billNo: b.bill,
+                                    slipNo: b.slip,
+                                    date: b.date,
+                                    customerName: b.cust,
+                                    vehicleNo: b.vehicle,
+                                    productName: 'High Speed Diesel (HSD)',
+                                    qty: b.qty,
+                                    rate: ratesList[0]?.rate || 94.25,
+                                    amount: b.total,
+                                    balanceAfter: cust?.current_outstanding || b.total,
+                                  });
+                                  openWhatsAppChat(phone, text);
+                                  showToast(`📲 Opening WhatsApp delivery slip for ${b.cust}...`);
+                                }}
+                              >
+                                📲
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2483,6 +2594,29 @@ export default function App() {
                   </button>
                   <button className="win-btn-classic" onClick={() => { setPayReceiptNo((parseInt(payReceiptNo) + 1).toString().padStart(5, '0')); showToast('New Receipt initiated'); }}>New Entry (F1)</button>
                   <button className="win-btn-classic" onClick={() => window.print()}>🖨️ Print Receipt</button>
+                  <button
+                    type="button"
+                    className="win-btn-classic"
+                    style={{ background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                    onClick={() => {
+                      const cust = customers.find((c) => c.name === payCustName);
+                      const msg = formatPaymentReceiptWhatsApp({
+                        stationName: stationProfile.stationName,
+                        stationCity: stationProfile.city,
+                        receiptNo: payReceiptNo || 'RCP-RECENT',
+                        date: payDate,
+                        customerName: payCustName || 'Customer',
+                        amount: payAmount || 0,
+                        paymentMode: payMode,
+                        bankName: payBank,
+                        newBalance: cust?.current_outstanding || 0,
+                      });
+                      openWhatsAppChat(cust?.mobile || '', msg);
+                      showToast(`📲 Opening WhatsApp payment acknowledgment for ${payCustName}...`);
+                    }}
+                  >
+                    📲 WhatsApp Receipt
+                  </button>
                 </div>
               </div>
 
@@ -2507,31 +2641,57 @@ export default function App() {
                         <td>{h.mode}</td>
                         <td className="text-right" style={{ fontWeight: 700 }}>{h.amt.toFixed(2)}</td>
                         <td>
-                          <button
-                            className="win-btn-classic"
-                            style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
-                            onClick={() => {
-                              requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${h.cust} - ₹${Number(h.amt || 0).toFixed(2)})`, async () => {
-                                try {
-                                  if (h.id) {
-                                    await deletePaymentReceipt(h.id);
-                                  } else {
-                                    const latest = await fetchPayments();
-                                    const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === h.cust && x.amount === h.amt));
-                                    if (found && found.id) {
-                                      await deletePaymentReceipt(found.id);
+                          <div style={{ display: 'flex', gap: '3px' }}>
+                            <button
+                              className="win-btn-classic"
+                              style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
+                              onClick={() => {
+                                requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${h.cust} - ₹${Number(h.amt || 0).toFixed(2)})`, async () => {
+                                  try {
+                                    if (h.id) {
+                                      await deletePaymentReceipt(h.id);
+                                    } else {
+                                      const latest = await fetchPayments();
+                                      const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === h.cust && x.amount === h.amt));
+                                      if (found && found.id) {
+                                        await deletePaymentReceipt(found.id);
+                                      }
                                     }
+                                    showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
+                                    await loadAllErpData();
+                                  } catch (err: any) {
+                                    showToast(`⚠ Error deleting payment receipt: ${err.message || 'Database error'}`);
                                   }
-                                  showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
-                                  await loadAllErpData();
-                                } catch (err: any) {
-                                  showToast(`⚠ Error deleting payment receipt: ${err.message || 'Database error'}`);
-                                }
-                              });
-                            }}
-                          >
-                            Delete
-                          </button>
+                                });
+                              }}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ height: '18px', padding: '0 3px', fontSize: '10px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                              title={`Send payment receipt to ${h.cust} via WhatsApp`}
+                              onClick={() => {
+                                const cust = customers.find((c) => c.name === h.cust);
+                                const phone = h.mobile || cust?.mobile || '';
+                                const msg = formatPaymentReceiptWhatsApp({
+                                  stationName: stationProfile.stationName,
+                                  stationCity: stationProfile.city,
+                                  receiptNo: h.receipt_no || `RCP-${h.id || (i + 1)}`,
+                                  date: h.date,
+                                  customerName: h.cust,
+                                  amount: h.amt,
+                                  paymentMode: h.mode,
+                                  newBalance: cust?.current_outstanding || 0,
+                                });
+                                openWhatsAppChat(phone, msg);
+                                showToast(`📲 Opening WhatsApp payment acknowledgment for ${h.cust}...`);
+                              }}
+                            >
+                              📲
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -3406,6 +3566,28 @@ export default function App() {
                   📥 Export to Excel (CSV)
                 </button>
                 <button className="win-btn-classic win-btn-primary" onClick={() => window.print()}>🖨️ Print Statement</button>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                  onClick={() => {
+                    const cust = selectedStatement?.customer;
+                    const summary = selectedStatement?.summary;
+                    const msg = formatStatementWhatsApp({
+                      stationName: stationProfile.stationName,
+                      stationCity: stationProfile.city,
+                      customerName: cust?.name || 'Customer',
+                      date: getTodayErpDate(),
+                      totalDebits: summary?.total_purchase || 0,
+                      totalCredits: summary?.total_paid_period || 0,
+                      outstandingBalance: summary?.net_payables || cust?.outstanding || 0,
+                    });
+                    openWhatsAppChat(cust?.mobile || '', msg);
+                    showToast(`📲 Opening WhatsApp Statement for ${cust?.name}...`);
+                  }}
+                >
+                  📲 WhatsApp Statement
+                </button>
                 <button className="win-btn-classic" onClick={() => setActiveDialog(null)}>Close</button>
               </div>
             </div>
