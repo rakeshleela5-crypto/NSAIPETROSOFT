@@ -24,4 +24,4 @@ ENV PORT=8000
 EXPOSE ${PORT}
 
 # Run FastAPI with uvicorn bound to Railway dynamic PORT
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]

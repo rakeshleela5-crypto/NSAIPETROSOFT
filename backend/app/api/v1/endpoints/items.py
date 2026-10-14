@@ -9,7 +9,8 @@ from app.schemas.item import ItemCreate, ItemResponse
 router = APIRouter()
 
 
-@router.get("/", response_model=List[ItemResponse], summary="List Items")
+@router.get("", response_model=List[ItemResponse], summary="List Items")
+@router.get("/", response_model=List[ItemResponse], include_in_schema=False)
 async def list_items(
     skip: int = 0,
     limit: int = 50,
@@ -21,7 +22,8 @@ async def list_items(
     return items
 
 
-@router.post("/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED, summary="Create Item")
+@router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED, summary="Create Item")
+@router.post("/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_item(
     item_in: ItemCreate,
     db: AsyncSession = Depends(get_db),
