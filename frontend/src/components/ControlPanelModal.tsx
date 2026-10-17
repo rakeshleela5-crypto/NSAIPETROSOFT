@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { StationProfile } from '../models';
 import { getTodayErpDate } from '../utils/dateUtils';
 import { resetOperationsToCleanSlate } from '../api/client';
+import { printThermalReceiptHtml } from '../utils/thermalPrinter';
 
 interface ControlPanelModalProps {
   isOpen: boolean;
@@ -40,6 +41,46 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
   const [profileForm, setProfileForm] = useState<StationProfile>(stationProfile);
 
   if (!isOpen) return null;
+
+  const handlePrintShiftAuditSheet = () => {
+    const html = `
+      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+        <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 11px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 10px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-weight: bold; margin-top: 4px; border-top: 1px dashed #000; padding-top: 2px;">SHIFT AUDIT & HANDOVER SHEET</div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>SO No: ${shiftNumber}</span>
+          <span>Shift: ${shiftName}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Date: ${getTodayErpDate()}</span>
+          <span>Time: ${new Date().toLocaleTimeString()}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Shift Status:</span>
+          <span><b>${shiftStatus.toUpperCase()}</b></span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Forecourt Lock:</span>
+          <span><b>${dispenserLocked ? 'LOCKED' : 'ONLINE / ACTIVE'}</b></span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
+        <div style="margin-top: 35px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
+          <span>Relieving Cashier</span>
+          <span>Duty Manager</span>
+        </div>
+        <div style="text-align: center; font-size: 9px; margin-top: 8px;">
+          <div>*** SHIFT HANDOVER COMPLETE ***</div>
+          <div>POWERED BY NSAIPETROSOFT SYSTEM</div>
+        </div>
+      </div>
+    `;
+    printThermalReceiptHtml(html);
+  };
 
   return (
     <div className="win-modal-overlay">
@@ -171,7 +212,7 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                 <button
                   className="win-btn-classic"
                   style={{ height: '36px', fontSize: '12px' }}
-                  onClick={() => window.print()}
+                  onClick={handlePrintShiftAuditSheet}
                 >
                   🖨️ Print Shift Audit Sheet
                 </button>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { exportToCsv } from '../utils/exportCsv';
 
 interface StampingReminderItem {
   nozzle_name: string;
@@ -69,7 +70,22 @@ export const StampingReminderModal: React.FC<StampingReminderModalProps> = ({
         </div>
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit</span>
-          <button className="win-btn-classic" onClick={onClose}>Close</button>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              type="button"
+              className="win-btn-classic"
+              style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+              onClick={() => exportToCsv(
+                `NSAIPETROSOFT_StampingSchedule_${new Date().toISOString().split('T')[0]}`,
+                ['Nozzle Name', 'Connected Tank', 'Last Stamped', 'Next Due Date', 'Days Left', 'Status'],
+                stampingList.map(s => [s.nozzle_name, s.tank, s.last_stamped, s.next_due, `${s.days_remaining} Days`, s.status])
+              )}
+              title="Export Legal Metrology stamping schedule to Microsoft Excel or CSV"
+            >
+              📥 Export to Excel (CSV)
+            </button>
+            <button className="win-btn-classic" onClick={onClose}>Close</button>
+          </div>
         </div>
       </div>
     </div>

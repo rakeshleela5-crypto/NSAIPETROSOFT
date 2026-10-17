@@ -189,9 +189,19 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
               style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
               onClick={() => exportToCsv(
                 `NSAIPETROSOFT_TankDips_${new Date().toISOString().split('T')[0]}`,
-                ['Date', 'Tank ID', 'Open Dip (cm)', 'Open Stock (L)', 'Close Dip (cm)', 'Close Stock (L)', 'Dip Sales (L)', 'Meter Sales (L)', 'Variation (L)'],
+                ['Date', 'Tank Name', 'Open Dip (cm)', 'Open Stock (L)', 'Close Dip (cm)', 'Close Stock (L)', 'Dip Sales (L)', 'Meter Sales (L)', 'Variation (L)'],
                 dipsList.length > 0
-                  ? dipsList.map((d: any) => [d.date, d.tank_id, d.opening_dip, d.opening_stock, d.closing_dip, d.closing_stock, d.dip_wise_sale, d.meter_wise_sale, d.variation_liters])
+                  ? dipsList.map((d: any) => [
+                      d.date,
+                      d.tank_name || d.tank_id || `Tank ${d.tank_id || ''}`,
+                      d.opening_dip,
+                      d.opening_stock,
+                      d.closing_dip,
+                      d.closing_stock,
+                      d.dip_sale ?? d.dip_wise_sale ?? 0,
+                      d.meter_sale ?? d.meter_wise_sale ?? 0,
+                      d.variation ?? d.variation_liters ?? 0,
+                    ])
                   : [[new Date().toISOString().split('T')[0], dipTankId, dipOpenCm, dipOpenStock, dipCloseCm, dipCloseStock, (dipOpenStock + dipReceipt - dipCloseStock), (dipOpenStock + dipReceipt - dipCloseStock), 0]]
               )}
               title="Export underground tank dip audit to Microsoft Excel or CSV"

@@ -990,7 +990,30 @@ export default function App() {
           const thermalData = await fetchCreditSaleThermalSlip(res.id);
           printThermalReceiptHtml(thermalData.html);
         } catch {
-          window.print();
+          const fallbackHtml = `
+            <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+              <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+                <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
+                <div style="font-size: 11px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+                <div style="font-size: 10px;">CREDIT SALE DELIVERY RECEIPT</div>
+              </div>
+              <div style="display: flex; justify-content: space-between;"><span>Bill No:</span><span>${res.bill_no}</span></div>
+              <div style="display: flex; justify-content: space-between;"><span>Date:</span><span>${formatErpDate(creditDate)}</span></div>
+              <div style="display: flex; justify-content: space-between;"><span>Customer:</span><span>${custObj?.name || 'CUSTOMER'}</span></div>
+              <div style="display: flex; justify-content: space-between;"><span>Vehicle:</span><span>${creditVehicle || '-'}</span></div>
+              <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+              <div style="display: flex; justify-content: space-between; font-weight: bold;"><span>Net Credit:</span><span>Rs ${(creditQty * creditRate - creditCashPaid).toFixed(2)}</span></div>
+              <div style="display: flex; justify-content: space-between;"><span>Cur. Balance:</span><span>Rs ${res.new_balance.toFixed(2)}</span></div>
+              <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
+              <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
+                <span>Driver Sign</span><span>Authorized Sign</span>
+              </div>
+              <div style="text-align: center; font-size: 9px; margin-top: 8px;">
+                <div>THANK YOU! VISIT AGAIN</div>
+              </div>
+            </div>
+          `;
+          printThermalReceiptHtml(fallbackHtml);
         }
       }
       await loadAllErpData();
@@ -1547,8 +1570,16 @@ export default function App() {
                     style={{ marginLeft: 'auto', background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontSize: '10px', height: '20px', padding: '0 6px', fontWeight: 700 }}
                     onClick={() => exportToCsv(
                       `NSAIPETROSOFT_CustomerOutstanding_${new Date().toISOString().split('T')[0]}`,
-                      ['Customer Name', 'Outstanding Balance (INR)'],
-                      customersList.map(c => [c.name, (c.current_outstanding ?? (c as any).outstanding ?? 0)])
+                      ['Customer Code', 'Customer Name', 'City', 'Mobile', 'Credit Limit (INR)', 'Outstanding (INR)', 'Status'],
+                      customersList.map(c => [
+                        c.code || '',
+                        c.name,
+                        c.city || '',
+                        c.mobile || '',
+                        c.credit_limit || 0,
+                        (c.current_outstanding ?? (c as any).outstanding ?? 0),
+                        c.is_blocked ? 'BLOCKED' : 'ACTIVE'
+                      ])
                     )}
                     title="Export all customer balances to Microsoft Excel or CSV"
                   >
