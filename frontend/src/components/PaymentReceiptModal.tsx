@@ -3,6 +3,7 @@ import type { CustomerFull, StationProfile } from '../models';
 import { createPaymentReceipt, deletePaymentReceipt, fetchPayments } from '../api/client';
 import { exportToCsv } from '../utils/exportCsv';
 import { formatPaymentReceiptWhatsApp, openWhatsAppChat } from '../utils/whatsapp';
+import { printThermalReceiptHtml } from '../utils/thermalPrinter';
 
 interface PaymentReceiptModalProps {
   isOpen: boolean;
@@ -48,6 +49,56 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   const [payAmount, setPayAmount] = useState<number>(0);
 
   if (!isOpen) return null;
+
+  const handlePrintPaymentReceipt = () => {
+    const cust = customers.find((c) => c.name === payCustName);
+    const html = `
+      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+        <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 11px;">${stationProfile.oilCompany} DEALER</div>
+          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 10px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-weight: bold; margin-top: 4px; border-top: 1px dashed #000; padding-top: 2px;">PAYMENT RECEIPT</div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Receipt: ${payReceiptNo || 'RCP-001'}</span>
+          <span>${payDate}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div><b>Customer:</b> ${payCustName || 'Customer'}</div>
+        <div><b>Mobile:</b> ${cust?.mobile || '-'}</div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Payment Mode:</span>
+          <span><b>${payMode}</b></span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Account/Bank:</span>
+          <span>${payBank || 'CASH ON HAND'}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
+          <span>AMOUNT RECEIVED:</span>
+          <span>Rs ${payAmount.toFixed(2)}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-size: 11px;">
+          <span>Remaining Balance:</span>
+          <span>Rs ${(cust?.current_outstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+        </div>
+        <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
+          <span>Cashier Sign</span>
+          <span>Customer Sign</span>
+        </div>
+        <div style="text-align: center; font-size: 9px; margin-top: 8px;">
+          <div>THANK YOU FOR YOUR PAYMENT</div>
+          <div>POWERED BY NSAIPETROSOFT SYSTEM</div>
+        </div>
+      </div>
+    `;
+    printThermalReceiptHtml(html);
+  };
 
   return (
     <div className="win-modal-overlay">
@@ -179,7 +230,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 Save (F2)
               </button>
               <button className="win-btn-classic" onClick={() => { setPayReceiptNo((parseInt(payReceiptNo) + 1).toString().padStart(5, '0')); showToast('New Receipt initiated'); }}>New Entry (F1)</button>
-              <button className="win-btn-classic" onClick={() => window.print()}>🖨️ Print Receipt</button>
+              <button className="win-btn-classic" onClick={handlePrintPaymentReceipt}>🖨️ Print Receipt</button>
               <button
                 type="button"
                 className="win-btn-classic"
@@ -295,8 +346,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
               onClick={() => exportToCsv(
                 `NSAIPETROSOFT_PaymentReceipts_${new Date().toISOString().split('T')[0]}`,
-                ['Shift', 'Receipt Date', 'Customer Name', 'Payment Mode', 'Amount (INR)'],
-                payReceiptsHistory.map(h => [h.shift, h.date, h.cust, h.mode, h.amt])
+                ['Receipt No', 'Shift', 'Receipt Date', 'Customer Name', 'Payment Mode', 'Amount (INR)'],
+                payReceiptsHistory.map(h => [h.receipt_no || `RCP-${h.id}`, h.shift, h.date, h.cust, h.mode, h.amt])
               )}
               title="Export customer receipts to Microsoft Excel or CSV"
             >

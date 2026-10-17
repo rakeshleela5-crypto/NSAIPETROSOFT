@@ -645,6 +645,9 @@ async def list_payments(db: AsyncSession = Depends(get_db)):
 
 @router.post("/payments", summary="Record Customer Payment Receipt")
 async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = Depends(get_db)):
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment receipt amount must be greater than zero")
+
     # Concurrency Lock: Lock Customer row to serialize payment credit ledger
     cust_stmt = select(Customer).where(Customer.id == data.customer_id).with_for_update()
     customer = (await db.execute(cust_stmt)).scalar_one_or_none()
@@ -1761,6 +1764,9 @@ async def get_expenses(db: AsyncSession = Depends(get_db)):
 
 @router.post("/expenses", summary="Record New Expense")
 async def create_expense(data: ExpenseCreate, db: AsyncSession = Depends(get_db)):
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="Expense amount must be greater than zero")
+
     exp = Expense(
         category=data.category,
         amount=data.amount,
@@ -1770,11 +1776,13 @@ async def create_expense(data: ExpenseCreate, db: AsyncSession = Depends(get_db)
     )
     db.add(exp)
 
-    # Deduct from Cash On Hand
-    cash_acc_res = await db.execute(select(BankAccount).where(BankAccount.account_name == "CASH ON HAND"))
+    # Deduct from Cash On Hand with concurrency lock
+    cash_acc_res = await db.execute(
+        select(BankAccount).where(BankAccount.account_name == "CASH ON HAND").with_for_update()
+    )
     cash_acc = cash_acc_res.scalar_one_or_none()
     if cash_acc:
-        cash_acc.balance = max(0.0, cash_acc.balance - data.amount)
+        cash_acc.balance = max(0.0, round(cash_acc.balance - data.amount, 2))
 
     await db.commit()
     return {"status": "success", "message": f"Expense of ₹{data.amount} recorded"}
@@ -1815,6 +1823,11 @@ class TransferCreate(BaseModel):
 
 @router.post("/transfers", summary="Transfer Funds Between Accounts")
 async def create_transfer(data: TransferCreate, db: AsyncSession = Depends(get_db)):
+    if data.from_account_id == data.to_account_id:
+        raise HTTPException(status_code=400, detail="Source and destination accounts must be different")
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="Transfer amount must be greater than zero")
+
     from_res = await db.execute(
         select(BankAccount).where(BankAccount.id == data.from_account_id).with_for_update()
     )

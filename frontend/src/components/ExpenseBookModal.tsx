@@ -1,5 +1,6 @@
 import React from 'react';
 import { exportToCsv } from '../utils/exportCsv';
+import { printThermalReceiptHtml } from '../utils/thermalPrinter';
 
 interface ExpenseItem {
   id: number;
@@ -46,6 +47,37 @@ export const ExpenseBookModal: React.FC<ExpenseBookModalProps> = ({
   onDeleteExpense,
 }) => {
   if (!isOpen) return null;
+
+  const handlePrintExpenseVoucher = () => {
+    const html = `
+      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+        <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="font-size: 15px; font-weight: bold;">NSAIPETROSOFT FUELS</div>
+          <div style="font-size: 11px;">PETTY CASH PAYMENT VOUCHER</div>
+          <div style="font-size: 10px;">Forecourt Petty Cash & Operational Expenses</div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Date: ${expDate}</span>
+          <span>Cash on Hand</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div><b>Category:</b> ${expCategory}</div>
+        <div><b>Paid To:</b> ${expPaidTo || '-'}</div>
+        <div><b>Narration:</b> ${expNarration || '-'}</div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
+          <span>AMOUNT PAID:</span>
+          <span>Rs ${expAmount.toFixed(2)}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="margin-top: 35px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
+          <span>Payee Sign</span>
+          <span>Manager / Cashier Sign</span>
+        </div>
+      </div>
+    `;
+    printThermalReceiptHtml(html);
+  };
 
   return (
     <div className="win-modal-overlay">
@@ -119,7 +151,7 @@ export const ExpenseBookModal: React.FC<ExpenseBookModalProps> = ({
               <button type="submit" className="win-btn-classic win-btn-primary" style={{ flex: 1 }}>
                 Record Expense (F2)
               </button>
-              <button type="button" className="win-btn-classic" onClick={() => window.print()}>🖨️ Print</button>
+              <button type="button" className="win-btn-classic" onClick={handlePrintExpenseVoucher}>🖨️ Print Voucher</button>
             </div>
           </form>
 

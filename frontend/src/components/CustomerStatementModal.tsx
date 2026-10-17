@@ -125,9 +125,17 @@ export const CustomerStatementModal: React.FC<CustomerStatementModalProps> = ({
               className="win-btn-classic"
               style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
               onClick={() => exportToCsv(
-                `NSAIPETROSOFT_Statement_${(selectedStatement?.header?.name || 'Customer').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`,
-                ['Date', 'Particulars', 'Debit (INR)', 'Credit (INR)', 'Balance (INR)'],
-                (selectedStatement?.entries || []).map((e: any) => [e.date, e.particulars, e.debit || 0, e.credit || 0, e.balance || 0])
+                `NSAIPETROSOFT_Statement_${(selectedStatement?.customer?.name || 'Customer').replace(/\s+/g, '_')}_${getTodayErpDate()}`,
+                ['Date', 'Bill No', 'Vehicle No', 'Slip No', 'Qty (Ltr)', 'Rate (Rs)', 'Amount (Rs)'],
+                (selectedStatement?.bills || []).map((b: any) => [
+                  b.date,
+                  b.bill_no,
+                  b.vehicle_no,
+                  b.slip_no,
+                  b.qty,
+                  b.rate,
+                  b.amount,
+                ])
               )}
               title="Export this customer statement directly to Microsoft Excel or CSV"
             >
