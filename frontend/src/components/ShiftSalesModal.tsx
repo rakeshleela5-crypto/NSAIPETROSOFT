@@ -1,0 +1,307 @@
+import React from 'react';
+import { exportToCsv } from '../utils/exportCsv';
+import { getTodayErpDate } from '../utils/dateUtils';
+
+interface EmployeeItem {
+  id: number;
+  name: string;
+  code?: string;
+}
+
+interface SalesReadingRow {
+  emp: string;
+  nozzle: string;
+  item: string;
+  open: number;
+  close: number;
+  test: number;
+  qty: number;
+  rate: number;
+  amount: number;
+  vat: string | number;
+  lube: number;
+  [key: string]: any;
+}
+
+interface ShiftSalesModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  salesDate: string;
+  setSalesDate: (d: string) => void;
+  shiftName: string;
+  setShiftName: (s: string) => void;
+  importFromApp: boolean;
+  setImportFromApp: (b: boolean) => void;
+  shiftNumber: string;
+  setShiftNumber: (s: string) => void;
+  salesReadings: SalesReadingRow[];
+  setSalesReadings: (readings: SalesReadingRow[]) => void;
+  employeesList: EmployeeItem[];
+  shiftSettlementsList: any[];
+  showToast: (msg: string) => void;
+  onOpenCreditDialog: () => void;
+  onOpenExpenseBook: () => void;
+  onOpenDenomDialog: () => void;
+  onSaveShiftMeters: () => void;
+}
+
+export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
+  isOpen,
+  onClose,
+  salesDate,
+  setSalesDate,
+  shiftName,
+  setShiftName,
+  importFromApp,
+  setImportFromApp,
+  shiftNumber,
+  setShiftNumber,
+  salesReadings,
+  setSalesReadings,
+  employeesList,
+  shiftSettlementsList,
+  showToast,
+  onOpenCreditDialog,
+  onOpenExpenseBook,
+  onOpenDenomDialog,
+  onSaveShiftMeters,
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="win-modal-overlay">
+      <div className="win-form-dialog" style={{ width: '920px' }}>
+        <div className="win-dialog-titlebar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>⛽</span>
+            <span>Sales Entry (Nozzle Totalizers & Tank Balance)</span>
+          </div>
+          <button className="win-btn" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="win-dialog-body">
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '8px' }}>
+            <div className="win-form-row">
+              <span className="win-label" style={{ minWidth: '40px' }}>Date</span>
+              <input
+                type="text"
+                className="win-input"
+                value={salesDate}
+                onChange={(e) => setSalesDate(e.target.value)}
+                style={{ width: '100px', fontWeight: 600 }}
+              />
+            </div>
+            <div className="win-form-row">
+              <span className="win-label" style={{ minWidth: '40px' }}>Shift</span>
+              <select
+                className="win-select"
+                style={{ width: '80px' }}
+                value={shiftName}
+                onChange={(e) => setShiftName(e.target.value)}
+              >
+                <option>First</option>
+                <option>Second</option>
+              </select>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={importFromApp}
+                onChange={(e) => {
+                  setImportFromApp(e.target.checked);
+                  showToast(e.target.checked ? 'Wireless IoT Dispenser Auto-Sync Enabled' : 'Manual Entry Mode');
+                }}
+              /> Import Entry From App
+            </label>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ fontWeight: 700 }}>SO NO.</span>
+              <input
+                type="text"
+                className="win-input"
+                value={shiftNumber}
+                onChange={(e) => setShiftNumber(e.target.value)}
+                style={{ width: '70px', fontWeight: 700 }}
+              />
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '230px', overflowY: 'auto' }}>
+            <table className="win-datagrid">
+              <thead>
+                <tr>
+                  <th>Employee Name</th>
+                  <th>Nozzle Name</th>
+                  <th>Item Name</th>
+                  <th>Opening Meter</th>
+                  <th>Closing Meter</th>
+                  <th>Testing</th>
+                  <th>Sale Qty</th>
+                  <th>Rate</th>
+                  <th>Total Amount</th>
+                  <th>Vat</th>
+                  <th>Lube</th>
+                </tr>
+              </thead>
+              <tbody>
+                {salesReadings.map((r, i) => (
+                  <tr key={i}>
+                    <td>
+                      <select
+                        className="win-select"
+                        style={{ fontSize: '11px', padding: '1px 2px' }}
+                        value={r.emp}
+                        onChange={(e) => {
+                          const copy = [...salesReadings];
+                          copy[i].emp = e.target.value;
+                          setSalesReadings(copy);
+                        }}
+                      >
+                        {employeesList.map((emp) => (
+                          <option key={emp.id} value={emp.name}>{emp.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
+                    <td>{r.item}</td>
+                    <td>{r.open.toFixed(3)}</td>
+                    <td>
+                      <input
+                        type="number"
+                        className="win-input"
+                        style={{ width: '75px' }}
+                        value={r.close}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          const copy = [...salesReadings];
+                          copy[i].close = val;
+                          copy[i].qty = Math.max(0, val - copy[i].open - copy[i].test);
+                          copy[i].amount = copy[i].qty * copy[i].rate;
+                          copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
+                          setSalesReadings(copy);
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.1"
+                        className="win-input"
+                        style={{ width: '50px' }}
+                        value={r.test}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          const copy = [...salesReadings];
+                          copy[i].test = val;
+                          copy[i].qty = Math.max(0, copy[i].close - copy[i].open - val);
+                          copy[i].amount = copy[i].qty * copy[i].rate;
+                          copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
+                          setSalesReadings(copy);
+                        }}
+                      />
+                    </td>
+                    <td style={{ fontWeight: 700, color: '#1565c0' }}>{r.qty.toFixed(2)}</td>
+                    <td>{r.rate}</td>
+                    <td style={{ fontWeight: 700 }}>₹ {r.amount.toFixed(2)}</td>
+                    <td>{r.vat}</td>
+                    <td>{r.lube}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px', marginTop: '10px' }}>
+            <div style={{ border: '1px solid #7f9db9', background: '#fff', height: '110px', overflowY: 'auto' }}>
+              <table className="win-datagrid">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>SONo</th>
+                    <th>ShiftName</th>
+                    <th>PersonName</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shiftSettlementsList && shiftSettlementsList.length > 0 ? (
+                    shiftSettlementsList.slice(0, 10).map((s, idx) => (
+                      <tr key={idx}>
+                        <td>{s.settlement_date || s.date || getTodayErpDate()}</td>
+                        <td style={{ fontWeight: 700 }}>{s.id || (idx + 1)}</td>
+                        <td>{s.shift_name || 'First'}</td>
+                        <td>{s.cashier_name || 'STATION ATTENDANT'}</td>
+                        <td>
+                          <button
+                            className="win-btn-classic"
+                            style={{ height: '18px', padding: '0 4px', fontSize: '10px' }}
+                            onClick={() => showToast(`✔ Shift #${s.id || (idx + 1)} (${s.shift_name || 'First'}) recorded in PostgreSQL`)}
+                          >
+                            Archived
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: '8px' }}>
+                        No previous shift settlements archived in database.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="win-form-row">
+                <span className="win-label">Total Amount</span>
+                <input
+                  type="text"
+                  className="win-input"
+                  readOnly
+                  value={`₹ ${salesReadings.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}`}
+                  style={{ fontWeight: 700 }}
+                />
+              </div>
+              <div className="win-form-row">
+                <span className="win-label">Total Volume</span>
+                <input
+                  type="text"
+                  className="win-input"
+                  readOnly
+                  value={`${salesReadings.reduce((acc, curr) => acc + curr.qty, 0).toFixed(2)} Liters`}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                <button className="win-btn-classic" onClick={onOpenCreditDialog}>Credit Entry</button>
+                <button className="win-btn-classic" onClick={onOpenExpenseBook}>Expense Book</button>
+                <button className="win-btn-classic" onClick={onOpenDenomDialog}>Cash Settlement</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="win-dialog-footer">
+          <span className="hotkeys-hint-red">ESC=Exit | F2=Save | F1=New | CTRL+A=Add To List</span>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              type="button"
+              className="win-btn-classic"
+              style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 600 }}
+              onClick={() => exportToCsv(
+                `NSAIPETROSOFT_ShiftReadings_${new Date().toISOString().split('T')[0]}`,
+                ['Nozzle Name', 'Product', 'Opening Meter', 'Closing Meter', 'Testing (Ltrs)', 'Sale Qty (Ltrs)', 'Rate (INR)', 'Total Amount (INR)'],
+                salesReadings.map(s => [s.nozzle || s.nozzle_name, s.item || s.product, s.open ?? s.opening, s.close ?? s.closing, s.test ?? s.testing, s.qty, s.rate, s.amount])
+              )}
+              title="Export nozzle meter readings to Microsoft Excel or CSV"
+            >
+              📥 Export to Excel (CSV)
+            </button>
+            <button className="win-btn-classic win-btn-primary" onClick={onSaveShiftMeters}>Save (F2)</button>
+            <button className="win-btn-classic" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

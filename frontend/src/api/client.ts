@@ -5,6 +5,8 @@ export const API_BASE_URL = rawUrl
     : `https://${rawUrl}`
   : 'https://nsaipetrosoft-production.up.railway.app';
 
+export type * from '../models';
+
 // ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
