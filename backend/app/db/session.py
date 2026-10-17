@@ -36,8 +36,14 @@ async def init_db() -> None:
         migrations = [
             "ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT FALSE",
             "ALTER TABLE customers ADD COLUMN IF NOT EXISTS remarks TEXT",
+            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_tanker BOOLEAN DEFAULT FALSE",
             "ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS is_cheque_bounced BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS receiving_account VARCHAR(100)",
             "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS customer_balance_after DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS discount_percent DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS cash_paid DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS remarks TEXT",
         ]
         for query in migrations:
             try:

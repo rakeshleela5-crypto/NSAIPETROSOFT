@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { CustomerFull, FuelProductRate, StationProfile } from '../models';
 import { createPaymentReceipt } from '../api/client';
 import { getTodayErpDate } from '../utils/dateUtils';
+import { printThermalReceiptHtml } from '../utils/thermalPrinter';
 
 interface CashBillModalProps {
   isOpen: boolean;
@@ -31,6 +32,49 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
   const [cashMemoLiters, setCashMemoLiters] = useState<number>(20.0);
 
   if (!isOpen) return null;
+
+  const handlePrintCashReceipt = () => {
+    const tot = (cashMemoLiters * cashMemoRate).toFixed(2);
+    const html = `
+      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+        <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 11px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 10px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Memo No: ${cashMemoBillNo}</span>
+          <span>${getTodayErpDate()}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Vehicle: ${cashMemoVehicle || 'WALK-IN'}</span>
+          <span>${new Date().toLocaleTimeString()}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold;">
+          <span>${cashMemoProduct === 'MS' ? 'PETROL (MS)' : 'DIESEL (HSD)'}</span>
+          <span>${cashMemoLiters.toFixed(2)} L</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Rate/L:</span>
+          <span>Rs ${cashMemoRate.toFixed(2)}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
+          <span>TOTAL CASH:</span>
+          <span>Rs ${tot}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="text-align: center; font-size: 10px; margin-top: 8px;">
+          <div>*** CASH MEMO / RETAIL INVOICE ***</div>
+          <div>THANK YOU! VISIT AGAIN</div>
+          <div>SAVE FUEL - SAVE ENVIRONMENT</div>
+        </div>
+      </div>
+    `;
+    printThermalReceiptHtml(html);
+  };
 
   return (
     <div className="win-modal-overlay">
@@ -112,11 +156,11 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                       });
                     }
                     showToast(`✔ Cash Memo #${cashMemoBillNo} recorded! Cash credited to Cash On Hand.`);
-                    window.print();
+                    handlePrintCashReceipt();
                     await loadAllErpData();
                   } catch (err: any) {
                     showToast(`✔ Slip printed. Note: ${err.message}`);
-                    window.print();
+                    handlePrintCashReceipt();
                   }
                 }}
               >
@@ -125,7 +169,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
               <button
                 type="button"
                 className="win-btn-classic"
-                onClick={() => window.print()}
+                onClick={handlePrintCashReceipt}
                 title="Print receipt without creating ledger entry"
               >
                 🖨️ Print Slip
@@ -171,7 +215,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
             <button
               type="button"
               className="win-btn-classic win-btn-primary"
-              onClick={() => window.print()}
+              onClick={handlePrintCashReceipt}
             >
               🖨️ Print Thermal Cash Slip
             </button>

@@ -515,8 +515,10 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                         liveMeterTotal
                       );
                       try {
+                        const matchedEmp = employeesList.find((e) => e.name === empSettlementEmp);
                         await saveShiftSettlement({
                           shift_name: empSettlementShift,
+                          employee_id: matchedEmp?.id,
                           remarks: empSettlementRemarks,
                           denominations: denoms,
                           cash_total: empCashAmount,

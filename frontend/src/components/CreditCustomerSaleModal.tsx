@@ -2,6 +2,7 @@ import React from 'react';
 import type { CustomerFull, FuelProductRate, StationProfile } from '../models';
 import { exportToCsv } from '../utils/exportCsv';
 import { formatCreditSaleWhatsApp, openWhatsAppChat } from '../utils/whatsapp';
+import { printThermalReceiptHtml } from '../utils/thermalPrinter';
 
 interface CreditCustomerSaleModalProps {
   isOpen: boolean;
@@ -84,6 +85,73 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
 }) => {
   if (!isOpen) return null;
 
+  const handlePrintSlip = () => {
+    const cust = customers.find((c) => c.id === creditCustId);
+    const prod = ratesList.find((r) => r.id === creditProductId);
+    const gross = (creditQty * creditRate).toFixed(2);
+    const net = (creditQty * creditRate - creditCashPaid).toFixed(2);
+    const priorBal = (cust?.current_outstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const html = `
+      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+        <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 11px;">${stationProfile.oilCompany} DEALER</div>
+          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 10px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-weight: bold; margin-top: 4px; border-top: 1px dashed #000; padding-top: 2px;">CREDIT DELIVERY NOTE</div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Bill: ${creditBillNo || 'CB-01'}</span>
+          <span>Slip: ${creditSlipNo || '-'}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Date: ${creditDate}</span>
+          <span>Shift: ${creditShift}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div><b>Cust:</b> ${cust?.name || 'CREDIT CUSTOMER'}</div>
+        <div><b>Vehicle:</b> ${creditVehicle || 'N/A'}</div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold;">
+          <span>${prod?.name || 'Fuel Product'}</span>
+          <span>${creditQty.toFixed(2)} L</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Rate/L:</span>
+          <span>Rs ${creditRate.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Gross:</span>
+          <span>Rs ${gross}</span>
+        </div>
+        ${creditCashPaid > 0 ? `
+        <div style="display: flex; justify-content: space-between;">
+          <span>Advance Cash:</span>
+          <span>- Rs ${creditCashPaid.toFixed(2)}</span>
+        </div>` : ''}
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13px;">
+          <span>NET CREDIT:</span>
+          <span>Rs ${net}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 10px; color: #333;">
+          <span>Customer Balance:</span>
+          <span>Rs ${priorBal}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
+        <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
+          <span>Driver Sign</span>
+          <span>Authorized Sign</span>
+        </div>
+        <div style="text-align: center; font-size: 9px; margin-top: 8px;">
+          <div>THANK YOU! VISIT AGAIN</div>
+          <div>POWERED BY NSAIPETROSOFT SYSTEM</div>
+        </div>
+      </div>
+    `;
+    printThermalReceiptHtml(html);
+  };
+
   return (
     <div className="win-modal-overlay">
       <div className="win-form-dialog" style={{ width: '960px' }}>
@@ -154,7 +222,9 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                   }}
                 >
                   {customers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.name}{c.is_blocked ? ' ⛔ (BLOCKED)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -304,7 +374,7 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                 >
                   New Entry
                 </button>
-                <button type="button" className="win-btn-classic" onClick={() => window.print()}>🖨️ Print Slip</button>
+                <button type="button" className="win-btn-classic" onClick={handlePrintSlip}>🖨️ Print Slip</button>
               </div>
 
               {/* Dedicated 80mm Thermal Receipt for Credit Fuel Dispense */}

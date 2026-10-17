@@ -842,6 +842,7 @@ async def list_customers(db: AsyncSession = Depends(get_db)):
             "credit_limit": c.credit_limit,
             "current_outstanding": c.current_outstanding,
             "bill_period": c.bill_period,
+            "is_blocked": bool(c.is_blocked),
             "vehicles": [v.vehicle_no for v in c.vehicles],
         }
         for c in customers

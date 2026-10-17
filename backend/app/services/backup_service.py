@@ -566,3 +566,7 @@ async def generate_excel_workbook(db: AsyncSession) -> Tuple[str, bytes]:
     excel_bytes = excel_buffer.getvalue()
 
     return filename, excel_bytes
+
+
+# Backward compatibility alias
+create_and_upload_backup = create_and_store_backup

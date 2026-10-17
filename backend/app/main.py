@@ -20,9 +20,9 @@ async def nightly_backup_scheduler():
             current_time = now_ist()
             # If during the night shift hour (23:00 IST)
             if current_time.hour == 23 and current_time.minute >= 45:
-                from app.services.backup_service import create_and_upload_backup
+                from app.services.backup_service import create_and_store_backup
                 async with AsyncSessionLocal() as session:
-                    await create_and_upload_backup(session)
+                    await create_and_store_backup(session)
                 await asyncio.sleep(3600)  # Sleep 1 hour so it only triggers once tonight
         except Exception as exc:
             print(f"Background nightly backup task note: {exc}")
