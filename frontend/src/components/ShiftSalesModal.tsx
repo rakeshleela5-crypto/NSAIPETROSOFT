@@ -1,6 +1,7 @@
 import React from 'react';
 import { exportToCsv } from '../utils/exportCsv';
 import { getTodayErpDate } from '../utils/dateUtils';
+import { calculateNetMeterQty } from '../utils/petroUtils';
 
 interface EmployeeItem {
   id: number;
@@ -174,7 +175,7 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                           const val = parseFloat(e.target.value) || 0;
                           const copy = [...salesReadings];
                           copy[i].close = val;
-                          copy[i].qty = Math.max(0, val - copy[i].open - copy[i].test);
+                          copy[i].qty = calculateNetMeterQty(copy[i].open, val, copy[i].test);
                           copy[i].amount = copy[i].qty * copy[i].rate;
                           copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
                           setSalesReadings(copy);
@@ -192,7 +193,7 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                           const val = parseFloat(e.target.value) || 0;
                           const copy = [...salesReadings];
                           copy[i].test = val;
-                          copy[i].qty = Math.max(0, copy[i].close - copy[i].open - val);
+                          copy[i].qty = calculateNetMeterQty(copy[i].open, copy[i].close, val);
                           copy[i].amount = copy[i].qty * copy[i].rate;
                           copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
                           setSalesReadings(copy);

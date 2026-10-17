@@ -12,6 +12,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+from app.core.time import today_ist
 
 
 class FuelProduct(Base):
@@ -130,7 +131,7 @@ class Shift(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     so_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     shift_name: Mapped[str] = mapped_column(String(50), default="First")
     status: Mapped[str] = mapped_column(String(20), default="Open")
     total_sale_amount: Mapped[float] = mapped_column(Float, default=0.0)
@@ -180,7 +181,7 @@ class CreditSale(Base):
     nozzle_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("nozzles.id"), nullable=True)
     slip_no: Mapped[str] = mapped_column(String(50), default="0")
     bill_no: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     rate: Mapped[float] = mapped_column(Float, nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
@@ -205,7 +206,7 @@ class PaymentReceipt(Base):
     receipt_no: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     payment_mode: Mapped[str] = mapped_column(String(50), default="CASH")
     bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -224,7 +225,7 @@ class Expense(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     narration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -260,7 +261,7 @@ class TankDipEntry(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     tank_id: Mapped[int] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=False)
     opening_dip: Mapped[float] = mapped_column(Float, default=0.0)
     opening_stock: Mapped[float] = mapped_column(Float, default=0.0)
@@ -281,7 +282,7 @@ class PurchaseEntry(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     invoice_no: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     dealer_name: Mapped[str] = mapped_column(String(150), default="BHARAT PETROLEUM CO LTD")
     tanker_vehicle_no: Mapped[str] = mapped_column(String(50), nullable=False)
     wooden_seals: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -313,3 +314,18 @@ class BankAccount(Base):
     account_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     account_type: Mapped[str] = mapped_column(String(50), default="BANK")
     balance: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    full_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    pin_code_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(50), default="cashier", nullable=False)  # admin, manager, cashier, attendant
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

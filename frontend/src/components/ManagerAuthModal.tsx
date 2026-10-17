@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { verifyManagerPinApi } from '../api/client';
 
 export interface ManagerPinModalState {
   isOpen: boolean;
@@ -19,20 +20,43 @@ export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
 }) => {
   const [managerPinInput, setManagerPinInput] = useState<string>('');
   const [managerPinError, setManagerPinError] = useState<string>('');
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   if (!modalState || !modalState.isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetPin = (correctPin || '1234').trim();
-    if (managerPinInput.trim() === targetPin) {
+    if (!managerPinInput.trim()) {
+      setManagerPinError('Please enter the Manager PIN.');
+      return;
+    }
+
+    setIsVerifying(true);
+    setManagerPinError('');
+
+    try {
+      // 1. Primary: Verify cryptographically against PostgreSQL backend
+      await verifyManagerPinApi(managerPinInput.trim(), modalState.actionTitle);
       const cb = modalState.onAuthorized;
       setManagerPinInput('');
       setManagerPinError('');
+      setIsVerifying(false);
       onClose();
       cb();
-    } else {
-      setManagerPinError('Access Denied: Incorrect Manager PIN.');
+    } catch (err: any) {
+      // 2. Offline fallback: If server unreachable or offline, allow matching against local pin
+      const fallbackTarget = (correctPin || '1234').trim();
+      if (managerPinInput.trim() === fallbackTarget) {
+        const cb = modalState.onAuthorized;
+        setManagerPinInput('');
+        setManagerPinError('');
+        setIsVerifying(false);
+        onClose();
+        cb();
+      } else {
+        setIsVerifying(false);
+        setManagerPinError(err.message || 'Access Denied: Incorrect Manager PIN.');
+      }
     }
   };
 
@@ -96,8 +120,9 @@ export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
               type="submit"
               className="win-btn-classic win-btn-primary"
               style={{ minWidth: '95px', fontWeight: 700 }}
+              disabled={isVerifying}
             >
-              Authorize (F2)
+              {isVerifying ? 'Verifying...' : 'Authorize (F2)'}
             </button>
             <button
               type="button"

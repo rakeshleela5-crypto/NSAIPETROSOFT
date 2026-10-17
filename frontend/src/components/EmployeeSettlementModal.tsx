@@ -1,6 +1,7 @@
 import React from 'react';
 import type { DenominationMap } from '../models';
 import { saveShiftSettlement, triggerCreateBackup } from '../api/client';
+import { calculateNetMeterQty } from '../utils/petroUtils';
 
 interface EmployeeSettlementModalProps {
   isOpen: boolean;
@@ -157,7 +158,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                       const op = r.open ?? r.op ?? 0;
                       const cl = r.close ?? 0;
                       const tst = r.test ?? 0;
-                      const sale = r.qty ?? r.sale ?? Math.max(0, cl - op - tst);
+                      const sale = r.qty ?? r.sale ?? calculateNetMeterQty(op, cl, tst);
                       const amt = r.amount ?? (sale * r.rate);
                       return (
                         <tr key={i}>
@@ -178,7 +179,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                                   curr.close = newCl;
                                   const o = curr.open ?? curr.op ?? 0;
                                   const t = curr.test ?? 0;
-                                  curr.qty = Math.max(0, parseFloat((newCl - o - t).toFixed(2)));
+                                  curr.qty = calculateNetMeterQty(o, newCl, t);
                                   curr.amount = parseFloat((curr.qty * (curr.rate || 0)).toFixed(2));
                                   updated[i] = curr;
                                   setSalesReadings(updated);
@@ -188,7 +189,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                                   curr.close = newCl;
                                   const o = curr.op ?? curr.open ?? 0;
                                   const t = curr.test ?? 0;
-                                  curr.sale = Math.max(0, parseFloat((newCl - o - t).toFixed(2)));
+                                  curr.sale = calculateNetMeterQty(o, newCl, t);
                                   curr.amount = parseFloat((curr.sale * (curr.rate || 0)).toFixed(2));
                                   updated[i] = curr;
                                   setEmpNozzleReadings(updated);
@@ -211,7 +212,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                                   curr.test = newTst;
                                   const o = curr.open ?? curr.op ?? 0;
                                   const c = curr.close ?? 0;
-                                  curr.qty = Math.max(0, parseFloat((c - o - newTst).toFixed(2)));
+                                  curr.qty = calculateNetMeterQty(o, c, newTst);
                                   curr.amount = parseFloat((curr.qty * (curr.rate || 0)).toFixed(2));
                                   updated[i] = curr;
                                   setSalesReadings(updated);
@@ -221,7 +222,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                                   curr.test = newTst;
                                   const o = curr.op ?? curr.open ?? 0;
                                   const c = curr.close ?? 0;
-                                  curr.sale = Math.max(0, parseFloat((c - o - newTst).toFixed(2)));
+                                  curr.sale = calculateNetMeterQty(o, c, newTst);
                                   curr.amount = parseFloat((curr.sale * (curr.rate || 0)).toFixed(2));
                                   updated[i] = curr;
                                   setEmpNozzleReadings(updated);

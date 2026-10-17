@@ -7,6 +7,53 @@ export const API_BASE_URL = rawUrl
 
 export type * from '../models';
 
+export function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('nsai_manager_token') || localStorage.getItem('nsai_auth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export interface VerifyPinResponse {
+  authorized: boolean;
+  message: string;
+  authorized_by: string;
+  role: string;
+  token?: string;
+}
+
+export async function verifyManagerPinApi(pin: string, actionTitle?: string): Promise<VerifyPinResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/auth/verify-pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin, action_title: actionTitle }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Invalid PIN (Status: ${res.status})`);
+  }
+  const data = await res.json();
+  if (data.token) {
+    localStorage.setItem('nsai_manager_token', data.token);
+  }
+  return data;
+}
+
+export interface ThermalSlipResponse {
+  sale_id: number;
+  bill_no: string;
+  slip_no: string;
+  customer: string;
+  vehicle_no: string;
+  slip_text: string;
+  html: string;
+}
+
+export async function fetchCreditSaleThermalSlip(saleId: number): Promise<ThermalSlipResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}/thermal-slip`);
+  if (!res.ok) throw new Error(`Fetch thermal slip failed: ${res.status}`);
+  return res.json();
+}
+
+
 // ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
@@ -256,6 +303,7 @@ export interface CustomerFull {
   credit_limit: number;
   current_outstanding: number;
   bill_period: string;
+  is_blocked?: boolean;
   vehicles: string[];
 }
 
@@ -731,6 +779,77 @@ export async function resetOperationsToCleanSlate(): Promise<{ status: string; m
     method: 'POST',
   });
   if (!res.ok) throw new Error(`Reset operations failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Tank Strapping & Dip Volume Calculation API
+// ---------------------------------------------------------------------------
+export interface DipCalculationResult {
+  tank_id: number;
+  tank_name: string;
+  dip_cm: number;
+  volume_liters: number;
+  capacity_liters: number;
+  fill_percent: number;
+}
+
+export async function calculateDipVolumeApi(tankId: number, dipCm: number): Promise<DipCalculationResult> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/calculate-dip?dip_cm=${dipCm}`);
+  if (!res.ok) throw new Error(`Calculate dip failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Tanker ASTM Table 53B Density Verification API
+// ---------------------------------------------------------------------------
+export interface DensityVerificationRequest {
+  product_code: string;
+  invoice_density: number;
+  observed_density: number;
+  observed_temp_c: number;
+}
+
+export interface DensityVerificationResult {
+  product_code: string;
+  invoice_density: number;
+  observed_density: number;
+  observed_temp_c: number;
+  converted_density_15c: number;
+  density_difference: number;
+  is_within_tolerance: boolean;
+  tolerance_limit: number;
+  status: 'PASS' | 'REJECT';
+  message: string;
+}
+
+export async function verifyTankerDensityApi(payload: DensityVerificationRequest): Promise<DensityVerificationResult> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/purchases/verify-density`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Verify density API failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Customer Credit Block / Unblock Toggle API
+// ---------------------------------------------------------------------------
+export interface ToggleBlockResult {
+  id: number;
+  name: string;
+  is_blocked: boolean;
+  status: string;
+  message: string;
+}
+
+export async function toggleCustomerBlockApi(customerId: number): Promise<ToggleBlockResult> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/customers/${customerId}/toggle-block`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Toggle block failed: ${res.status}`);
   return res.json();
 }
 

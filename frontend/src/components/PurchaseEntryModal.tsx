@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createPurchase, deletePurchase, fetchPurchases } from '../api/client';
+import { createPurchase, deletePurchase, fetchPurchases, verifyTankerDensityApi, type DensityVerificationResult } from '../api/client';
 import { exportToCsv } from '../utils/exportCsv';
 
 interface PurchaseEntryModalProps {
@@ -33,6 +33,10 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
   const [purVehicleNo, setPurVehicleNo] = useState<string>('MH-04-GP-8821');
   const [purDensity, setPurDensity] = useState<number>(825.4);
   const [purSampleDensity, setPurSampleDensity] = useState<number>(825.4);
+  const [purObservedDensity, setPurObservedDensity] = useState<number>(818.5);
+  const [purObservedTemp, setPurObservedTemp] = useState<number>(29.5);
+  const [densityCheckResult, setDensityCheckResult] = useState<DensityVerificationResult | null>(null);
+  const [isVerifyingDensity, setIsVerifyingDensity] = useState<boolean>(false);
   const [purWoodenSeals, setPurWoodenSeals] = useState({ s1: 'W-901', s2: 'W-902', s3: 'W-903', s4: 'W-904' });
   const [purAlumSeals, setPurAlumSeals] = useState({ s1: 'AL-4011', s2: 'AL-4012', s3: 'AL-4013', s4: 'AL-4014' });
   const [purChargeCode, setPurChargeCode] = useState<string>('01');
@@ -56,6 +60,28 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
   ]);
 
   if (!isOpen) return null;
+
+  const handleVerifyDensity = async () => {
+    try {
+      setIsVerifyingDensity(true);
+      const res = await verifyTankerDensityApi({
+        product_code: purChargeCode === '01' ? 'HSD' : 'MS',
+        invoice_density: purDensity,
+        observed_density: purObservedDensity,
+        observed_temp_c: purObservedTemp,
+      });
+      setDensityCheckResult(res);
+      if (res.is_within_tolerance) {
+        showToast(`✔ Tanker Density Verified! Converted: ${res.converted_density_15c} kg/m³ (Diff: ${res.density_difference > 0 ? `+${res.density_difference}` : res.density_difference} within ±3.0 limit)`);
+      } else {
+        showToast(`⚠ WARNING: Density diff ${res.density_difference} kg/m³ EXCEEDS statutory ±3.0 limit!`);
+      }
+    } catch (err: any) {
+      showToast(`Density verification failed: ${err.message}`);
+    } finally {
+      setIsVerifyingDensity(false);
+    }
+  };
 
   const handleAddPurchaseLine = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,6 +170,72 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
               <div className="win-form-row">
                 <span className="win-label" style={{ minWidth: '80px' }}>Density @15°C</span>
                 <input type="number" step="0.1" className="win-input" value={purDensity} onChange={(e) => { const v = parseFloat(e.target.value) || 0; setPurDensity(v); setPurSampleDensity(v); }} style={{ flex: 1, fontWeight: 700 }} />
+              </div>
+            </div>
+
+            {/* ASTM Table 53B Tanker Density Verification Box */}
+            <div style={{ background: '#f8fbfd', border: '1px solid #7f9db9', padding: '6px 10px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#0d47a1' }}>
+                  🧪 Quality Control: ASTM Table 53B Tanker Density Verification (Statutory ±3.0 kg/m³ limit)
+                </span>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e3f2fd', borderColor: '#90caf9', fontWeight: 700, fontSize: '10px', height: '22px' }}
+                  onClick={handleVerifyDensity}
+                  disabled={isVerifyingDensity}
+                >
+                  {isVerifyingDensity ? 'Verifying...' : '🔬 Verify Decanting Density'}
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 2.5fr', gap: '8px', alignItems: 'center' }}>
+                <div className="win-form-row">
+                  <span className="win-label" style={{ minWidth: '95px', fontSize: '10px' }}>Observed Density</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="win-input"
+                    value={purObservedDensity}
+                    onChange={(e) => setPurObservedDensity(parseFloat(e.target.value) || 0)}
+                    style={{ width: '80px', fontWeight: 600 }}
+                  />
+                  <span style={{ fontSize: '10px', color: '#666', marginLeft: '3px' }}>kg/m³</span>
+                </div>
+                <div className="win-form-row">
+                  <span className="win-label" style={{ minWidth: '85px', fontSize: '10px' }}>Observed Temp</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="win-input"
+                    value={purObservedTemp}
+                    onChange={(e) => setPurObservedTemp(parseFloat(e.target.value) || 0)}
+                    style={{ width: '70px', fontWeight: 600 }}
+                  />
+                  <span style={{ fontSize: '10px', color: '#666', marginLeft: '3px' }}>°C</span>
+                </div>
+                <div>
+                  {densityCheckResult ? (
+                    <div style={{
+                      padding: '3px 8px',
+                      borderRadius: '3px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: densityCheckResult.is_within_tolerance ? '#e8f5e9' : '#ffebee',
+                      color: densityCheckResult.is_within_tolerance ? '#1b5e20' : '#b71c1c',
+                      border: `1px solid ${densityCheckResult.is_within_tolerance ? '#a5d6a7' : '#ef9a9a'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <span>{densityCheckResult.is_within_tolerance ? '✔ PASS' : '❌ REJECT (Decanting Prohibited)'}</span>
+                      <span>@15°C: {densityCheckResult.converted_density_15c} kg/m³</span>
+                      <span>(Diff: {densityCheckResult.density_difference > 0 ? `+${densityCheckResult.density_difference}` : densityCheckResult.density_difference})</span>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '10px', color: '#666' }}>Enter dip sample & test before opening TT decanting valves</span>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -38,7 +38,9 @@ import {
   saveShiftMeters,
   triggerCreateBackup,
   updateRate,
+  fetchCreditSaleThermalSlip,
 } from './api/client';
+import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
 import {
   formatCreditSaleWhatsApp,
@@ -59,6 +61,7 @@ import type {
   DialogType,
   StationProfile,
 } from './models';
+import { calculateNetMeterQty } from './utils/petroUtils';
 import {
   BankAccountsMasterModal,
   CalculatorModal,
@@ -392,7 +395,7 @@ export default function App() {
         }
         if (shiftData.nozzles && shiftData.nozzles.length > 0) {
           const readings = shiftData.nozzles.map((n: any) => {
-            const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
+            const qty = calculateNetMeterQty(n.opening_meter, n.closing_meter, n.testing);
             const amount = Math.round(qty * n.rate * 100) / 100;
             const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
             return {
@@ -717,7 +720,7 @@ export default function App() {
         if (shiftData.nozzles && shiftData.nozzles.length > 0) {
           setSalesReadings(
             shiftData.nozzles.map((n) => {
-              const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
+              const qty = calculateNetMeterQty(n.opening_meter, n.closing_meter, n.testing);
               const amount = Math.round(qty * n.rate * 100) / 100;
               const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
               return {
@@ -756,7 +759,7 @@ export default function App() {
         if (shiftData.nozzles && shiftData.nozzles.length > 0) {
           setSalesReadings(
             shiftData.nozzles.map((n) => {
-              const qty = Math.max(0, n.closing_meter - n.opening_meter - n.testing);
+              const qty = calculateNetMeterQty(n.opening_meter, n.closing_meter, n.testing);
               const amount = Math.round(qty * n.rate * 100) / 100;
               const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
               return {
@@ -983,7 +986,12 @@ export default function App() {
       setLastCreditSlip(newBill);
       showToast(`✔ Credit Bill #${res.bill_no} Saved! Balance: ₹${res.new_balance.toFixed(2)}`);
       if (printSlip) {
-        window.print();
+        try {
+          const thermalData = await fetchCreditSaleThermalSlip(res.id);
+          printThermalReceiptHtml(thermalData.html);
+        } catch {
+          window.print();
+        }
       }
       await loadAllErpData();
     } catch (err: any) {

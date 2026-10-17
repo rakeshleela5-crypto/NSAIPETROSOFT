@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/nsaipetrosoft"
     DB_ECHO: bool = False
 
+    # Security & JWT Auth
+    SECRET_KEY: str = "nsai-petrosoft-enterprise-secret-key-change-in-production-2026"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 Hours
+
     # Allowed CORS Origins (comma-separated or list)
     # Examples: http://localhost:5173,https://your-project.pages.dev
     CORS_ORIGINS: Union[str, List[str]] = [

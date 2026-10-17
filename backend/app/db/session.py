@@ -31,6 +31,20 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+        # Idempotent column migrations for existing PostgreSQL tables
+        from sqlalchemy import text
+        migrations = [
+            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS remarks TEXT",
+            "ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS is_cheque_bounced BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS customer_balance_after DOUBLE PRECISION DEFAULT 0.0",
+        ]
+        for query in migrations:
+            try:
+                await conn.execute(text(query))
+            except Exception as e:
+                print(f"Migration note ({query}): {e}")
+
     # Seed initial petrol pump data if empty
     from app.db.seed import seed_initial_data
     async with AsyncSessionLocal() as session:

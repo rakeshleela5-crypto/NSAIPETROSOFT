@@ -7,7 +7,11 @@ from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.security import get_current_user_optional, require_roles
+from app.core.time import today_ist, now_ist
 from app.db.session import get_db
+from app.services.thermal_printer import generate_credit_slip_text, generate_thermal_slip_html
+from app.services.tank_calibration import calculate_tank_volume_from_dip, reduce_density_to_15c
 from app.models.petrol_pump import (
     BankAccount,
     CreditSale,
@@ -24,6 +28,7 @@ from app.models.petrol_pump import (
     ShiftSettlement,
     Tank,
     TankDipEntry,
+    User,
     Vehicle,
 )
 
@@ -67,7 +72,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
         })
 
     # 4. Today's Collections & Sales strictly computed from live PostgreSQL tables
-    today = date.today()
+    today = today_ist()
     latest_shift_res = await db.execute(
         select(Shift).order_by(desc(Shift.date), desc(Shift.id)).limit(1)
     )
@@ -155,7 +160,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
         "accounts": accounts,
         "active_shift": {
             "so_number": latest_shift.so_number if latest_shift else "SO-00017",
-            "date": str(latest_shift.date) if latest_shift else str(date.today()),
+            "date": str(latest_shift.date) if latest_shift else str(today_ist()),
             "shift_name": latest_shift.shift_name if latest_shift else "First",
             "status": latest_shift.status if latest_shift else "Closed",
         },
@@ -209,12 +214,16 @@ async def get_rates(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/rates", summary="Update Product Rate")
-async def update_rate(data: RateUpdateRequest, db: AsyncSession = Depends(get_db)):
+async def update_rate(
+    data: RateUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     product = await db.get(FuelProduct, data.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    eff_date = data.effective_date or date.today()
+    eff_date = data.effective_date or today_ist()
     product.current_rate = data.rate
 
     entry = RateHistory(product_id=product.id, rate=data.rate, effective_date=eff_date)
@@ -275,7 +284,7 @@ async def get_current_shift(db: AsyncSession = Depends(get_db)):
 
     return {
         "so_number": latest_shift.so_number if latest_shift else "SO-00018",
-        "date": str(latest_shift.date) if latest_shift else str(date.today()),
+        "date": str(latest_shift.date) if latest_shift else str(today_ist()),
         "shift_name": latest_shift.shift_name if latest_shift else "First",
         "status": latest_shift.status if latest_shift else "Open",
         "employees": employees,
@@ -285,15 +294,18 @@ async def get_current_shift(db: AsyncSession = Depends(get_db)):
 
 @router.post("/shifts/save", summary="Save Shift Nozzle Meter Readings")
 async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(get_db)):
-    today_dt = data.date or date.today()
-    shift_res = await db.execute(
-        select(Shift).where(Shift.date == today_dt, Shift.shift_name == data.shift_name)
+    today_dt = data.date or today_ist()
+    shift_stmt = (
+        select(Shift)
+        .where(Shift.date == today_dt, Shift.shift_name == data.shift_name)
+        .with_for_update()
     )
+    shift_res = await db.execute(shift_stmt)
     shift = shift_res.scalar_one_or_none()
 
     if not shift:
-        count_res = await db.execute(select(func.count(Shift.id)))
-        cnt = (count_res.scalar() or 0) + 1
+        max_shift_res = await db.execute(select(func.coalesce(func.max(Shift.id), 0)))
+        cnt = (max_shift_res.scalar() or 0) + 1
         shift = Shift(
             so_number=f"{cnt:05d}",
             date=today_dt,
@@ -303,18 +315,30 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
         db.add(shift)
         await db.flush()
 
+    # Clear prior meter readings for this specific shift to prevent duplicates on re-save
+    await db.execute(delete(ShiftMeterReading).where(ShiftMeterReading.shift_id == shift.id))
+
     total_sale_amt = 0.0
     total_vat_amt = 0.0
 
     for r in data.readings:
-        nozzle = await db.get(Nozzle, r.nozzle_id)
+        nozzle_stmt = select(Nozzle).where(Nozzle.id == r.nozzle_id).with_for_update()
+        nozzle_res = await db.execute(nozzle_stmt)
+        nozzle = nozzle_res.scalar_one_or_none()
         if not nozzle:
             continue
+
         prod = await db.get(FuelProduct, nozzle.product_id)
         rate = prod.current_rate if prod else 90.0
         vat_pct = prod.vat_percent if prod else 14.0
 
-        sale_qty = max(0.0, r.closing_meter - r.opening_meter - r.testing_qty)
+        raw_diff = r.closing_meter - r.opening_meter
+        if raw_diff < 0:
+            # Meter rollover detected (e.g., 999950.0 -> 45.0)
+            rollover_limit = 1_000_000.0 if r.opening_meter >= 900_000.0 else (100_000.0 if r.opening_meter >= 90_000.0 else 10_000_000.0)
+            raw_diff = (rollover_limit - r.opening_meter) + r.closing_meter
+
+        sale_qty = max(0.0, round(raw_diff - r.testing_qty, 2))
         total_amt = round(sale_qty * rate, 2)
         vat_amt = round((total_amt * vat_pct) / (100 + vat_pct), 2)
 
@@ -323,6 +347,14 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
 
         # Update nozzle current meter
         nozzle.current_meter = r.closing_meter
+
+        # Atomically deduct tank stock
+        if nozzle.tank_id and sale_qty > 0:
+            tank_stmt = select(Tank).where(Tank.id == nozzle.tank_id).with_for_update()
+            tank_res = await db.execute(tank_stmt)
+            tank = tank_res.scalar_one_or_none()
+            if tank:
+                tank.current_stock = max(0.0, round(tank.current_stock - sale_qty, 2))
 
         reading = ShiftMeterReading(
             shift_id=shift.id,
@@ -339,7 +371,7 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
         )
         db.add(reading)
 
-    shift.total_sale_amount = total_sale_amt
+    shift.total_sale_amount = round(total_sale_amt, 2)
     await db.commit()
 
     return {
@@ -355,6 +387,7 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
 # 4. Credit Customer & Vehicle Slip Billing API
 # -------------------------------------------------------------
 class CreditSaleCreate(BaseModel):
+    shift_id: Optional[int] = None
     customer_id: int
     vehicle_no: str
     product_id: int
@@ -399,9 +432,25 @@ async def list_credit_sales(db: AsyncSession = Depends(get_db)):
 
 @router.post("/credit-sales", summary="Create Credit Slip Sale & WhatsApp Delivery")
 async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(get_db)):
-    customer = await db.get(Customer, data.customer_id)
+    if data.qty <= 0:
+        raise HTTPException(status_code=400, detail="Fuel quantity must be greater than zero")
+    if data.cash_paid < 0:
+        raise HTTPException(status_code=400, detail="Cash paid cannot be negative")
+    if data.discount_percent < 0 or data.discount_percent > 100:
+        raise HTTPException(status_code=400, detail="Discount percentage must be between 0 and 100")
+
+    # Concurrency Lock: Lock customer row to guarantee atomic balance update
+    customer_stmt = select(Customer).where(Customer.id == data.customer_id).with_for_update()
+    customer_res = await db.execute(customer_stmt)
+    customer = customer_res.scalar_one_or_none()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    if customer.is_blocked:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Customer '{customer.name}' is BLOCKED from credit fuel dispensing due to payment default.",
+        )
 
     product = await db.get(FuelProduct, data.product_id)
     if not product:
@@ -411,15 +460,16 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     gross_amount = round(data.qty * rate, 2)
     dis_amt = round((gross_amount * data.discount_percent) / 100, 2)
     net_amount = gross_amount - dis_amt
-    credit_amount = max(0.0, net_amount - data.cash_paid)
+    credit_amount = max(0.0, round(net_amount - data.cash_paid, 2))
 
     # Check credit limit alert
-    new_outstanding = customer.current_outstanding + credit_amount
+    new_outstanding = round(customer.current_outstanding + credit_amount, 2)
     limit_warning = new_outstanding > customer.credit_limit if customer.credit_limit > 0 else False
 
-    # Auto generate consecutive bill number
-    count_res = await db.execute(select(func.count(CreditSale.id)))
-    bill_num = f"{(count_res.scalar() or 0) + 1:04d}"
+    # Atomic sequential bill numbering within locked transaction
+    max_id_res = await db.execute(select(func.coalesce(func.max(CreditSale.id), 0)))
+    bill_seq = (max_id_res.scalar() or 0) + 1
+    bill_num = f"{bill_seq:04d}"
 
     # Auto-associate with current open shift if available
     active_shift_res = await db.execute(
@@ -427,6 +477,16 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     )
     active_shift = active_shift_res.scalar_one_or_none()
     shift_id = data.shift_id or (active_shift.id if active_shift else None)
+
+    # Optional tank stock atomic deduction
+    if data.nozzle_id:
+        nozzle = await db.get(Nozzle, data.nozzle_id)
+        if nozzle and nozzle.tank_id:
+            tank_stmt = select(Tank).where(Tank.id == nozzle.tank_id).with_for_update()
+            tank_res = await db.execute(tank_stmt)
+            tank = tank_res.scalar_one_or_none()
+            if tank:
+                tank.current_stock = max(0.0, round(tank.current_stock - data.qty, 2))
 
     sale = CreditSale(
         shift_id=shift_id,
@@ -436,7 +496,7 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
         nozzle_id=data.nozzle_id,
         slip_no=data.slip_no,
         bill_no=bill_num,
-        date=date.today(),
+        date=today_ist(),
         rate=rate,
         qty=data.qty,
         amount=net_amount,
@@ -449,15 +509,16 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     )
     db.add(sale)
 
-    # Update customer balance
+    # Atomically update customer balance
     customer.current_outstanding = new_outstanding
     await db.commit()
+    await db.refresh(sale)
 
     # Formatted WhatsApp Slip Payload
     whatsapp_text = (
         f"Delivery Note Details :\n"
         f"Material supplied from NSAIPETROSOFT\n"
-        f"Delivery Date is {date.today().strftime('%d-%m-%Y')}. Slip No is {data.slip_no}\n"
+        f"Delivery Date is {today_ist().strftime('%d-%m-%Y')}. Slip No is {data.slip_no}\n"
         f"Vehicle Number - {data.vehicle_no.upper()} Product {product.name}\n"
         f"(Qty: {data.qty:.2f}; Rate: {rate:.2f}; Amount: {net_amount:.2f})\n"
         f"Purchased. Your available balance is {new_outstanding:.2f}.\n"
@@ -485,11 +546,24 @@ async def delete_credit_sale(sale_id: int, db: AsyncSession = Depends(get_db)):
     if not sale:
         raise HTTPException(status_code=404, detail=f"Credit sale #{sale_id} not found in database")
 
-    customer = await db.get(Customer, sale.customer_id)
+    # Concurrency Lock: Lock customer row when reverting
+    cust_stmt = select(Customer).where(Customer.id == sale.customer_id).with_for_update()
+    cust_res = await db.execute(cust_stmt)
+    customer = cust_res.scalar_one_or_none()
     credit_amount_revert = sale.credit_amount if sale.credit_amount is not None else sale.amount
 
     if customer and credit_amount_revert:
         customer.current_outstanding = max(0.0, round(customer.current_outstanding - credit_amount_revert, 2))
+
+    # Revert fuel stock on tank if nozzle was associated
+    if sale.nozzle_id:
+        nozzle = await db.get(Nozzle, sale.nozzle_id)
+        if nozzle and nozzle.tank_id:
+            tank_stmt = select(Tank).where(Tank.id == nozzle.tank_id).with_for_update()
+            tank_res = await db.execute(tank_stmt)
+            tank = tank_res.scalar_one_or_none()
+            if tank:
+                tank.current_stock = round(tank.current_stock + sale.qty, 2)
 
     bill_number = sale.bill_no or str(sale_id)
     await db.delete(sale)
@@ -503,6 +577,36 @@ async def delete_credit_sale(sale_id: int, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/credit-sales/{sale_id}/thermal-slip", summary="Get 58mm/80mm Thermal Receipt Slip")
+async def get_credit_sale_thermal_slip(sale_id: int, db: AsyncSession = Depends(get_db)):
+    sale = await db.get(CreditSale, sale_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Credit sale not found")
+    customer = await db.get(Customer, sale.customer_id)
+    product = await db.get(FuelProduct, sale.product_id)
+    customer_name = customer.name if customer else "Unknown Customer"
+    product_name = product.name if product else "Fuel Product"
+
+    slip_text = generate_credit_slip_text(
+        sale=sale,
+        customer_name=customer_name,
+        product_name=product_name,
+    )
+    slip_html = generate_thermal_slip_html(slip_text, title=f"Slip #{sale.bill_no}")
+
+    return {
+        "sale_id": sale.id,
+        "bill_no": sale.bill_no,
+        "slip_no": sale.slip_no,
+        "customer": customer_name,
+        "vehicle_no": sale.vehicle_no,
+        "slip_text": slip_text,
+        "html": slip_html,
+    }
+
+
+
+
 
 # -------------------------------------------------------------
 # 4b. Customer Payment Receipts API (Frame 0085 - Payment Receipt F4)
@@ -512,6 +616,7 @@ class PaymentReceiptCreate(BaseModel):
     amount: float
     payment_mode: str = "CASH"
     bank_name: Optional[str] = "CASH ON HAND"
+    receiving_account: Optional[str] = None
     cheque_no: Optional[str] = None
     remarks: Optional[str] = None
 
@@ -526,7 +631,7 @@ async def list_payments(db: AsyncSession = Depends(get_db)):
         {
             "id": p.id,
             "receipt_no": p.receipt_no,
-            "date": p.date.strftime("%d-%b-%Y") if p.date else date.today().strftime("%d-%b-%Y"),
+            "date": p.date.strftime("%d-%b-%Y") if p.date else today_ist().strftime("%d-%b-%Y"),
             "shift": "First",
             "customer": p.customer.name if p.customer else "Customer",
             "customer_mobile": p.customer.mobile if p.customer and p.customer.mobile else "",
@@ -540,37 +645,40 @@ async def list_payments(db: AsyncSession = Depends(get_db)):
 
 @router.post("/payments", summary="Record Customer Payment Receipt")
 async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = Depends(get_db)):
-    customer = await db.get(Customer, data.customer_id)
+    # Concurrency Lock: Lock Customer row to serialize payment credit ledger
+    cust_stmt = select(Customer).where(Customer.id == data.customer_id).with_for_update()
+    customer = (await db.execute(cust_stmt)).scalar_one_or_none()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    count_res = await db.execute(select(func.count(PaymentReceipt.id)))
-    count = (count_res.scalar() or 0) + 1
-    receipt_no = f"RCP-{count:04d}"
+    max_id_res = await db.execute(select(func.coalesce(func.max(PaymentReceipt.id), 0)))
+    next_id = (max_id_res.scalar() or 0) + 1
+    receipt_no = f"RCP-{next_id:04d}"
 
+    effective_bank = data.receiving_account or data.bank_name or "CASH ON HAND"
     receipt = PaymentReceipt(
         receipt_no=receipt_no,
         customer_id=customer.id,
         amount=data.amount,
         payment_mode=data.payment_mode,
-        bank_name=data.bank_name,
+        bank_name=effective_bank,
         cheque_no=data.cheque_no,
         remarks=data.remarks,
-        date=date.today(),
+        date=today_ist(),
     )
     db.add(receipt)
 
-    # 1. Reduce customer current outstanding balance
-    customer.current_outstanding = max(0.0, customer.current_outstanding - data.amount)
+    # 1. Reduce customer current outstanding balance atomically
+    customer.current_outstanding = max(0.0, round(customer.current_outstanding - data.amount, 2))
 
-    # 2. Credit the receiving bank or cash account
+    # 2. Credit the receiving bank or cash account with row lock
     bank_query = select(BankAccount).where(
-        BankAccount.account_name == (data.bank_name if data.bank_name else "CASH ON HAND")
-    )
+        BankAccount.account_name == effective_bank
+    ).with_for_update()
     bank_res = await db.execute(bank_query)
     bank_acc = bank_res.scalar_one_or_none()
     if bank_acc:
-        bank_acc.balance += data.amount
+        bank_acc.balance = round(bank_acc.balance + data.amount, 2)
 
     await db.commit()
     return {
@@ -588,19 +696,21 @@ async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = 
 
 @router.delete("/payments/{payment_id}", summary="Delete Payment Receipt & Restore Customer Outstanding")
 async def delete_payment_receipt(payment_id: int, db: AsyncSession = Depends(get_db)):
-    receipt = await db.get(PaymentReceipt, payment_id)
+    rec_stmt = select(PaymentReceipt).where(PaymentReceipt.id == payment_id).with_for_update()
+    receipt = (await db.execute(rec_stmt)).scalar_one_or_none()
     if not receipt:
         raise HTTPException(status_code=404, detail=f"Payment receipt #{payment_id} not found")
 
-    # 1. Restore customer outstanding balance
-    customer = await db.get(Customer, receipt.customer_id)
+    # 1. Restore customer outstanding balance with row lock
+    cust_stmt = select(Customer).where(Customer.id == receipt.customer_id).with_for_update()
+    customer = (await db.execute(cust_stmt)).scalar_one_or_none()
     if customer:
         customer.current_outstanding = round(customer.current_outstanding + receipt.amount, 2)
 
-    # 2. Reverse receiving bank or cash account balance
+    # 2. Reverse receiving bank or cash account balance with row lock
     bank_query = select(BankAccount).where(
         BankAccount.account_name == (receipt.bank_name if receipt.bank_name else "CASH ON HAND")
-    )
+    ).with_for_update()
     bank_res = await db.execute(bank_query)
     bank_acc = bank_res.scalar_one_or_none()
     if bank_acc:
@@ -822,13 +932,14 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     # Formula 1: Dip Wise Sale = Opening Stock + Inward Receipt - Closing Stock
     dip_sale = round(data.opening_stock + data.receipt_liters - data.closing_stock, 2)
 
-    # Formula 2: Get totalizer meter sale for nozzles drawing from this tank
+    # Formula 2: Get totalizer meter sale for nozzles drawing from this tank for today's shifts
     meter_res = await db.execute(
-        select(func.sum(ShiftMeterReading.sale_qty))
+        select(func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0))
         .join(Nozzle, ShiftMeterReading.nozzle_id == Nozzle.id)
-        .where(Nozzle.tank_id == tank.id)
+        .join(Shift, ShiftMeterReading.shift_id == Shift.id)
+        .where(Nozzle.tank_id == tank.id, Shift.date == today_ist())
     )
-    meter_sale = round(meter_res.scalar() or 0.0, 2)
+    meter_sale = round(float(meter_res.scalar() or 0.0), 2)
 
     # Formula 3: Variation = Physical Dip Sale - Meter Totalizer Sale
     variation = round(dip_sale - meter_sale, 2)
@@ -843,7 +954,7 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     tank.current_dip_cm = data.closing_dip
 
     entry = TankDipEntry(
-        date=date.today(),
+        date=today_ist(),
         tank_id=tank.id,
         opening_dip=data.opening_dip,
         opening_stock=data.opening_stock,
@@ -955,7 +1066,7 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
         if not shift:
             shift = Shift(
                 so_number="00001",
-                date=date.today(),
+                date=today_ist(),
                 shift_name=data.shift_name,
                 status="Closed",
                 total_sale_amount=data.actual_cash + data.credit_total + data.digital_total,
@@ -1065,7 +1176,7 @@ async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_d
 
     entry = PurchaseEntry(
         invoice_no=data.invoice_no,
-        date=date.today(),
+        date=today_ist(),
         dealer_name=data.dealer_name,
         tanker_vehicle_no=data.tanker_vehicle_no.upper().strip(),
         wooden_seals=data.wooden_seals,
@@ -1088,11 +1199,12 @@ async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_d
     )
     db.add(entry)
 
-    # If tank assigned, add inward liters to underground tank stock
+    # If tank assigned, add inward liters to underground tank stock with row lock
     if data.tank_id:
-        tank = await db.get(Tank, data.tank_id)
+        tank_stmt = select(Tank).where(Tank.id == data.tank_id).with_for_update()
+        tank = (await db.execute(tank_stmt)).scalar_one_or_none()
         if tank:
-            tank.current_stock += qty_liters
+            tank.current_stock = round(tank.current_stock + qty_liters, 2)
 
     await db.commit()
     return {
@@ -1116,7 +1228,7 @@ async def list_purchases(db: AsyncSession = Depends(get_db)):
         {
             "id": p.id,
             "invoice_no": p.invoice_no,
-            "date": p.date.strftime("%d-%b-%Y") if p.date else date.today().strftime("%d-%b-%Y"),
+            "date": p.date.strftime("%d-%b-%Y") if p.date else today_ist().strftime("%d-%b-%Y"),
             "dealer_name": p.dealer_name,
             "tanker_vehicle_no": p.tanker_vehicle_no,
             "product": p.product.name if p.product else "Fuel",
@@ -1135,13 +1247,15 @@ async def list_purchases(db: AsyncSession = Depends(get_db)):
 
 @router.delete("/purchases/{purchase_id}", summary="Delete Purchase Decanting & Rollback Tank Stock")
 async def delete_purchase(purchase_id: int, db: AsyncSession = Depends(get_db)):
-    purchase = await db.get(PurchaseEntry, purchase_id)
+    pur_stmt = select(PurchaseEntry).where(PurchaseEntry.id == purchase_id).with_for_update()
+    purchase = (await db.execute(pur_stmt)).scalar_one_or_none()
     if not purchase:
         raise HTTPException(status_code=404, detail=f"Purchase entry #{purchase_id} not found")
 
-    # Rollback tank stock if tank was updated
+    # Rollback tank stock if tank was updated with row lock
     if purchase.tank_id:
-        tank = await db.get(Tank, purchase.tank_id)
+        tank_stmt = select(Tank).where(Tank.id == purchase.tank_id).with_for_update()
+        tank = (await db.execute(tank_stmt)).scalar_one_or_none()
         if tank and purchase.qty_liters:
             tank.current_stock = max(0.0, round(tank.current_stock - purchase.qty_liters, 2))
 
@@ -1160,21 +1274,22 @@ async def delete_purchase(purchase_id: int, db: AsyncSession = Depends(get_db)):
 # 9. Reports: DSR, VAT Summary, Dealer Margin
 # -------------------------------------------------------------
 @router.get("/reports/dsr", summary="Daily Sales Report (DSR) & Tank Stock Register")
-async def get_dsr_report(db: AsyncSession = Depends(get_db)):
+async def get_dsr_report(report_date: Optional[date] = Query(None), db: AsyncSession = Depends(get_db)):
+    target_date = report_date or today_ist()
     tanks_res = await db.execute(select(Tank).options(selectinload(Tank.product)))
     tanks = tanks_res.scalars().all()
 
     report_data = []
     for t in tanks:
         prod_name = t.product.name if t.product else "Fuel"
-        # 1. Receipts (purchases) for this tank
+        # 1. Receipts (purchases) for this tank on target date
         purch_res = await db.execute(
             select(func.coalesce(func.sum(PurchaseEntry.qty_liters), 0.0))
-            .where(PurchaseEntry.tank_id == t.id)
+            .where(PurchaseEntry.tank_id == t.id, PurchaseEntry.date == target_date)
         )
         receipt = float(purch_res.scalar() or 0.0)
 
-        # 2. Meter sale & testing from ShiftMeterReading for nozzles on this tank
+        # 2. Meter sale & testing from ShiftMeterReading for nozzles on this tank on target date
         nozzles_res = await db.execute(select(Nozzle.id).where(Nozzle.tank_id == t.id))
         nozzle_ids = nozzles_res.scalars().all()
 
@@ -1183,7 +1298,9 @@ async def get_dsr_report(db: AsyncSession = Depends(get_db)):
                 select(
                     func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
                     func.coalesce(func.sum(ShiftMeterReading.testing_qty), 0.0),
-                ).where(ShiftMeterReading.nozzle_id.in_(nozzle_ids))
+                )
+                .join(Shift, ShiftMeterReading.shift_id == Shift.id)
+                .where(ShiftMeterReading.nozzle_id.in_(nozzle_ids), Shift.date == target_date)
             )
             sale_row = sales_res.one_or_none()
             meter_sale = float(sale_row[0] if sale_row else 0.0)
@@ -1194,9 +1311,12 @@ async def get_dsr_report(db: AsyncSession = Depends(get_db)):
 
         net_sale = round(meter_sale - testing, 2)
 
-        # 3. Latest Dip Entry
+        # 3. Latest Dip Entry on or before target date
         dip_res = await db.execute(
-            select(TankDipEntry).where(TankDipEntry.tank_id == t.id).order_by(desc(TankDipEntry.id)).limit(1)
+            select(TankDipEntry)
+            .where(TankDipEntry.tank_id == t.id, TankDipEntry.date <= target_date)
+            .order_by(desc(TankDipEntry.date), desc(TankDipEntry.id))
+            .limit(1)
         )
         latest_dip = dip_res.scalar_one_or_none()
 
@@ -1329,7 +1449,7 @@ async def get_profit_summary(db: AsyncSession = Depends(get_db)):
         profit_per_l = round(gross_profit / sqty, 2) if sqty > 0 else 0.0
 
         result.append({
-            "date": r[0].strftime("%d-%b-%Y") if r[0] else date.today().strftime("%d-%b-%Y"),
+            "date": r[0].strftime("%d-%b-%Y") if r[0] else today_ist().strftime("%d-%b-%Y"),
             "sale_qty": round(sqty, 2),
             "purchase_rate": round(purch_rate, 2),
             "purchase_amt": pamt,
@@ -1392,7 +1512,7 @@ async def get_tds_summary(db: AsyncSession = Depends(get_db)):
     tds_payable = round(tot_basic * 0.001, 2)
 
     return {
-        "as_on_date": date.today().strftime("%d-%m-%Y"),
+        "as_on_date": today_ist().strftime("%d-%m-%Y"),
         "purchases": purch_list,
         "purchases_total": {
             "qty": round(tot_qty, 2),
@@ -1415,7 +1535,7 @@ async def get_tds_summary(db: AsyncSession = Depends(get_db)):
 
 @router.get("/reports/dealer-commission", summary="OMC Dealer Commission Report")
 async def get_dealer_commission(db: AsyncSession = Depends(get_db)):
-    today = date.today()
+    today = today_ist()
     month_start = date(today.year, today.month, 1)
 
     sales_res = await db.execute(
@@ -1465,7 +1585,7 @@ async def get_dealer_commission(db: AsyncSession = Depends(get_db)):
 
 @router.get("/reports/lfr-summary", summary="Licensee Fee Recovery & TDS 10% Summary")
 async def get_lfr_summary(db: AsyncSession = Depends(get_db)):
-    today = date.today()
+    today = today_ist()
     month_start = date(today.year, today.month, 1)
 
     purch_res = await db.execute(
@@ -1595,7 +1715,7 @@ async def get_profit_loss(db: AsyncSession = Depends(get_db)):
         })
 
     return {
-        "as_on_date": date.today().strftime("%d-%m-%Y"),
+        "as_on_date": today_ist().strftime("%d-%m-%Y"),
         "opening_stock": stock_list,
         "opening_stock_total": round(tot_stock_amt, 2),
         "sales": sales,
@@ -1645,7 +1765,7 @@ async def create_expense(data: ExpenseCreate, db: AsyncSession = Depends(get_db)
         amount=data.amount,
         narration=data.narration,
         paid_to=data.paid_to,
-        date=date.today(),
+        date=today_ist(),
     )
     db.add(exp)
 
@@ -1694,17 +1814,24 @@ class TransferCreate(BaseModel):
 
 @router.post("/transfers", summary="Transfer Funds Between Accounts")
 async def create_transfer(data: TransferCreate, db: AsyncSession = Depends(get_db)):
-    from_res = await db.execute(select(BankAccount).where(BankAccount.id == data.from_account_id))
+    from_res = await db.execute(
+        select(BankAccount).where(BankAccount.id == data.from_account_id).with_for_update()
+    )
     from_acc = from_res.scalar_one_or_none()
 
-    to_res = await db.execute(select(BankAccount).where(BankAccount.id == data.to_account_id))
+    to_res = await db.execute(
+        select(BankAccount).where(BankAccount.id == data.to_account_id).with_for_update()
+    )
     to_acc = to_res.scalar_one_or_none()
 
     if not from_acc or not to_acc:
         raise HTTPException(status_code=404, detail="One or both accounts not found")
 
-    from_acc.balance -= data.amount
-    to_acc.balance += data.amount
+    if from_acc.balance < data.amount:
+        raise HTTPException(status_code=400, detail=f"Insufficient balance in {from_acc.account_name}. Available: ₹{from_acc.balance:.2f}")
+
+    from_acc.balance = round(from_acc.balance - data.amount, 2)
+    to_acc.balance = round(to_acc.balance + data.amount, 2)
     await db.commit()
 
     return {
@@ -1787,7 +1914,7 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
 async def get_stamping_reminders(db: AsyncSession = Depends(get_db)):
     nozzles_res = await db.execute(select(Nozzle).options(selectinload(Nozzle.tank)))
     nozzles = nozzles_res.scalars().all()
-    today = date.today()
+    today = today_ist()
     next_due_dt = date(today.year + 1, 5, 15) if today.month > 5 else date(today.year, 5, 15)
     last_stamped_dt = date(next_due_dt.year - 1, 5, 15)
     days_rem = (next_due_dt - today).days
@@ -1847,7 +1974,7 @@ async def reset_operations(confirm: str = Query(...), db: AsyncSession = Depends
     # 5. Create initial clean Shift #00001 (Status: Open)
     clean_shift = Shift(
         so_number="00001",
-        date=date.today(),
+        date=today_ist(),
         shift_name="First",
         status="Open",
         total_sale_amount=0.0,
@@ -1862,3 +1989,68 @@ async def reset_operations(confirm: str = Query(...), db: AsyncSession = Depends
         "status": "success",
         "message": "All operational transactions purged. System is now on a clean, authentic zero baseline with Shift #00001 (Open).",
     }
+
+
+# -------------------------------------------------------------
+# 19. Domain Utilities: Dip Calibration, Density Reduction & Customer Block
+# -------------------------------------------------------------
+class DensityCheckRequest(BaseModel):
+    observed_density: float
+    temperature_celsius: float
+    product_code: str = "HSD"
+    invoice_density_15c: Optional[float] = None
+
+
+@router.put("/customers/{customer_id}/toggle-block", summary="Toggle Customer Credit Block Status")
+async def toggle_customer_block(customer_id: int, db: AsyncSession = Depends(get_db)):
+    cust_stmt = select(Customer).where(Customer.id == customer_id).with_for_update()
+    customer = (await db.execute(cust_stmt)).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    customer.is_blocked = not customer.is_blocked
+    await db.commit()
+    return {
+        "customer_id": customer.id,
+        "name": customer.name,
+        "is_blocked": customer.is_blocked,
+        "status": "BLOCKED" if customer.is_blocked else "ACTIVE",
+        "message": f"Customer '{customer.name}' credit status updated to {'BLOCKED' if customer.is_blocked else 'ACTIVE'}",
+    }
+
+
+@router.get("/tanks/{tank_id}/calculate-dip", summary="Calculate Tank Volume from Dip Height (cm)")
+async def calculate_dip_volume(
+    tank_id: int,
+    dip_cm: float = Query(..., ge=0.0, description="Measured dip in centimeters"),
+    db: AsyncSession = Depends(get_db),
+):
+    tank = await db.get(Tank, tank_id)
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
+
+    result = calculate_tank_volume_from_dip(
+        dip_cm=dip_cm,
+        capacity_liters=tank.capacity_liters or 20000.0,
+    )
+    result["tank_name"] = tank.tank_name
+    return result
+
+
+@router.post("/purchases/verify-density", summary="Convert Ambient Density to 15°C (ASTM Table 53B)")
+async def verify_density_endpoint(payload: DensityCheckRequest):
+    result = reduce_density_to_15c(
+        observed_density=payload.observed_density,
+        temperature_celsius=payload.temperature_celsius,
+        product_code=payload.product_code,
+    )
+    if payload.invoice_density_15c is not None:
+        diff = round(abs(result["density_15c"] - payload.invoice_density_15c), 2)
+        passed = diff <= 3.0  # Statutory Indian OMC ±3.0 kg/m3 tolerance limit
+        result["invoice_density_15c"] = payload.invoice_density_15c
+        result["variation"] = diff
+        result["is_within_tolerance"] = passed
+        result["verdict"] = "PASSED: Fuel is within statutory tolerance for decanting." if passed else "REJECT: Density variance exceeds statutory ±3.0 kg/m³ limit!"
+
+    return result
+

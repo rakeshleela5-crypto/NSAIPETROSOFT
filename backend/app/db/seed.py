@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.time import today_ist
+from app.core.security import get_password_hash, get_pin_hash
 from app.models.petrol_pump import (
     BankAccount,
     Customer,
@@ -11,11 +13,44 @@ from app.models.petrol_pump import (
     Shift,
     ShiftMeterReading,
     Tank,
+    User,
     Vehicle,
 )
 
 
 async def seed_initial_data(db: AsyncSession) -> None:
+    # 0. Always ensure Admin and Staff Users exist
+    user_res = await db.execute(select(User))
+    if not user_res.scalars().first():
+        default_users = [
+            User(
+                username="admin",
+                full_name="System Administrator",
+                hashed_password=get_password_hash("admin123"),
+                pin_code_hash=get_pin_hash("1234"),
+                role="admin",
+                is_active=True,
+            ),
+            User(
+                username="manager",
+                full_name="Station Manager",
+                hashed_password=get_password_hash("manager123"),
+                pin_code_hash=get_pin_hash("4321"),
+                role="manager",
+                is_active=True,
+            ),
+            User(
+                username="cashier",
+                full_name="Counter Cashier",
+                hashed_password=get_password_hash("cashier123"),
+                pin_code_hash=get_pin_hash("1111"),
+                role="cashier",
+                is_active=True,
+            ),
+        ]
+        db.add_all(default_users)
+        await db.commit()
+
     # Check if products already exist
     res = await db.execute(select(FuelProduct))
     if res.scalars().first():
@@ -54,8 +89,8 @@ async def seed_initial_data(db: AsyncSession) -> None:
 
     # Rate History
     db.add_all([
-        RateHistory(product_id=hsd.id, rate=90.21, effective_date=date.today()),
-        RateHistory(product_id=ms.id, rate=94.25, effective_date=date.today()),
+        RateHistory(product_id=hsd.id, rate=90.21, effective_date=today_ist()),
+        RateHistory(product_id=ms.id, rate=94.25, effective_date=today_ist()),
     ])
 
     # 2. Tanks

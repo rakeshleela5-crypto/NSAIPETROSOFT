@@ -220,6 +220,7 @@ export interface CustomerFull {
   credit_limit: number;
   current_outstanding: number;
   bill_period: string;
+  is_blocked?: boolean;
   vehicles: string[];
 }
 
