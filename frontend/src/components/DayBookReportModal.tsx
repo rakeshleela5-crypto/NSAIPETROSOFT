@@ -2,6 +2,7 @@ import React from 'react';
 import type { DenominationMap, StationProfile } from '../models';
 import { exportToCsv } from '../utils/exportCsv';
 import { getTodayErpDate } from '../utils/dateUtils';
+import { printThermalReceiptHtml } from '../utils/thermalPrinter';
 
 interface DayBookReportModalProps {
   isOpen: boolean;
@@ -73,6 +74,94 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
     empLubeItems.reduce((acc, l) => acc + Number(l.amount || 0), 0);
   const gap = totalReconciled - totalMeterSales;
 
+  const handlePrintThermalZReport = () => {
+    const is58mm = stationProfile.printerPaperWidth === '58mm';
+    const paperWidth = is58mm ? 58 : 80;
+    const bodyWidth = is58mm ? '200px' : '280px';
+    const fontSize = is58mm ? '10px' : '11.5px';
+    const titleSize = is58mm ? '12px' : '14px';
+
+    const denomHtml = denomRows
+      .filter((d) => typeof d.count === 'number' && d.count > 0)
+      .map(
+        (d) => `
+        <div style="display: flex; justify-content: space-between;">
+          <span>${d.label} ${d.count}</span>
+          <span>Rs. ${Number(d.value).toFixed(2)}</span>
+        </div>`
+      )
+      .join('');
+
+    const html = `
+      <div style="font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 0 auto; line-height: 1.35; color: #000;">
+        <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="font-size: ${titleSize}; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 10.5px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+          ${stationProfile.dealerCode ? `<div style="font-size: 9.5px;">RO Code: ${stationProfile.dealerCode}</div>` : ''}
+          <div style="font-size: 9.5px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''} ${stationProfile.stateCode ? `(${stationProfile.stateCode})` : ''}</div>
+          <div style="font-size: 9.5px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-weight: bold; margin-top: 4px; border-top: 1px dashed #000; padding-top: 2px;">*** DAY-CLOSE Z-REPORT ***</div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Date: ${getTodayErpDate()}</span>
+          <span>Time: ${new Date().toLocaleTimeString()}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Shift: ${shiftName}</span>
+          <span>Cashier: ${empSettlementEmp}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="font-weight: bold; text-align: center; margin-bottom: 2px;">PHYSICAL CASH TALLY</div>
+        ${denomHtml}
+        ${denoms.coins > 0 ? `
+          <div style="display: flex; justify-content: space-between;">
+            <span>Coins</span>
+            <span>Rs. ${Number(denoms.coins).toFixed(2)}</span>
+          </div>` : ''}
+        <div style="border-top: 1px dashed #000; display: flex; justify-content: space-between; font-weight: bold; margin-top: 2px; padding-top: 2px;">
+          <span>CASH HANDOVER:</span>
+          <span>Rs. ${effectiveCash.toFixed(2)}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Credit Fleet Slips:</span>
+          <span>Rs. ${effectiveCreditTotal.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Digital / Bank POS:</span>
+          <span>Rs. ${effectiveDigitalTotal.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Shift Expenses:</span>
+          <span>Rs. ${effectiveExpenseTotal.toFixed(2)}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold;">
+          <span>Reconciled Collection:</span>
+          <span>Rs. ${totalReconciled.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold;">
+          <span>Nozzle Meter Sales:</span>
+          <span>Rs. ${totalMeterSales.toFixed(2)}</span>
+        </div>
+        <div style="border-top: 1px dashed #000; margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: bold; font-size: ${titleSize};">
+          <span>GAP STATUS:</span>
+          <span>${gap >= 0 ? `+Rs. ${gap.toFixed(2)} (BALANCED)` : `-Rs. ${Math.abs(gap).toFixed(2)} (SHORTAGE)`}</span>
+        </div>
+        <div style="margin-top: 30px; border-top: 1px solid #000; padding-top: 4px; font-size: 9.5px; display: flex; justify-content: space-between;">
+          <span>Cashier Sign</span>
+          <span>Duty Manager</span>
+        </div>
+        <div style="text-align: center; font-size: 8.5px; margin-top: 6px;">
+          <div>*** SHIFT CLOSE AUDIT VERIFIED ***</div>
+          <div>POWERED BY NSAIPETROSOFT SYSTEM</div>
+        </div>
+      </div>
+    `;
+    printThermalReceiptHtml(html, { paperWidthMm: paperWidth });
+    showToast('🧾 Thermal Z-Report printed successfully');
+  };
+
   return (
     <div className="win-modal-overlay">
       <div className="crystal-viewer-dialog" style={{ width: '920px', height: '88vh' }}>
@@ -86,7 +175,8 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
 
         {/* Crystal Toolbar */}
         <div className="crystal-toolbar">
-          <button className="crystal-tool-btn" onClick={() => window.print()} title="Print">🖨️ Print Report</button>
+          <button className="crystal-tool-btn" onClick={handlePrintThermalZReport} title="Print Thermal POS Z-Report (80mm/58mm)">🧾 Print Thermal Z-Report</button>
+          <button className="crystal-tool-btn" onClick={() => window.print()} title="Print Full Sheet Report">🖨️ Print Full Sheet</button>
           <button
             className="crystal-tool-btn"
             onClick={() => exportToCsv(

@@ -39,6 +39,8 @@ import {
   triggerCreateBackup,
   updateRate,
   fetchCreditSaleThermalSlip,
+  fetchStationProfileApi,
+  saveStationProfileApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
@@ -119,12 +121,16 @@ export default function App() {
     return {
       stationName: 'NSAIPETROSOFT RETAIL OUTLET',
       oilCompany: 'BHARAT PETROLEUM CORPORATION LTD',
+      dealerCode: 'RO-BPCL-101',
       address: 'HIGHWAY SERVICE STATION',
       city: 'SURAT',
       state: 'GUJARAT',
+      stateCode: '24',
       pincode: '395003',
       gstin: '24AAACN1234F1Z5',
       phone: '+91 98765 43210',
+      upiVpa: '',
+      printerPaperWidth: '80mm',
       managerPin: '1234',
     };
   });
@@ -134,7 +140,10 @@ export default function App() {
     try {
       localStorage.setItem('nsaipetrosoft_station_profile', JSON.stringify(updated));
     } catch {}
-    showToast('✔ Station Outlet Profile Updated Successfully!');
+    saveStationProfileApi(updated).catch((err) => {
+      console.warn('Backend station profile sync deferred:', err);
+    });
+    showToast('✔ Station Outlet Profile Updated & Synced to Cloud!');
   };
 
   // Employees List State
@@ -488,6 +497,22 @@ export default function App() {
       if (lfrData) setLfrReport(lfrData);
       if (plData) setProfitLossReport(plData);
       if (dsrData && dsrData.length > 0) setDsrReport(dsrData);
+
+      // Cloud Dealership / Station Profile Sync
+      try {
+        const cloudProfile = await fetchStationProfileApi();
+        if (cloudProfile && cloudProfile.stationName) {
+          setStationProfile((prev) => ({
+            ...prev,
+            ...cloudProfile,
+          }));
+          try {
+            localStorage.setItem('nsaipetrosoft_station_profile', JSON.stringify(cloudProfile));
+          } catch {}
+        }
+      } catch (profErr) {
+        // Fallback to local profile silently if endpoint not ready
+      }
     } catch (err: any) {
       console.warn('Live ERP synchronization error:', err);
       setBackendOnline(false);

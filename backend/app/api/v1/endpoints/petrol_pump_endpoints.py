@@ -30,6 +30,7 @@ from app.models.petrol_pump import (
     TankDipEntry,
     User,
     Vehicle,
+    StationProfileSetting,
 )
 
 router = APIRouter()
@@ -2067,4 +2068,109 @@ async def verify_density_endpoint(payload: DensityCheckRequest):
         result["verdict"] = "PASSED: Fuel is within statutory tolerance for decanting." if passed else "REJECT: Density variance exceeds statutory ±3.0 kg/m³ limit!"
 
     return result
+
+
+class StationProfilePayload(BaseModel):
+    station_name: str
+    oil_company: str
+    dealer_code: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    state_code: Optional[str] = None
+    pincode: Optional[str] = None
+    gstin: Optional[str] = None
+    pan_no: Optional[str] = None
+    phone: Optional[str] = None
+    upi_vpa: Optional[str] = None
+    printer_paper_width: Optional[str] = "80mm"
+    manager_pin: Optional[str] = "1234"
+
+
+@router.get("/station-profile", summary="Get Dealership / Station Profile Settings")
+async def get_station_profile_endpoint(db: AsyncSession = Depends(get_db)):
+    stmt = select(StationProfileSetting).order_by(StationProfileSetting.id.asc()).limit(1)
+    res = await db.execute(stmt)
+    prof = res.scalar_one_or_none()
+    if not prof:
+        prof = StationProfileSetting(
+            station_name="NSAIPETROSOFT RETAIL OUTLET",
+            oil_company="BHARAT PETROLEUM CORPORATION LTD",
+            address="HIGHWAY SERVICE STATION",
+            city="SURAT",
+            state="GUJARAT",
+            state_code="24",
+            pincode="395003",
+            gstin="24AAACN1234F1Z5",
+            phone="+91 98765 43210",
+            upi_vpa="",
+            printer_paper_width="80mm",
+            manager_pin="1234",
+        )
+        db.add(prof)
+        await db.commit()
+        await db.refresh(prof)
+    return {
+        "station_name": prof.station_name,
+        "oil_company": prof.oil_company,
+        "dealer_code": prof.dealer_code or "",
+        "address": prof.address or "",
+        "city": prof.city or "",
+        "state": prof.state or "",
+        "state_code": prof.state_code or "",
+        "pincode": prof.pincode or "",
+        "gstin": prof.gstin or "",
+        "pan_no": prof.pan_no or "",
+        "phone": prof.phone or "",
+        "upi_vpa": prof.upi_vpa or "",
+        "printer_paper_width": prof.printer_paper_width or "80mm",
+        "manager_pin": prof.manager_pin or "1234",
+    }
+
+
+@router.post("/station-profile", summary="Save Dealership / Station Profile Settings")
+async def save_station_profile_endpoint(payload: StationProfilePayload, db: AsyncSession = Depends(get_db)):
+    stmt = select(StationProfileSetting).order_by(StationProfileSetting.id.asc()).limit(1)
+    res = await db.execute(stmt)
+    prof = res.scalar_one_or_none()
+    if not prof:
+        prof = StationProfileSetting()
+        db.add(prof)
+
+    prof.station_name = payload.station_name.strip()
+    prof.oil_company = payload.oil_company.strip()
+    prof.dealer_code = (payload.dealer_code or "").strip()
+    prof.address = (payload.address or "").strip()
+    prof.city = (payload.city or "").strip()
+    prof.state = (payload.state or "").strip()
+    prof.state_code = (payload.state_code or "").strip()
+    prof.pincode = (payload.pincode or "").strip()
+    prof.gstin = (payload.gstin or "").strip()
+    prof.pan_no = (payload.pan_no or "").strip()
+    prof.phone = (payload.phone or "").strip()
+    prof.upi_vpa = (payload.upi_vpa or "").strip()
+    prof.printer_paper_width = payload.printer_paper_width or "80mm"
+    if payload.manager_pin:
+        prof.manager_pin = payload.manager_pin.strip()
+
+    await db.commit()
+    await db.refresh(prof)
+    return {
+        "message": "Station profile updated successfully",
+        "station_name": prof.station_name,
+        "oil_company": prof.oil_company,
+        "dealer_code": prof.dealer_code,
+        "address": prof.address,
+        "city": prof.city,
+        "state": prof.state,
+        "state_code": prof.state_code,
+        "pincode": prof.pincode,
+        "gstin": prof.gstin,
+        "pan_no": prof.pan_no,
+        "phone": prof.phone,
+        "upi_vpa": prof.upi_vpa,
+        "printer_paper_width": prof.printer_paper_width,
+        "manager_pin": prof.manager_pin,
+    }
+
 

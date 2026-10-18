@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { StationProfile } from '../models';
 import { getTodayErpDate } from '../utils/dateUtils';
 import { resetOperationsToCleanSlate } from '../api/client';
-import { printThermalReceiptHtml } from '../utils/thermalPrinter';
+import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 
 interface ControlPanelModalProps {
   isOpen: boolean;
@@ -43,12 +43,19 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
   if (!isOpen) return null;
 
   const handlePrintShiftAuditSheet = () => {
+    const is58mm = stationProfile.printerPaperWidth === '58mm';
+    const paperWidth = is58mm ? 58 : 80;
+    const bodyWidth = is58mm ? '200px' : '280px';
+    const fontSize = is58mm ? '10.5px' : '12px';
+    const headerSize = is58mm ? '13px' : '15px';
+
     const html = `
-      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+      <div style="font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 0 auto; line-height: 1.35; color: #000;">
         <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
-          <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: ${headerSize}; font-weight: bold;">${stationProfile.stationName}</div>
           <div style="font-size: 11px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
-          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          ${stationProfile.dealerCode ? `<div style="font-size: 10px;">RO/Dealer Code: ${stationProfile.dealerCode}</div>` : ''}
+          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''} ${stationProfile.stateCode ? `(${stationProfile.stateCode})` : ''}</div>
           <div style="font-size: 10px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
           <div style="font-weight: bold; margin-top: 4px; border-top: 1px dashed #000; padding-top: 2px;">SHIFT AUDIT & HANDOVER SHEET</div>
         </div>
@@ -79,7 +86,7 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
         </div>
       </div>
     `;
-    printThermalReceiptHtml(html);
+    printThermalReceiptHtml(html, { paperWidthMm: paperWidth });
   };
 
   return (
@@ -261,16 +268,29 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                   </select>
                 </div>
 
-                <div className="win-form-row">
-                  <span className="win-label" style={{ minWidth: '150px' }}>Custom OMC Title</span>
-                  <input
-                    type="text"
-                    className="win-input"
-                    value={profileForm.oilCompany}
-                    onChange={(e) => setProfileForm({ ...profileForm, oilCompany: e.target.value.toUpperCase() })}
-                    style={{ flex: 1 }}
-                    placeholder="Edit or customize Oil Company title if required"
-                  />
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '8px' }}>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '150px' }}>Custom OMC Title</span>
+                    <input
+                      type="text"
+                      className="win-input"
+                      value={profileForm.oilCompany}
+                      onChange={(e) => setProfileForm({ ...profileForm, oilCompany: e.target.value.toUpperCase() })}
+                      style={{ flex: 1 }}
+                      placeholder="Edit or customize Oil Company title if required"
+                    />
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '100px' }}>RO / Dealer Code</span>
+                    <input
+                      type="text"
+                      className="win-input"
+                      value={profileForm.dealerCode || ''}
+                      onChange={(e) => setProfileForm({ ...profileForm, dealerCode: e.target.value.toUpperCase() })}
+                      style={{ flex: 1 }}
+                      placeholder="e.g. RO-49210 / DEALER-01"
+                    />
+                  </div>
                 </div>
 
                 <div className="win-form-row">
@@ -285,7 +305,7 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 0.8fr 1fr', gap: '8px' }}>
                   <div className="win-form-row">
                     <span className="win-label" style={{ minWidth: '40px' }}>City</span>
                     <input
@@ -307,6 +327,19 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                     />
                   </div>
                   <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '45px' }}>Code</span>
+                    <input
+                      type="text"
+                      maxLength={2}
+                      className="win-input"
+                      value={profileForm.stateCode || ''}
+                      onChange={(e) => setProfileForm({ ...profileForm, stateCode: e.target.value })}
+                      style={{ flex: 1, fontWeight: 700, textAlign: 'center' }}
+                      placeholder="e.g. 24 / 32"
+                      title="2-digit State Code (e.g. 24 Gujarat, 32 Kerala, 27 Maharashtra)"
+                    />
+                  </div>
+                  <div className="win-form-row">
                     <span className="win-label" style={{ minWidth: '55px' }}>Pincode</span>
                     <input
                       type="text"
@@ -325,7 +358,11 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                       type="text"
                       className="win-input"
                       value={profileForm.gstin}
-                      onChange={(e) => setProfileForm({ ...profileForm, gstin: e.target.value.toUpperCase() })}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        const stCode = val.length >= 2 ? val.slice(0, 2) : profileForm.stateCode;
+                        setProfileForm({ ...profileForm, gstin: val, stateCode: stCode || profileForm.stateCode });
+                      }}
                       style={{ flex: 1, fontWeight: 700 }}
                       placeholder="e.g. 24AAACN1234F1Z5"
                     />
@@ -355,9 +392,70 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* UPI VPA and Thermal Printer Roll Width */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', marginTop: '6px' }}>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '100px', color: '#1565c0', fontWeight: 'bold' }}>UPI VPA / QR</span>
+                    <input
+                      type="text"
+                      className="win-input"
+                      value={profileForm.upiVpa || ''}
+                      onChange={(e) => setProfileForm({ ...profileForm, upiVpa: e.target.value.trim() })}
+                      style={{ flex: 1, fontWeight: 600, color: '#0d47a1' }}
+                      placeholder="e.g. ownername@okaxis or store@icici"
+                      title="UPI Virtual Payment Address for dynamic QR code counter collection"
+                    />
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '110px' }}>Printer Width</span>
+                    <select
+                      className="win-select"
+                      value={profileForm.printerPaperWidth || '80mm'}
+                      onChange={(e) => setProfileForm({ ...profileForm, printerPaperWidth: e.target.value as '80mm' | '58mm' })}
+                      style={{ flex: 1, fontWeight: 600 }}
+                    >
+                      <option value="80mm">80mm / 3-inch (Desktop TVS, Epson TM-T82, NGX POS)</option>
+                      <option value="58mm">58mm / 2-inch (Handheld POS, Bluetooth Terminal)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Live POS Receipt & UPI QR Preview Card */}
+                <div style={{ marginTop: '10px', background: '#f5f5f5', border: '1px dashed #7f9db9', padding: '10px', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#333', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>🧾 Live POS Receipt Header & UPI QR Preview ({profileForm.printerPaperWidth || '80mm'} Roll):</span>
+                    <span style={{ color: '#2e7d32' }}>✔ Ready for Real Store Deployment</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <div style={{ flex: 1, background: '#fff', border: '1px solid #ccc', padding: '8px', fontFamily: 'Courier New, monospace', fontSize: profileForm.printerPaperWidth === '58mm' ? '10px' : '11.5px', lineHeight: '1.3' }}>
+                      <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13px' }}>{profileForm.stationName || 'STORE NAME'}</div>
+                      <div style={{ textAlign: 'center', fontSize: '10px' }}>{profileForm.oilCompany || 'RETAIL OUTLET'}</div>
+                      {profileForm.dealerCode && <div style={{ textAlign: 'center', fontSize: '9.5px' }}>RO / Dealer: {profileForm.dealerCode}</div>}
+                      <div style={{ textAlign: 'center', fontSize: '9.5px' }}>{profileForm.address || 'STREET ADDRESS'}, {profileForm.city || 'CITY'} {profileForm.stateCode ? `(${profileForm.stateCode})` : ''}</div>
+                      <div style={{ textAlign: 'center', fontSize: '9.5px' }}>GSTIN: {profileForm.gstin || '-'} | PH: {profileForm.phone || '-'}</div>
+                    </div>
+                    {profileForm.upiVpa ? (
+                      <div style={{ textAlign: 'center', background: '#fff', border: '1px solid #90caf9', padding: '6px', borderRadius: '4px', minWidth: '110px' }}>
+                        <img
+                          src={generateUpiQrUrl(profileForm.upiVpa, profileForm.stationName, 100, 'TEST PAYMENT')}
+                          alt="UPI QR Code"
+                          style={{ width: '85px', height: '85px', display: 'block', margin: '0 auto' }}
+                        />
+                        <div style={{ fontSize: '9px', fontWeight: 700, color: '#0d47a1', marginTop: '2px' }}>{profileForm.upiVpa}</div>
+                        <div style={{ fontSize: '8px', color: '#666' }}>Scan with GPay/PhonePe</div>
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', background: '#fff3e0', border: '1px dashed #ff9800', padding: '10px', fontSize: '10px', color: '#e65100', width: '130px' }}>
+                        <div>📱 No UPI VPA set</div>
+                        <div style={{ fontSize: '8.5px', marginTop: '4px' }}>Add UPI ID above to enable instant counter QR codes</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
                 <button
                   type="button"
                   className="win-btn-classic"
@@ -366,12 +464,16 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                     const defaultProf: StationProfile = {
                       stationName: 'NSAIPETROSOFT RETAIL OUTLET',
                       oilCompany: 'BHARAT PETROLEUM CORPORATION LTD',
+                      dealerCode: 'RO-BPCL-101',
                       address: 'HIGHWAY SERVICE STATION',
                       city: 'SURAT',
                       state: 'GUJARAT',
+                      stateCode: '24',
                       pincode: '395003',
                       gstin: '24AAACN1234F1Z5',
                       phone: '+91 98765 43210',
+                      upiVpa: '',
+                      printerPaperWidth: '80mm',
                       managerPin: '1234',
                     };
                     setProfileForm(defaultProf);

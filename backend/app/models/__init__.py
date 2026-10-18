@@ -18,6 +18,7 @@ from app.models.petrol_pump import (
     TankDipEntry,
     Vehicle,
     User,
+    StationProfileSetting,
 )
 
 __all__ = [
@@ -40,4 +41,6 @@ __all__ = [
     "PurchaseEntry",
     "BankAccount",
     "User",
+    "StationProfileSetting",
 ]
+

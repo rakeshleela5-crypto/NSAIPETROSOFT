@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { CustomerFull, FuelProductRate, StationProfile } from '../models';
 import { createPaymentReceipt } from '../api/client';
 import { getTodayErpDate } from '../utils/dateUtils';
-import { printThermalReceiptHtml } from '../utils/thermalPrinter';
+import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 
 interface CashBillModalProps {
   isOpen: boolean;
@@ -35,13 +35,27 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
 
   const handlePrintCashReceipt = () => {
     const tot = (cashMemoLiters * cashMemoRate).toFixed(2);
+    const is58mm = stationProfile.printerPaperWidth === '58mm';
+    const paperWidth = is58mm ? 58 : 80;
+    const bodyWidth = is58mm ? '200px' : '280px';
+    const fontSize = is58mm ? '10px' : '11.5px';
+    const titleSize = is58mm ? '13px' : '15px';
+
+    const qrImg = stationProfile.upiVpa
+      ? `<div style="text-align: center; margin: 6px 0;">
+          <img src="${generateUpiQrUrl(stationProfile.upiVpa, stationProfile.stationName, Number(tot), `FUEL-${cashMemoBillNo}`)}" style="width: 100px; height: 100px;" alt="UPI QR"/>
+          <div style="font-size: 8.5px;">UPI: ${stationProfile.upiVpa}</div>
+         </div>`
+      : '';
+
     const html = `
-      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+      <div style="font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 0 auto; line-height: 1.35; color: #000;">
         <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
-          <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
-          <div style="font-size: 11px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
-          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
-          <div style="font-size: 10px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-size: ${titleSize}; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 10.5px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+          ${stationProfile.dealerCode ? `<div style="font-size: 9.5px;">RO Code: ${stationProfile.dealerCode}</div>` : ''}
+          <div style="font-size: 9.5px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 9.5px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
         </div>
         <div style="display: flex; justify-content: space-between;">
           <span>Memo No: ${cashMemoBillNo}</span>
@@ -61,19 +75,20 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
           <span>Rs ${cashMemoRate.toFixed(2)}</span>
         </div>
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
-        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
-          <span>TOTAL CASH:</span>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13.5px;">
+          <span>TOTAL AMOUNT:</span>
           <span>Rs ${tot}</span>
         </div>
+        ${qrImg}
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
-        <div style="text-align: center; font-size: 10px; margin-top: 8px;">
+        <div style="text-align: center; font-size: 8.5px; margin-top: 6px;">
           <div>*** CASH MEMO / RETAIL INVOICE ***</div>
           <div>THANK YOU! VISIT AGAIN</div>
           <div>SAVE FUEL - SAVE ENVIRONMENT</div>
         </div>
       </div>
     `;
-    printThermalReceiptHtml(html);
+    printThermalReceiptHtml(html, { paperWidthMm: paperWidth });
   };
 
   return (

@@ -41,13 +41,17 @@ export type DialogType =
 export interface StationProfile {
   stationName: string;
   oilCompany: 'IOCL' | 'BPCL' | 'HPCL' | 'NAYARA' | 'RELIANCE' | string;
+  dealerCode?: string;
   address: string;
   city: string;
   state: string;
+  stateCode?: string;
   pincode: string;
   gstin: string;
   phone: string;
   panNo?: string;
+  upiVpa?: string;
+  printerPaperWidth?: '80mm' | '58mm';
   managerPin?: string;
   licenseDaysLeft?: number;
 }

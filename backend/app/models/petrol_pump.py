@@ -329,3 +329,27 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class StationProfileSetting(Base):
+    __tablename__ = "station_profile_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    station_name: Mapped[str] = mapped_column(String(200), default="NSAIPETROSOFT RETAIL OUTLET")
+    oil_company: Mapped[str] = mapped_column(String(100), default="BHARAT PETROLEUM CORPORATION LTD")
+    dealer_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    state_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    pincode: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    gstin: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    pan_no: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    upi_vpa: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    printer_paper_width: Mapped[str] = mapped_column(String(20), default="80mm")
+    manager_pin: Mapped[str] = mapped_column(String(20), default="1234")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+

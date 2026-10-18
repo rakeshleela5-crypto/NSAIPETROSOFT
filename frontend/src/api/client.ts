@@ -1,11 +1,17 @@
-const rawUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/$/, '');
-export const API_BASE_URL = rawUrl
-  ? rawUrl.startsWith('http://') || rawUrl.startsWith('https://')
-    ? rawUrl
-    : `https://${rawUrl}`
+const rawEnv = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '').trim();
+let sanitizedUrl = rawEnv.replace(/\/+$/, '');
+if (sanitizedUrl.endsWith('/api/v1')) {
+  sanitizedUrl = sanitizedUrl.slice(0, -7).replace(/\/+$/, '');
+}
+export const API_BASE_URL = sanitizedUrl
+  ? sanitizedUrl.startsWith('http://') || sanitizedUrl.startsWith('https://')
+    ? sanitizedUrl
+    : `https://${sanitizedUrl}`
   : 'https://nsaipetrosoft-production.up.railway.app';
 
+
 export type * from '../models';
+import type { StationProfile } from '../models';
 
 export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('nsai_manager_token') || localStorage.getItem('nsai_auth_token');
@@ -852,4 +858,56 @@ export async function toggleCustomerBlockApi(customerId: number): Promise<Toggle
   if (!res.ok) throw new Error(`Toggle block failed: ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Store / Station Profile Settings API (Cloud Database Sync)
+// ---------------------------------------------------------------------------
+export async function fetchStationProfileApi(): Promise<StationProfile> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/station-profile`);
+  if (!res.ok) throw new Error(`Fetch station profile failed: ${res.status}`);
+  const data = await res.json();
+  return {
+    stationName: data.station_name || 'NSAIPETROSOFT RETAIL OUTLET',
+    oilCompany: data.oil_company || 'BHARAT PETROLEUM CORPORATION LTD',
+    dealerCode: data.dealer_code || '',
+    address: data.address || '',
+    city: data.city || '',
+    state: data.state || '',
+    stateCode: data.state_code || '',
+    pincode: data.pincode || '',
+    gstin: data.gstin || '',
+    panNo: data.pan_no || '',
+    phone: data.phone || '',
+    upiVpa: data.upi_vpa || '',
+    printerPaperWidth: data.printer_paper_width === '58mm' ? '58mm' : '80mm',
+    managerPin: data.manager_pin || '1234',
+  };
+}
+
+export async function saveStationProfileApi(profile: StationProfile): Promise<any> {
+  const payload = {
+    station_name: profile.stationName,
+    oil_company: profile.oilCompany,
+    dealer_code: profile.dealerCode || '',
+    address: profile.address || '',
+    city: profile.city || '',
+    state: profile.state || '',
+    state_code: profile.stateCode || '',
+    pincode: profile.pincode || '',
+    gstin: profile.gstin || '',
+    pan_no: profile.panNo || '',
+    phone: profile.phone || '',
+    upi_vpa: profile.upiVpa || '',
+    printer_paper_width: profile.printerPaperWidth || '80mm',
+    manager_pin: profile.managerPin || '1234',
+  };
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/station-profile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Save station profile failed: ${res.status}`);
+  return res.json();
+}
+
 

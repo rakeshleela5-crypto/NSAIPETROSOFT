@@ -91,13 +91,20 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
     const gross = (creditQty * creditRate).toFixed(2);
     const net = (creditQty * creditRate - creditCashPaid).toFixed(2);
     const priorBal = (cust?.current_outstanding || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const is58mm = stationProfile.printerPaperWidth === '58mm';
+    const paperWidth = is58mm ? 58 : 80;
+    const bodyWidth = is58mm ? '200px' : '280px';
+    const fontSize = is58mm ? '10px' : '11.5px';
+    const titleSize = is58mm ? '13px' : '15px';
+
     const html = `
-      <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+      <div style="font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 0 auto; line-height: 1.35; color: #000;">
         <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
-          <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
-          <div style="font-size: 11px;">${stationProfile.oilCompany} DEALER</div>
-          <div style="font-size: 10px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
-          <div style="font-size: 10px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-size: ${titleSize}; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 10.5px;">${stationProfile.oilCompany} DEALER</div>
+          ${stationProfile.dealerCode ? `<div style="font-size: 9.5px;">RO Code: ${stationProfile.dealerCode}</div>` : ''}
+          <div style="font-size: 9.5px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 9.5px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
           <div style="font-weight: bold; margin-top: 4px; border-top: 1px dashed #000; padding-top: 2px;">CREDIT DELIVERY NOTE</div>
         </div>
         <div style="display: flex; justify-content: space-between;">
@@ -139,17 +146,17 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
           <span>Rs ${priorBal}</span>
         </div>
         <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-        <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
+        <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 4px; font-size: 9.5px; display: flex; justify-content: space-between;">
           <span>Driver Sign</span>
           <span>Authorized Sign</span>
         </div>
-        <div style="text-align: center; font-size: 9px; margin-top: 8px;">
+        <div style="text-align: center; font-size: 8.5px; margin-top: 8px;">
           <div>THANK YOU! VISIT AGAIN</div>
           <div>POWERED BY NSAIPETROSOFT SYSTEM</div>
         </div>
       </div>
     `;
-    printThermalReceiptHtml(html);
+    printThermalReceiptHtml(html, { paperWidthMm: paperWidth });
   };
 
   return (
