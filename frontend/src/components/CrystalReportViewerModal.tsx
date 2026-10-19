@@ -173,7 +173,10 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
                   </tbody>
                 </table>
 
-                <div className="crystal-table-subhead" style={{ marginTop: '12px' }}>2. Underground Tank DIP & Evaporation Variation Register</div>
+                <div className="crystal-table-subhead" style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>2. Underground Tank DIP & Statutory Evaporation Variation Register</span>
+                  <span style={{ fontSize: '10px', color: '#555', fontWeight: 600 }}>OMC Permissible Loss Limits: MS -0.59% | HSD -0.15%</span>
+                </div>
                 <table className="crystal-table">
                   <thead>
                     <tr>
@@ -182,24 +185,53 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
                       <th>Opening Stock</th>
                       <th>Receipt</th>
                       <th>Meter Sale</th>
+                      <th>Testing (W&M)</th>
                       <th>Book Stock</th>
                       <th>Actual DIP Stock</th>
                       <th>Daily Variation</th>
+                      <th>Statutory Threshold</th>
+                      <th>Inspection Compliance</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {dsrReport.map((t, idx) => (
-                      <tr key={idx}>
-                        <td style={{ fontWeight: 700 }}>{t.tank}</td>
-                        <td>{t.product}</td>
-                        <td>{t.opening_stock} L</td>
-                        <td>{t.receipt} L</td>
-                        <td>{t.meter_sale} L</td>
-                        <td>{t.closing_book_stock} L</td>
-                        <td style={{ fontWeight: 700 }}>{t.actual_dip_stock || t.closing_book_stock} L</td>
-                        <td style={{ color: '#c0392b', fontWeight: 700 }}>{t.daily_variation} L</td>
-                      </tr>
-                    ))}
+                    {dsrReport.map((t, idx) => {
+                      const isExcess = t.statutory_status === 'EXCESS_EVAPORATION_LOSS';
+                      const isSurplus = t.statutory_status === 'UNEXPLAINED_SURPLUS';
+                      const variationVal = Number(t.daily_variation || 0);
+                      return (
+                        <tr key={idx} style={{ background: isExcess ? '#fff5f5' : isSurplus ? '#fffde7' : 'inherit' }}>
+                          <td style={{ fontWeight: 700 }}>{t.tank}</td>
+                          <td>{t.product}</td>
+                          <td>{t.opening_stock} L</td>
+                          <td>{t.receipt} L</td>
+                          <td>{t.meter_sale} L</td>
+                          <td style={{ color: '#0288d1', fontWeight: 600 }}>{t.testing ?? 0} L</td>
+                          <td>{t.closing_book_stock} L</td>
+                          <td style={{ fontWeight: 700 }}>{t.actual_dip_stock || t.closing_book_stock} L</td>
+                          <td style={{ color: variationVal < 0 ? '#c0392b' : '#27ae60', fontWeight: 700 }}>
+                            {variationVal.toFixed(2)} L {t.loss_pct !== undefined ? `(${t.loss_pct}%)` : ''}
+                          </td>
+                          <td style={{ fontSize: '10.5px' }}>
+                            {t.permissible_tolerance_pct !== undefined ? `${t.permissible_tolerance_pct}% (${t.permissible_loss_liters ?? 0} L)` : '-'}
+                          </td>
+                          <td>
+                            {isExcess ? (
+                              <span style={{ background: '#ffebee', color: '#c62828', border: '1px solid #ef5350', padding: '1px 5px', borderRadius: '3px', fontSize: '9px', fontWeight: 700 }}>
+                                ⚠ EXCESS LOSS (Leak/Theft Alert)
+                              </span>
+                            ) : isSurplus ? (
+                              <span style={{ background: '#fff9c4', color: '#f57f17', border: '1px solid #fbc02d', padding: '1px 5px', borderRadius: '3px', fontSize: '9px', fontWeight: 700 }}>
+                                ⚠ SURPLUS (Water Ingress/Dip Error)
+                              </span>
+                            ) : (
+                              <span style={{ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #81c784', padding: '1px 5px', borderRadius: '3px', fontSize: '9px', fontWeight: 700 }}>
+                                ✓ WITHIN OMC LIMITS
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
 

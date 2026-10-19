@@ -224,6 +224,10 @@ export async function saveShiftMeters(data: {
     closing_meter: number;
     testing_qty: number;
     lube_amount?: number;
+    is_rollover?: boolean;
+    max_meter_digits?: number;
+    split_closing_meter?: number;
+    split_rate?: number;
   }[];
 }): Promise<any> {
   const res = await fetch(`${API_BASE_URL}/api/v1/pump/shifts/save`, {
@@ -231,7 +235,10 @@ export async function saveShiftMeters(data: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Save shift meters failed: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Save shift meters failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -271,6 +278,11 @@ export async function createCreditSale(data: {
   rate?: number;
   discount_percent?: number;
   cash_paid?: number;
+  odometer_km?: number;
+  driver_name?: string;
+  driver_mobile?: string;
+  indent_no?: string;
+  manager_override_pin?: string;
   remarks?: string;
 }): Promise<any> {
   const res = await fetch(`${API_BASE_URL}/api/v1/pump/credit-sales`, {
@@ -278,7 +290,10 @@ export async function createCreditSale(data: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Create credit sale failed: ${res.status}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Create credit sale failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -506,6 +521,10 @@ export async function createPurchase(data: {
   wooden_seals?: string;
   aluminum_seals?: string;
   sample_density: number;
+  observed_density?: number;
+  observed_temp?: number;
+  invoice_density_15c?: number;
+  manager_override_pin?: string;
   product_id: number;
   tank_id?: number;
   qty_kl: number;
@@ -521,7 +540,10 @@ export async function createPurchase(data: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Create purchase failed: ${res.status}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Create purchase failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -909,5 +931,142 @@ export async function saveStationProfileApi(profile: StationProfile): Promise<an
   if (!res.ok) throw new Error(`Save station profile failed: ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Hardware Meter Replacement / Swap API
+// ---------------------------------------------------------------------------
+export async function recordMeterSwapApi(
+  nozzleId: number,
+  data: {
+    old_final_meter: number;
+    new_initial_meter: number;
+    reason: string;
+    wm_seal_no?: string;
+    manager_pin: string;
+  }
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}/meter-swap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Meter swap failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchMeterSwapsApi(nozzleId: number): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}/meter-swaps`);
+  if (!res.ok) throw new Error(`Fetch meter swaps failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Underground Tank Strapping / Calibration Chart API
+// ---------------------------------------------------------------------------
+export async function fetchTankStrappingChartApi(tankId: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/strapping-chart`);
+  if (!res.ok) throw new Error(`Fetch strapping chart failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveTankStrappingChartApi(
+  tankId: number,
+  points: Array<{ dip_cm: number; volume_liters: number; notes?: string }>
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/strapping-chart`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ points }),
+  });
+  if (!res.ok) throw new Error(`Save strapping chart failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Packaged Lubricants & DEF (AdBlue) Stock API
+// ---------------------------------------------------------------------------
+export async function fetchLubesApi(): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/lubes`);
+  if (!res.ok) throw new Error(`Fetch lubes failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveLubeProductApi(data: any): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/lubes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Save lube item failed: ${res.status}`);
+  return res.json();
+}
+
+export async function recordLubeSaleApi(data: {
+  shift_id?: number;
+  lube_product_id: number;
+  qty_units: number;
+  rate?: number;
+  payment_mode?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/lubes/sale`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Lube sale failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Employee Shortage Recovery API
+// ---------------------------------------------------------------------------
+export async function settleEmployeeShortageApi(
+  empId: number,
+  data: {
+    amount: number;
+    settlement_type: string;
+    notes?: string;
+    manager_pin: string;
+  }
+): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/employees/${empId}/settle-shortage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Settle shortage failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchEmployeeShortagesApi(empId: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/employees/${empId}/shortages`);
+  if (!res.ok) throw new Error(`Fetch shortages failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Statutory Inspection Registers (Weights & Measures & Density)
+// ---------------------------------------------------------------------------
+export async function fetchStampingRegisterApi(): Promise<any[]> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/stamping-register`);
+  if (!res.ok) throw new Error(`Fetch stamping register failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchDensityRegisterApi(): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/density-register`);
+  if (!res.ok) throw new Error(`Fetch density register failed: ${res.status}`);
+  return res.json();
+}
+
 
 

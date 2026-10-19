@@ -135,78 +135,127 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                   <th>Item Name</th>
                   <th>Opening Meter</th>
                   <th>Closing Meter</th>
-                  <th>Testing</th>
+                  <th>Rollover / Status</th>
+                  <th>Testing (L)</th>
                   <th>Sale Qty</th>
                   <th>Rate</th>
                   <th>Total Amount</th>
-                  <th>Vat</th>
-                  <th>Lube</th>
+                  <th>06:00 AM Split</th>
                 </tr>
               </thead>
               <tbody>
-                {salesReadings.map((r, i) => (
-                  <tr key={i}>
-                    <td>
-                      <select
-                        className="win-select"
-                        style={{ fontSize: '11px', padding: '1px 2px' }}
-                        value={r.emp}
-                        onChange={(e) => {
-                          const copy = [...salesReadings];
-                          copy[i].emp = e.target.value;
-                          setSalesReadings(copy);
-                        }}
-                      >
-                        {employeesList.map((emp) => (
-                          <option key={emp.id} value={emp.name}>{emp.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
-                    <td>{r.item}</td>
-                    <td>{r.open.toFixed(3)}</td>
-                    <td>
-                      <input
-                        type="number"
-                        className="win-input"
-                        style={{ width: '75px' }}
-                        value={r.close}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          const copy = [...salesReadings];
-                          copy[i].close = val;
-                          copy[i].qty = calculateNetMeterQty(copy[i].open, val, copy[i].test);
-                          copy[i].amount = copy[i].qty * copy[i].rate;
-                          copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
-                          setSalesReadings(copy);
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        step="0.1"
-                        className="win-input"
-                        style={{ width: '50px' }}
-                        value={r.test}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          const copy = [...salesReadings];
-                          copy[i].test = val;
-                          copy[i].qty = calculateNetMeterQty(copy[i].open, copy[i].close, val);
-                          copy[i].amount = copy[i].qty * copy[i].rate;
-                          copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
-                          setSalesReadings(copy);
-                        }}
-                      />
-                    </td>
-                    <td style={{ fontWeight: 700, color: '#1565c0' }}>{r.qty.toFixed(2)}</td>
-                    <td>{r.rate}</td>
-                    <td style={{ fontWeight: 700 }}>₹ {r.amount.toFixed(2)}</td>
-                    <td>{r.vat}</td>
-                    <td>{r.lube}</td>
-                  </tr>
-                ))}
+                {salesReadings.map((r, i) => {
+                  const isRollover = r.close < r.open && r.open > 0;
+                  return (
+                    <tr key={i}>
+                      <td>
+                        <select
+                          className="win-select"
+                          style={{ fontSize: '11px', padding: '1px 2px' }}
+                          value={r.emp}
+                          onChange={(e) => {
+                            const copy = [...salesReadings];
+                            copy[i].emp = e.target.value;
+                            setSalesReadings(copy);
+                          }}
+                        >
+                          {employeesList.map((emp) => (
+                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
+                      <td>{r.item}</td>
+                      <td>{r.open.toFixed(3)}</td>
+                      <td>
+                        <input
+                          type="number"
+                          className="win-input"
+                          style={{ width: '75px', fontWeight: 600 }}
+                          value={r.close}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            const copy = [...salesReadings];
+                            copy[i].close = val;
+                            copy[i].qty = calculateNetMeterQty(copy[i].open, val, copy[i].test);
+                            if (copy[i].split_closing && copy[i].split_rate) {
+                              const q1 = Math.max(0, copy[i].split_closing - copy[i].open);
+                              const q2 = Math.max(0, val - copy[i].split_closing - copy[i].test);
+                              copy[i].amount = (q1 * copy[i].split_rate) + (q2 * copy[i].rate);
+                            } else {
+                              copy[i].amount = copy[i].qty * copy[i].rate;
+                            }
+                            copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
+                            setSalesReadings(copy);
+                          }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {isRollover ? (
+                          <span
+                            style={{
+                              background: '#fef3c7',
+                              color: '#92400e',
+                              border: '1px solid #f59e0b',
+                              padding: '1px 4px',
+                              borderRadius: '3px',
+                              fontSize: '9.5px',
+                              fontWeight: 700,
+                            }}
+                            title="Totalizer wrapped around to 0. Net volume automatically computed using (1,000,000 - Open) + Close"
+                          >
+                            ⚡ Rollover (Auto)
+                          </span>
+                        ) : (
+                          <span style={{ color: '#16a34a', fontSize: '10px' }}>✓ Normal</span>
+                        )}
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="win-input"
+                          style={{ width: '45px' }}
+                          value={r.test}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            const copy = [...salesReadings];
+                            copy[i].test = val;
+                            copy[i].qty = calculateNetMeterQty(copy[i].open, copy[i].close, val);
+                            copy[i].amount = copy[i].qty * copy[i].rate;
+                            copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
+                            setSalesReadings(copy);
+                          }}
+                        />
+                      </td>
+                      <td style={{ fontWeight: 700, color: '#1565c0' }}>{r.qty.toFixed(2)}</td>
+                      <td>{r.rate}</td>
+                      <td style={{ fontWeight: 700 }}>₹ {r.amount.toFixed(2)}</td>
+                      <td>
+                        <input
+                          type="number"
+                          placeholder="06 AM Meter"
+                          title="Enter reading at 06:00 AM price revision snapshot if rate changed mid-shift"
+                          className="win-input"
+                          style={{ width: '70px', fontSize: '10px' }}
+                          value={r.split_closing || ''}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            const copy = [...salesReadings];
+                            copy[i].split_closing = val;
+                            if (val > copy[i].open) {
+                              const q1 = Math.max(0, val - copy[i].open);
+                              const q2 = Math.max(0, copy[i].close - val - copy[i].test);
+                              const splitR = copy[i].split_rate || copy[i].rate;
+                              copy[i].amount = (q1 * splitR) + (q2 * copy[i].rate);
+                            }
+                            setSalesReadings(copy);
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -63,6 +63,7 @@ class Tank(Base):
     product = relationship("FuelProduct", back_populates="tanks")
     nozzles = relationship("Nozzle", back_populates="tank")
     dip_entries = relationship("TankDipEntry", back_populates="tank")
+    calibration_points = relationship("TankCalibrationChart", back_populates="tank", cascade="all, delete-orphan")
 
 
 class Nozzle(Base):
@@ -78,6 +79,7 @@ class Nozzle(Base):
 
     tank = relationship("Tank", back_populates="nozzles")
     product = relationship("FuelProduct", back_populates="nozzles")
+    meter_swaps = relationship("NozzleMeterReplacement", back_populates="nozzle", cascade="all, delete-orphan")
 
 
 class Employee(Base):
@@ -89,6 +91,9 @@ class Employee(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     role: Mapped[str] = mapped_column(String(50), default="Attendant")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    shortage_balance: Mapped[float] = mapped_column(Float, default=0.0)
+
+    shortage_entries = relationship("EmployeeShortageLedger", back_populates="employee", cascade="all, delete-orphan")
 
 
 class Customer(Base):
@@ -163,6 +168,10 @@ class ShiftMeterReading(Base):
     total_amount: Mapped[float] = mapped_column(Float, default=0.0)
     vat_amount: Mapped[float] = mapped_column(Float, default=0.0)
     lube_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    is_rollover: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_meter_digits: Mapped[int] = mapped_column(Integer, default=6)
+    split_closing_meter: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    split_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     shift = relationship("Shift", back_populates="meter_readings")
     nozzle = relationship("Nozzle")
@@ -190,6 +199,10 @@ class CreditSale(Base):
     cash_paid: Mapped[float] = mapped_column(Float, default=0.0)
     credit_amount: Mapped[float] = mapped_column(Float, nullable=False)
     customer_balance_after: Mapped[float] = mapped_column(Float, default=0.0)
+    odometer_km: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    driver_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    driver_mobile: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    indent_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     shift = relationship("Shift", back_populates="credit_sales")
@@ -288,6 +301,12 @@ class PurchaseEntry(Base):
     wooden_seals: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     aluminum_seals: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     sample_density: Mapped[float] = mapped_column(Float, default=0.0)
+    observed_temp: Mapped[float] = mapped_column(Float, default=15.0)
+    observed_density: Mapped[float] = mapped_column(Float, default=0.0)
+    density_15c: Mapped[float] = mapped_column(Float, default=0.0)
+    invoice_density_15c: Mapped[float] = mapped_column(Float, default=0.0)
+    density_variance: Mapped[float] = mapped_column(Float, default=0.0)
+    density_status: Mapped[str] = mapped_column(String(50), default="PASSED")
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("fuel_products.id"), nullable=False)
     tank_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=True)
     qty_kl: Mapped[float] = mapped_column(Float, default=0.0)
@@ -352,4 +371,87 @@ class StationProfileSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
+
+
+class TankCalibrationChart(Base):
+    __tablename__ = "tank_calibration_charts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tank_id: Mapped[int] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=False, index=True)
+    dip_cm: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    volume_liters: Mapped[float] = mapped_column(Float, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    tank = relationship("Tank", back_populates="calibration_points")
+
+
+class NozzleMeterReplacement(Base):
+    __tablename__ = "nozzle_meter_replacements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    nozzle_id: Mapped[int] = mapped_column(Integer, ForeignKey("nozzles.id"), nullable=False, index=True)
+    replace_date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    old_final_meter: Mapped[float] = mapped_column(Float, nullable=False)
+    new_initial_meter: Mapped[float] = mapped_column(Float, default=0.0)
+    reason: Mapped[str] = mapped_column(String(200), default="W&M Stamping / Meter Servicing")
+    wm_seal_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    authorized_by: Mapped[str] = mapped_column(String(100), default="Manager")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    nozzle = relationship("Nozzle", back_populates="meter_swaps")
+
+
+class EmployeeShortageLedger(Base):
+    __tablename__ = "employee_shortage_ledgers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, ForeignKey("employees.id"), nullable=False, index=True)
+    shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    gap_type: Mapped[str] = mapped_column(String(20), default="SHORTAGE")  # SHORTAGE or EXCESS
+    status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING, RECOVERED_CASH, PAYROLL_DEDUCTION
+    settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    employee = relationship("Employee", back_populates="shortage_entries")
+    shift = relationship("Shift")
+
+
+class LubeProduct(Base):
+    __tablename__ = "lube_products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), default="LUBE_OIL")  # LUBE_OIL, 2T_OIL, DEF_ADBLUE, GREASE, COOLANT
+    package_size: Mapped[str] = mapped_column(String(50), default="1 Ltr")
+    barcode: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    mrp: Mapped[float] = mapped_column(Float, default=0.0)
+    sale_price: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_price: Mapped[float] = mapped_column(Float, default=0.0)
+    current_stock_units: Mapped[int] = mapped_column(Integer, default=0)
+    reorder_level: Mapped[int] = mapped_column(Integer, default=10)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    sales = relationship("LubeSaleEntry", back_populates="lube_product")
+
+
+class LubeSaleEntry(Base):
+    __tablename__ = "lube_sale_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
+    lube_product_id: Mapped[int] = mapped_column(Integer, ForeignKey("lube_products.id"), nullable=False)
+    qty_units: Mapped[int] = mapped_column(Integer, default=1)
+    rate: Mapped[float] = mapped_column(Float, nullable=False)
+    total_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    payment_mode: Mapped[str] = mapped_column(String(50), default="CASH")
+
+    lube_product = relationship("LubeProduct", back_populates="sales")
+    shift = relationship("Shift")
+
 

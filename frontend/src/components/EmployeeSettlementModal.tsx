@@ -1,6 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { DenominationMap } from '../models';
-import { saveShiftSettlement, triggerCreateBackup } from '../api/client';
+import {
+  saveShiftSettlement,
+  triggerCreateBackup,
+  settleEmployeeShortageApi,
+  fetchEmployeeShortagesApi,
+} from '../api/client';
 import { calculateNetMeterQty } from '../utils/petroUtils';
 
 interface EmployeeSettlementModalProps {
@@ -18,7 +23,7 @@ interface EmployeeSettlementModalProps {
   setEmpSettlementMachine: (m: string) => void;
   empSettlementRemarks: string;
   setEmpSettlementRemarks: (r: string) => void;
-  employeesList: Array<{ id: number; code: string; name: string; designation: string }>;
+  employeesList: Array<{ id: number; code: string; name: string; designation?: string; shortage_balance?: number; [key: string]: any }>;
   salesReadings: any[];
   setSalesReadings: (r: any[]) => void;
   empNozzleReadings: any[];
@@ -84,7 +89,18 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
   showToast,
   loadAllErpData,
 }) => {
+  const [showShortageModal, setShowShortageModal] = useState<boolean>(false);
+  const [shortageAmount, setShortageAmount] = useState<number>(0.0);
+  const [shortageType, setShortageType] = useState<string>('CASH_RECOVERY');
+  const [shortageNotes, setShortageNotes] = useState<string>('Immediate cash recovery from employee');
+  const [shortagePin, setShortagePin] = useState<string>('1234');
+  const [shortageLogs, setShortageLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
+  const [isSettling, setIsSettling] = useState<boolean>(false);
+
   if (!isOpen) return null;
+
+  const currentEmp = employeesList.find((e) => e.name === empSettlementEmp);
 
   return (
     <div className="win-modal-overlay">
@@ -494,6 +510,53 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                       (Negative indicates Cashier Shortage to be recovered)
                     </div>
                   </div>
+
+                  {/* Cashier Accumulated Shortage Liability */}
+                  <div style={{
+                    marginTop: '6px',
+                    padding: '5px 8px',
+                    background: '#fff3e0',
+                    border: '1px solid #ffe0b2',
+                    borderRadius: '2px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '11px',
+                  }}>
+                    <span>
+                      Cashier Ledger Balance: <strong style={{ color: Number(currentEmp?.shortage_balance || 0) > 0 ? '#d32f2f' : '#2e7d32' }}>
+                        ₹ {Number(currentEmp?.shortage_balance || 0).toFixed(2)}
+                      </strong> {Number(currentEmp?.shortage_balance || 0) > 0 ? '(Due)' : ''}
+                    </span>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ fontSize: '10px', height: '20px', padding: '0 6px', fontWeight: 700 }}
+                      onClick={async () => {
+                        if (!currentEmp?.id) {
+                          showToast('Please select a cashier first.');
+                          return;
+                        }
+                        const bal = Number(currentEmp.shortage_balance || 0);
+                        setShortageAmount(bal > 0 ? bal : 0);
+                        setShortageType('CASH_RECOVERY');
+                        setShortageNotes('Immediate cash recovery during shift handover');
+                        setShortagePin('1234');
+                        setShowShortageModal(true);
+                        setIsLoadingLogs(true);
+                        try {
+                          const logs = await fetchEmployeeShortagesApi(currentEmp.id);
+                          setShortageLogs(logs || []);
+                        } catch {
+                          setShortageLogs([]);
+                        } finally {
+                          setIsLoadingLogs(false);
+                        }
+                      }}
+                    >
+                      💳 Settle / Ledger
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
@@ -561,6 +624,171 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
           <button className="win-btn-classic" onClick={onClose}>Close</button>
         </div>
       </div>
+
+      {/* SUB-MODAL: Employee Shortage Settlement & Advance Ledger */}
+      {showShortageModal && currentEmp && (
+        <div className="win-modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="win-form-dialog" style={{ width: '560px' }}>
+            <div className="win-dialog-titlebar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>💳</span>
+                <span>Employee Shortage Recovery Ledger - {currentEmp.name}</span>
+              </div>
+              <button className="win-btn" onClick={() => setShowShortageModal(false)}>✕</button>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!currentEmp?.id || shortageAmount <= 0) {
+                showToast('Please enter a valid recovery amount.');
+                return;
+              }
+              setIsSettling(true);
+              try {
+                const res = await settleEmployeeShortageApi(currentEmp.id, {
+                  amount: shortageAmount,
+                  settlement_type: shortageType,
+                  notes: shortageNotes,
+                  manager_pin: shortagePin,
+                });
+                showToast(`✔ Shortage recovery of ₹${shortageAmount.toFixed(2)} recorded! New Balance: ₹${res.new_balance.toFixed(2)}`);
+                setShowShortageModal(false);
+                await loadAllErpData();
+              } catch (err: any) {
+                showToast(`❌ Recovery failed: ${err.message || 'Authorization rejected'}`);
+              } finally {
+                setIsSettling(false);
+              }
+            }}>
+              <div className="win-dialog-body" style={{ padding: '12px' }}>
+                <div style={{ background: '#e3f2fd', border: '1px solid #90caf9', padding: '8px', fontSize: '11px', marginBottom: '10px' }}>
+                  <strong>Advance / Shortage Reconciliation:</strong> Recovered cash is credited back to the station cash drawer, while payroll deductions are noted for monthly salary processing.
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '90px' }}>Cashier:</span>
+                    <input type="text" className="win-input" value={currentEmp.name} disabled style={{ flex: 1, background: '#eee', fontWeight: 700 }} />
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '90px' }}>Current Due:</span>
+                    <input type="text" className="win-input" value={`₹ ${Number(currentEmp.shortage_balance || 0).toFixed(2)}`} disabled style={{ flex: 1, background: '#eee', color: '#c62828', fontWeight: 800 }} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '90px' }}>Recovery Amt:</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="win-input"
+                      value={shortageAmount}
+                      onChange={(e) => setShortageAmount(parseFloat(e.target.value) || 0)}
+                      required
+                      style={{ flex: 1, fontWeight: 700 }}
+                    />
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '90px' }}>Recovery Mode:</span>
+                    <select
+                      className="win-select"
+                      value={shortageType}
+                      onChange={(e) => setShortageType(e.target.value)}
+                      style={{ flex: 1, fontWeight: 600 }}
+                    >
+                      <option value="CASH_RECOVERY">Cash Payment (Immediate)</option>
+                      <option value="PAYROLL_DEDUCTION">Monthly Payroll Deduction</option>
+                      <option value="WAIVER_AUTHORIZED">Manager Authorized Waiver</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="win-form-row" style={{ marginBottom: '8px' }}>
+                  <span className="win-label" style={{ minWidth: '90px' }}>Ledger Notes:</span>
+                  <input
+                    type="text"
+                    className="win-input"
+                    value={shortageNotes}
+                    onChange={(e) => setShortageNotes(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                </div>
+
+                <div className="win-form-row" style={{ marginBottom: '10px' }}>
+                  <span className="win-label" style={{ minWidth: '90px' }}>Manager PIN:</span>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    className="win-input"
+                    placeholder="Enter PIN (Default: 1234)"
+                    value={shortagePin}
+                    onChange={(e) => setShortagePin(e.target.value)}
+                    required
+                    style={{ width: '130px', letterSpacing: '3px', fontWeight: 700 }}
+                  />
+                </div>
+
+                {/* Audit History */}
+                <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '4px', color: '#333' }}>
+                  Past Shortages & Recoveries:
+                </div>
+                <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '110px', overflowY: 'auto' }}>
+                  {isLoadingLogs ? (
+                    <div style={{ padding: '8px', textAlign: 'center', fontSize: '11px' }}>Loading ledger history...</div>
+                  ) : shortageLogs.length === 0 ? (
+                    <div style={{ padding: '8px', textAlign: 'center', fontSize: '11px', color: '#666' }}>No previous shortage records for this employee.</div>
+                  ) : (
+                    <table className="win-datagrid" style={{ fontSize: '10.5px' }}>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Type</th>
+                          <th className="text-right">Amount</th>
+                          <th>Status</th>
+                          <th>Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shortageLogs.map((log, idx) => (
+                          <tr key={idx}>
+                            <td>{log.date}</td>
+                            <td>{log.entry_type || log.type}</td>
+                            <td className="text-right" style={{ fontWeight: 600, color: (log.entry_type || log.type) === 'SHORTAGE' ? '#c62828' : '#2e7d32' }}>
+                              ₹ {Number(log.amount || 0).toFixed(2)}
+                            </td>
+                            <td>{log.status || 'Settled'}</td>
+                            <td>{log.notes || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              <div className="win-dialog-footer">
+                <span className="hotkeys-hint-red">Manager Authorization Required</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="submit"
+                    className="win-btn-classic win-btn-primary"
+                    disabled={isSettling}
+                  >
+                    {isSettling ? 'Recording...' : 'Confirm Recovery'}
+                  </button>
+                  <button
+                    type="button"
+                    className="win-btn-classic"
+                    onClick={() => setShowShortageModal(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

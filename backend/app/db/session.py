@@ -44,6 +44,21 @@ async def init_db() -> None:
             "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION DEFAULT 0.0",
             "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS cash_paid DOUBLE PRECISION DEFAULT 0.0",
             "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS remarks TEXT",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS odometer_km DOUBLE PRECISION",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS driver_name VARCHAR(100)",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS driver_mobile VARCHAR(20)",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS indent_no VARCHAR(50)",
+            "ALTER TABLE shift_meter_readings ADD COLUMN IF NOT EXISTS is_rollover BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE shift_meter_readings ADD COLUMN IF NOT EXISTS max_meter_digits INTEGER DEFAULT 6",
+            "ALTER TABLE shift_meter_readings ADD COLUMN IF NOT EXISTS split_closing_meter DOUBLE PRECISION",
+            "ALTER TABLE shift_meter_readings ADD COLUMN IF NOT EXISTS split_rate DOUBLE PRECISION",
+            "ALTER TABLE employees ADD COLUMN IF NOT EXISTS shortage_balance DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS observed_temp DOUBLE PRECISION DEFAULT 15.0",
+            "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS observed_density DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS density_15c DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS invoice_density_15c DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS density_variance DOUBLE PRECISION DEFAULT 0.0",
+            "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS density_status VARCHAR(50) DEFAULT 'PASSED'",
         ]
         for query in migrations:
             try:

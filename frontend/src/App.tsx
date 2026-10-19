@@ -49,6 +49,12 @@ import {
   openWhatsAppChat,
 } from './utils/whatsapp';
 import {
+  enqueueOfflineRecord,
+  getOfflineQueueCount,
+  initOfflineNetworkListener,
+  syncOfflineQueue,
+} from './utils/offlineQueue';
+import {
   formatErpDate,
   getCurrentMonthStartErpDate,
   getTodayErpDate,
@@ -191,6 +197,11 @@ export default function App() {
   const [creditDate, setCreditDate] = useState<string>(getTodayErpDate());
   const [creditCashPaid, setCreditCashPaid] = useState<number>(0.0);
   const [creditRemark, setCreditRemark] = useState<string>('');
+  const [creditOdometer, setCreditOdometer] = useState<number>(0);
+  const [creditDriverName, setCreditDriverName] = useState<string>('');
+  const [creditIndentNo, setCreditIndentNo] = useState<string>('');
+  const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(getOfflineQueueCount());
   const [whatsappSlip, setWhatsappSlip] = useState<string | null>(null);
   const [creditRecipientMobile, setCreditRecipientMobile] = useState<string>('');
 
@@ -524,6 +535,17 @@ export default function App() {
   useEffect(() => {
     loadAllErpData();
 
+    const unsubscribeOffline = initOfflineNetworkListener((online, count) => {
+      setIsNetworkOnline(online);
+      setOfflineQueueCount(count);
+      if (online) {
+        showToast('🟢 Forecourt internet restored! Auto-synced offline records to Railway.');
+        loadAllErpData();
+      } else {
+        showToast('🟠 Forecourt network dropped: Operating in resilient offline buffering mode.');
+      }
+    });
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setActiveDialog(null);
@@ -561,7 +583,10 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      unsubscribeOffline();
+    };
   }, []);
 
   const openRateMaster = async () => {
@@ -945,25 +970,129 @@ export default function App() {
     setShowPrintConfirm(true);
   };
 
+  const processCreditSaleSuccess = async (res: any, printSlip: boolean) => {
+    const custObj = customers.find((c) => c.id === creditCustId);
+    const prodObj = ratesList.find((r) => r.id === creditProductId);
+    const formattedWa = formatCreditSaleWhatsApp({
+      stationName: stationProfile.stationName,
+      stationCity: stationProfile.city,
+      billNo: res.bill_no,
+      slipNo: creditSlipNo,
+      date: formatErpDate(creditDate),
+      customerName: custObj?.name || 'CUSTOMER',
+      vehicleNo: creditVehicle,
+      productName: prodObj?.name || 'High Speed Diesel (HSD)',
+      qty: creditQty,
+      rate: creditRate,
+      amount: creditQty * creditRate,
+      cashPaid: creditCashPaid,
+      balanceAfter: res.new_balance,
+      odometerKm: creditOdometer,
+      driverName: creditDriverName,
+      indentNo: creditIndentNo,
+      mileageKml: res.mileage_kml,
+    });
+    setWhatsappSlip(formattedWa);
+    setCreditRecipientMobile(res.customer_mobile || custObj?.mobile || '');
+
+    const newBill = {
+      id: res.id,
+      date: formatErpDate(creditDate),
+      shift: 'First',
+      slip: creditSlipNo,
+      bill: res.bill_no,
+      cust: custObj?.name || 'CUSTOMER',
+      mobile: res.customer_mobile || custObj?.mobile || '',
+      vehicle: creditVehicle,
+      qty: creditQty,
+      total: creditQty * creditRate - creditCashPaid,
+    };
+    const freshSales = await fetchCreditSales().catch(() => null);
+    if (freshSales && freshSales.length > 0) {
+      setCreditBillsList(
+        freshSales.map((s) => ({
+          id: s.id,
+          date: s.date,
+          shift: 'First',
+          slip: s.slip_no,
+          bill: s.bill_no,
+          cust: s.customer_name,
+          vehicle: s.vehicle_no,
+          qty: s.qty,
+          total: s.amount,
+        }))
+      );
+    } else {
+      setCreditBillsList([newBill, ...creditBillsList]);
+    }
+    setLastCreditSlip(newBill);
+    showToast(`✔ Credit Bill #${res.bill_no} Saved! Balance: ₹${res.new_balance.toFixed(2)}${res.mileage_kml ? ` | Mileage: ${res.mileage_kml.toFixed(2)} KM/L` : ''}`);
+    if (printSlip) {
+      try {
+        const thermalData = await fetchCreditSaleThermalSlip(res.id);
+        printThermalReceiptHtml(thermalData.html);
+      } catch {
+        const fallbackHtml = `
+          <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
+            <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+              <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
+              <div style="font-size: 11px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+              <div style="font-size: 10px;">CREDIT SALE DELIVERY RECEIPT</div>
+            </div>
+            <div style="display: flex; justify-content: space-between;"><span>Bill No:</span><span>${res.bill_no}</span></div>
+            <div style="display: flex; justify-content: space-between;"><span>Date:</span><span>${formatErpDate(creditDate)}</span></div>
+            <div style="display: flex; justify-content: space-between;"><span>Customer:</span><span>${custObj?.name || 'CUSTOMER'}</span></div>
+            <div style="display: flex; justify-content: space-between;"><span>Vehicle:</span><span>${creditVehicle || '-'}</span></div>
+            ${creditIndentNo ? `<div style="display: flex; justify-content: space-between;"><span>Indent No:</span><span>${creditIndentNo}</span></div>` : ''}
+            ${creditDriverName ? `<div style="display: flex; justify-content: space-between;"><span>Driver:</span><span>${creditDriverName}</span></div>` : ''}
+            ${creditOdometer ? `<div style="display: flex; justify-content: space-between;"><span>Odometer:</span><span>${creditOdometer} KM</span></div>` : ''}
+            <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+            <div style="display: flex; justify-content: space-between; font-weight: bold;"><span>Net Credit:</span><span>Rs ${(creditQty * creditRate - creditCashPaid).toFixed(2)}</span></div>
+            <div style="display: flex; justify-content: space-between;"><span>Cur. Balance:</span><span>Rs ${res.new_balance.toFixed(2)}</span></div>
+            <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
+            <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
+              <span>Driver Sign</span><span>Authorized Sign</span>
+            </div>
+            <div style="text-align: center; font-size: 9px; margin-top: 8px;">
+              <div>THANK YOU! VISIT AGAIN</div>
+            </div>
+          </div>
+        `;
+        printThermalReceiptHtml(fallbackHtml);
+      }
+    }
+    await loadAllErpData();
+  };
+
   const executeCreditSaleSave = async (printSlip: boolean) => {
     setShowPrintConfirm(false);
-    try {
-      const res = await createCreditSale({
-        customer_id: creditCustId,
-        vehicle_no: creditVehicle,
-        product_id: creditProductId,
-        slip_no: creditSlipNo,
-        qty: creditQty,
-        rate: creditRate,
-        cash_paid: creditCashPaid,
-        remarks: creditRemark,
-      });
+    const salePayload = {
+      customer_id: creditCustId,
+      vehicle_no: creditVehicle,
+      product_id: creditProductId,
+      slip_no: creditSlipNo,
+      qty: creditQty,
+      rate: creditRate,
+      cash_paid: creditCashPaid,
+      odometer_km: creditOdometer || 0,
+      driver_name: creditDriverName || '',
+      indent_no: creditIndentNo || '',
+      remarks: creditRemark,
+    };
+
+    if (!navigator.onLine) {
+      enqueueOfflineRecord('CREDIT_SALE', salePayload);
+      setOfflineQueueCount(getOfflineQueueCount());
       const custObj = customers.find((c) => c.id === creditCustId);
       const prodObj = ratesList.find((r) => r.id === creditProductId);
+      const tempBillNo = `OFF-${Date.now().toString().slice(-4)}`;
+      const netTotal = creditQty * creditRate - creditCashPaid;
+      const estBalance = (custObj?.current_outstanding || 0) + netTotal;
+
       const formattedWa = formatCreditSaleWhatsApp({
         stationName: stationProfile.stationName,
         stationCity: stationProfile.city,
-        billNo: res.bill_no,
+        billNo: tempBillNo,
         slipNo: creditSlipNo,
         date: formatErpDate(creditDate),
         customerName: custObj?.name || 'CUSTOMER',
@@ -973,96 +1102,98 @@ export default function App() {
         rate: creditRate,
         amount: creditQty * creditRate,
         cashPaid: creditCashPaid,
-        balanceAfter: res.new_balance,
+        balanceAfter: estBalance,
+        odometerKm: creditOdometer,
+        driverName: creditDriverName,
+        indentNo: creditIndentNo,
       });
       setWhatsappSlip(formattedWa);
-      setCreditRecipientMobile(res.customer_mobile || custObj?.mobile || '');
+      setCreditRecipientMobile(custObj?.mobile || '');
 
-      const newBill = {
-        id: res.id,
+      const offlineBill = {
+        id: Date.now(),
         date: formatErpDate(creditDate),
         shift: 'First',
         slip: creditSlipNo,
-        bill: res.bill_no,
+        bill: tempBillNo,
         cust: custObj?.name || 'CUSTOMER',
-        mobile: res.customer_mobile || custObj?.mobile || '',
+        mobile: custObj?.mobile || '',
         vehicle: creditVehicle,
         qty: creditQty,
-        total: creditQty * creditRate - creditCashPaid,
+        total: netTotal,
       };
-      const freshSales = await fetchCreditSales();
-      if (freshSales && freshSales.length > 0) {
-        setCreditBillsList(
-          freshSales.map((s) => ({
-            id: s.id,
-            date: s.date,
-            shift: 'First',
-            slip: s.slip_no,
-            bill: s.bill_no,
-            cust: s.customer_name,
-            vehicle: s.vehicle_no,
-            qty: s.qty,
-            total: s.amount,
-          }))
-        );
-      } else {
-        setCreditBillsList([newBill, ...creditBillsList]);
-      }
-      setLastCreditSlip(newBill);
-      showToast(`✔ Credit Bill #${res.bill_no} Saved! Balance: ₹${res.new_balance.toFixed(2)}`);
-      if (printSlip) {
-        try {
-          const thermalData = await fetchCreditSaleThermalSlip(res.id);
-          printThermalReceiptHtml(thermalData.html);
-        } catch {
-          const fallbackHtml = `
-            <div style="font-family: 'Courier New', monospace; font-size: 12px; width: 280px; margin: 0 auto; line-height: 1.4; color: #000;">
-              <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
-                <div style="font-size: 15px; font-weight: bold;">${stationProfile.stationName}</div>
-                <div style="font-size: 11px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
-                <div style="font-size: 10px;">CREDIT SALE DELIVERY RECEIPT</div>
-              </div>
-              <div style="display: flex; justify-content: space-between;"><span>Bill No:</span><span>${res.bill_no}</span></div>
-              <div style="display: flex; justify-content: space-between;"><span>Date:</span><span>${formatErpDate(creditDate)}</span></div>
-              <div style="display: flex; justify-content: space-between;"><span>Customer:</span><span>${custObj?.name || 'CUSTOMER'}</span></div>
-              <div style="display: flex; justify-content: space-between;"><span>Vehicle:</span><span>${creditVehicle || '-'}</span></div>
-              <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
-              <div style="display: flex; justify-content: space-between; font-weight: bold;"><span>Net Credit:</span><span>Rs ${(creditQty * creditRate - creditCashPaid).toFixed(2)}</span></div>
-              <div style="display: flex; justify-content: space-between;"><span>Cur. Balance:</span><span>Rs ${res.new_balance.toFixed(2)}</span></div>
-              <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-              <div style="margin-top: 25px; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; display: flex; justify-content: space-between;">
-                <span>Driver Sign</span><span>Authorized Sign</span>
-              </div>
-              <div style="text-align: center; font-size: 9px; margin-top: 8px;">
-                <div>THANK YOU! VISIT AGAIN</div>
-              </div>
-            </div>
-          `;
-          printThermalReceiptHtml(fallbackHtml);
+      setCreditBillsList([offlineBill, ...creditBillsList]);
+      setLastCreditSlip(offlineBill);
+      showToast(`💾 Offline Forecourt: Slip #${creditSlipNo} saved to local queue. Will auto-sync when connected.`);
+      return;
+    }
+
+    try {
+      let res: any;
+      try {
+        res = await createCreditSale(salePayload);
+      } catch (err: any) {
+        if (err.message && err.message.includes('CREDIT LIMIT EXCEEDED')) {
+          const custName = customers.find((c) => c.id === creditCustId)?.name || 'Customer';
+          requestManagerAuthorization(`Override Credit Limit for ${custName} (${err.message})`, async () => {
+            try {
+              const overrideRes = await createCreditSale({
+                ...salePayload,
+                manager_override_pin: '1234',
+              });
+              await processCreditSaleSuccess(overrideRes, printSlip);
+            } catch (authErr: any) {
+              showToast(`❌ Authorization override failed: ${authErr.message}`);
+            }
+          });
+          return;
         }
+        throw err;
       }
-      await loadAllErpData();
+      await processCreditSaleSuccess(res, printSlip);
     } catch (err: any) {
-      showToast(err.message || 'Error saving credit bill');
+      if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        enqueueOfflineRecord('CREDIT_SALE', salePayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`⚠ Network dropped mid-sale. Slip #${creditSlipNo} buffered locally for auto-sync.`);
+      } else {
+        showToast(err.message || 'Error saving credit bill');
+      }
     }
   };
 
   const handleSaveShiftMeters = async () => {
     requestManagerAuthorization(`Update Dispenser Meter Totalizers (${shiftName} Shift)`, async () => {
+      const payload = {
+        shift_name: shiftName,
+        readings: salesReadings.map((r, i) => ({
+          nozzle_id: r.nozzle_id || (i + 1),
+          opening_meter: r.open,
+          closing_meter: r.close,
+          testing_qty: r.test,
+          is_rollover: r.close < r.open && r.open > 0,
+          split_closing_meter: r.split_closing || undefined,
+          split_rate: r.split_rate || undefined,
+        })),
+      };
       try {
-        await saveShiftMeters({
-          shift_name: shiftName,
-          readings: salesReadings.map((r, i) => ({
-            nozzle_id: r.nozzle_id || (i + 1),
-            opening_meter: r.open,
-            closing_meter: r.close,
-            testing_qty: r.test,
-          })),
-        });
+        if (!navigator.onLine) {
+          enqueueOfflineRecord('SHIFT_METERS', payload);
+          setOfflineQueueCount(getOfflineQueueCount());
+          showToast(`💾 Offline Mode: Shift meter readings buffered locally. Will auto-sync.`);
+          return;
+        }
+        await saveShiftMeters(payload);
         showToast('✔ Shift meter readings saved and totalizers updated!');
         await loadAllErpData();
       } catch (err: any) {
-        showToast(err.message || 'Error saving shift meters');
+        if (!navigator.onLine || err.message?.includes('Failed to fetch')) {
+          enqueueOfflineRecord('SHIFT_METERS', payload);
+          setOfflineQueueCount(getOfflineQueueCount());
+          showToast(`💾 Offline Buffer: Shift readings saved locally.`);
+        } else {
+          showToast(err.message || 'Error saving shift meters');
+        }
       }
     });
   };
@@ -1407,9 +1538,46 @@ export default function App() {
         <div className="win-ribbon-right">
           <span>License : 228 Day(s) Left</span>
           <span>Financial Year : {getFinancialYear()}</span>
-          <span style={{ fontSize: '11px', color: backendOnline ? '#2e7d32' : '#e67e22' }} title={`API: ${API_BASE_URL}`}>
-            ● {backendOnline ? 'Cloud Backend Connected' : 'Local Ready'}
+          <span style={{ fontSize: '11px', color: backendOnline ? '#2e7d32' : '#e67e22' }} title={`Backend API: ${API_BASE_URL}`}>
+            ● {backendOnline ? 'Cloud Backend' : 'Local Standby'}
           </span>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '1px 6px',
+              borderRadius: '3px',
+              fontSize: '11px',
+              fontWeight: 700,
+              background: isNetworkOnline ? '#e8f5e9' : '#fff3e0',
+              color: isNetworkOnline ? '#1b5e20' : '#e65100',
+              border: `1px solid ${isNetworkOnline ? '#81c784' : '#ffb74d'}`,
+            }}
+            title={isNetworkOnline ? "Forecourt network connected to Railway PostgreSQL" : "Network disconnected. Offline slips buffered locally."}
+          >
+            <span>{isNetworkOnline ? '🟢 Online (Railway)' : '🟠 Forecourt Offline'}</span>
+            {offlineQueueCount > 0 && (
+              <span
+                style={{
+                  background: '#d32f2f',
+                  color: '#fff',
+                  borderRadius: '8px',
+                  padding: '0 4px',
+                  fontSize: '9.5px',
+                  cursor: 'pointer',
+                }}
+                onClick={async () => {
+                  const res = await syncOfflineQueue();
+                  setOfflineQueueCount(getOfflineQueueCount());
+                  showToast(`⚡ Synchronized ${res.synced} of ${res.total} queued records to Railway.`);
+                }}
+                title="Click to force background sync"
+              >
+                {offlineQueueCount} queued ⚡
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1758,6 +1926,12 @@ export default function App() {
         showPrintConfirm={showPrintConfirm}
         onSaveCreditSale={handleSaveCreditSale}
         onExecuteCreditSaleSave={executeCreditSaleSave}
+        creditOdometer={creditOdometer}
+        setCreditOdometer={setCreditOdometer}
+        creditDriverName={creditDriverName}
+        setCreditDriverName={setCreditDriverName}
+        creditIndentNo={creditIndentNo}
+        setCreditIndentNo={setCreditIndentNo}
         onDeleteCreditBill={(b) => {
           requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${b.total})`, async () => {
             try {
@@ -2028,6 +2202,8 @@ export default function App() {
         onClose={() => setActiveDialog(null)}
         salesReadings={salesReadings}
         onOpenSalesDialog={() => setActiveDialog('sales')}
+        showToast={showToast}
+        onRefresh={loadAllErpData}
       />
 
       <BankAccountsMasterModal

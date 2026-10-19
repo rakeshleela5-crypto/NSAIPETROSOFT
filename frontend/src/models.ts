@@ -190,6 +190,66 @@ export interface ShiftReadingInput {
   closing_meter: number;
   testing_qty: number;
   lube_amount?: number;
+  is_rollover?: boolean;
+  max_meter_digits?: number;
+  split_closing_meter?: number;
+  split_rate?: number;
+}
+
+export interface NozzleMeterReplacement {
+  id: number;
+  nozzle_id: number;
+  date: string;
+  old_final_meter: number;
+  new_initial_meter: number;
+  reason: string;
+  wm_seal_no?: string;
+  authorized_by: string;
+}
+
+export interface StrappingPoint {
+  id?: number;
+  dip_cm: number;
+  volume_liters: number;
+  notes?: string;
+}
+
+export interface LubeProductItem {
+  id: number;
+  code: string;
+  name: string;
+  category: string;
+  package_size: string;
+  barcode?: string;
+  mrp: number;
+  sale_price: number;
+  cost_price: number;
+  current_stock_units: number;
+  reorder_level: number;
+  is_low_stock: boolean;
+}
+
+export interface EmployeeShortageLedgerItem {
+  id: number;
+  date: string;
+  amount: number;
+  gap_type: string;
+  status: string;
+  notes?: string;
+  settled_at?: string;
+}
+
+export interface StampingRegisterItem {
+  nozzle_id: number;
+  nozzle_name: string;
+  machine_name: string;
+  product: string;
+  current_meter: number;
+  last_stamping_date: string;
+  next_stamping_due: string;
+  days_left: number;
+  wm_seal_no: string;
+  status: 'VALID' | 'DUE_SOON' | 'EXPIRED';
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +270,9 @@ export interface CreditSaleItem {
   cash_paid: number;
   credit_amount: number;
   balance_after: number;
+  odometer_km?: number;
+  driver_name?: string;
+  indent_no?: string;
 }
 
 export interface CustomerFull {

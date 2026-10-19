@@ -129,15 +129,42 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
         invoice_no: purInvoiceNo,
         dealer_name: purDealer,
         tanker_vehicle_no: purVehicleNo,
-        sample_density: purDensity,
-        product_id: 1,
+        sample_density: purObservedDensity,
+        observed_density: purObservedDensity,
+        observed_temp: purObservedTemp,
+        invoice_density_15c: purDensity,
+        product_id: purChargeCode === '02' ? 2 : 1,
         qty_kl: purQtyKl,
         rate_per_kl: purRateKl,
       });
-      showToast(`✔ Tanker Inward Decanting #${res.invoice_no} Saved!`);
+      showToast(`✔ Tanker Inward Decanting #${res.invoice_no} Saved! 15°C Density: ${res.density_15c || purDensity} kg/m³`);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(err.message || 'Error saving purchase');
+      if (err.message && (err.message.includes('STATUTORY DECANTING REJECTION') || err.message.includes('exceeds OMC'))) {
+        requestManagerAuthorization('Override Statutory Density Tolerance Variance (±3.0 kg/m³)', async () => {
+          try {
+            const res = await createPurchase({
+              invoice_no: purInvoiceNo,
+              dealer_name: purDealer,
+              tanker_vehicle_no: purVehicleNo,
+              sample_density: purObservedDensity,
+              observed_density: purObservedDensity,
+              observed_temp: purObservedTemp,
+              invoice_density_15c: purDensity,
+              product_id: purChargeCode === '02' ? 2 : 1,
+              qty_kl: purQtyKl,
+              rate_per_kl: purRateKl,
+              manager_override_pin: '1234',
+            });
+            showToast(`✔ Decanting Authorized via Manager Override! (#${res.invoice_no})`);
+            await loadAllErpData();
+          } catch (retryErr: any) {
+            showToast(retryErr.message || 'Error saving purchase');
+          }
+        });
+      } else {
+        showToast(err.message || 'Error saving purchase');
+      }
     }
   };
 

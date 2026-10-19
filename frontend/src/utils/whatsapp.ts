@@ -47,6 +47,11 @@ export interface CreditSaleWhatsAppParams {
   amount: number;
   cashPaid?: number;
   balanceAfter: number;
+  odometerKm?: number;
+  driverName?: string;
+  driverMobile?: string;
+  indentNo?: string;
+  mileageKml?: number;
 }
 
 export function formatCreditSaleWhatsApp(p: CreditSaleWhatsAppParams): string {
@@ -57,10 +62,14 @@ export function formatCreditSaleWhatsApp(p: CreditSaleWhatsAppParams): string {
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🧾 *FUEL DELIVERY NOTE (CREDIT)*\n` +
     `*Bill No:* ${p.billNo}  |  *Slip:* ${p.slipNo || '-'}\n` +
+    (p.indentNo ? `*Indent / Voucher:* ${p.indentNo}\n` : '') +
     `*Date:* ${p.date}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
     `👤 *Customer:* ${p.customerName}\n` +
     `🚛 *Vehicle:* ${p.vehicleNo.toUpperCase()}\n` +
+    (p.driverName ? `👨‍✈️ *Driver:* ${p.driverName}\n` : '') +
+    (p.odometerKm ? `⏱️ *Odometer:* ${p.odometerKm} KM\n` : '') +
+    (p.mileageKml ? `⚡ *Calculated Mileage:* ${p.mileageKml.toFixed(2)} KM/L\n` : '') +
     `⛽ *Product:* ${p.productName}\n` +
     `📊 *Quantity:* ${Number(p.qty || 0).toFixed(2)} Liters\n` +
     `🏷️ *Rate:* ₹${Number(p.rate || 0).toFixed(2)}/L\n` +

@@ -42,6 +42,12 @@ interface CreditCustomerSaleModalProps {
   onExecuteCreditSaleSave: (shouldPrint: boolean) => void;
   onDeleteCreditBill: (b: any) => void;
   showToast: (msg: string) => void;
+  creditOdometer?: number;
+  setCreditOdometer?: (km: number) => void;
+  creditDriverName?: string;
+  setCreditDriverName?: (name: string) => void;
+  creditIndentNo?: string;
+  setCreditIndentNo?: (indent: string) => void;
 }
 
 export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = ({
@@ -82,6 +88,12 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
   onExecuteCreditSaleSave,
   onDeleteCreditBill,
   showToast,
+  creditOdometer,
+  setCreditOdometer,
+  creditDriverName,
+  setCreditDriverName,
+  creditIndentNo,
+  setCreditIndentNo,
 }) => {
   if (!isOpen) return null;
 
@@ -214,6 +226,18 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
               </div>
 
               <div className="win-form-row">
+                <span className="win-label">Indent No</span>
+                <input
+                  type="text"
+                  className="win-input"
+                  style={{ flex: 1 }}
+                  value={creditIndentNo || ''}
+                  onChange={(e) => setCreditIndentNo?.(e.target.value)}
+                  placeholder="Physical Coupon / Indent Voucher #"
+                />
+              </div>
+
+              <div className="win-form-row">
                 <span className="win-label">Customer</span>
                 <select
                   className="win-select"
@@ -236,6 +260,27 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                 </select>
               </div>
 
+              {(() => {
+                const cust = customers.find((c) => c.id === creditCustId);
+                if (!cust || !cust.credit_limit) return null;
+                const currentDue = cust.current_outstanding || 0;
+                const newDue = currentDue + (creditQty * creditRate) - creditCashPaid;
+                const isExceeded = newDue > cust.credit_limit;
+                if (isExceeded) {
+                  return (
+                    <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#b91c1c', padding: '5px 8px', borderRadius: '3px', fontSize: '11px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>⛔</span>
+                      <span><b>Limit Alert:</b> Max ₹{cust.credit_limit.toLocaleString('en-IN')}, Resulting: ₹{newDue.toLocaleString('en-IN', { maximumFractionDigits: 2 })} (Manager PIN required upon save)</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', padding: '4px 8px', borderRadius: '3px', fontSize: '10.5px', marginBottom: '8px' }}>
+                    <span>💳 Credit Limit: ₹{cust.credit_limit.toLocaleString('en-IN')} (Available: ₹{Math.max(0, cust.credit_limit - newDue).toLocaleString('en-IN', { maximumFractionDigits: 2 })})</span>
+                  </div>
+                );
+              })()}
+
               <div className="win-form-row">
                 <span className="win-label">Vehicle</span>
                 <input
@@ -245,6 +290,27 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                   value={creditVehicle}
                   onChange={(e) => setCreditVehicle(e.target.value.toUpperCase())}
                   placeholder="e.g. GJ19AS1454"
+                />
+              </div>
+
+              <div className="win-form-row">
+                <span className="win-label">Odometer (KM)</span>
+                <input
+                  type="number"
+                  className="win-input"
+                  style={{ width: '100px', fontWeight: 600 }}
+                  value={creditOdometer || ''}
+                  onChange={(e) => setCreditOdometer?.(parseFloat(e.target.value) || 0)}
+                  placeholder="Current KM"
+                />
+                <span className="win-label" style={{ minWidth: '40px', marginLeft: '6px' }}>Driver</span>
+                <input
+                  type="text"
+                  className="win-input"
+                  style={{ flex: 1 }}
+                  value={creditDriverName || ''}
+                  onChange={(e) => setCreditDriverName?.(e.target.value)}
+                  placeholder="Driver Name"
                 />
               </div>
 

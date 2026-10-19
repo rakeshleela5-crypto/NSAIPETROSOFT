@@ -11,7 +11,12 @@ from app.core.security import get_current_user_optional, require_roles
 from app.core.time import today_ist, now_ist
 from app.db.session import get_db
 from app.services.thermal_printer import generate_credit_slip_text, generate_thermal_slip_html
-from app.services.tank_calibration import calculate_tank_volume_from_dip, reduce_density_to_15c
+from app.services.tank_calibration import (
+    calculate_tank_volume_from_dip,
+    get_calibrated_tank_volume,
+    reduce_density_to_15c,
+    generate_standard_strapping_points,
+)
 from app.models.petrol_pump import (
     BankAccount,
     CreditSale,
@@ -31,6 +36,11 @@ from app.models.petrol_pump import (
     User,
     Vehicle,
     StationProfileSetting,
+    TankCalibrationChart,
+    NozzleMeterReplacement,
+    EmployeeShortageLedger,
+    LubeProduct,
+    LubeSaleEntry,
 )
 
 router = APIRouter()
@@ -243,12 +253,85 @@ class MeterReadingInput(BaseModel):
     closing_meter: float
     testing_qty: float = 0.0
     lube_amount: float = 0.0
+    is_rollover: bool = False
+    max_meter_digits: int = 6
+    split_closing_meter: Optional[float] = None
+    split_rate: Optional[float] = None
 
 
 class ShiftSaveRequest(BaseModel):
     shift_name: str = "First"
     date: Optional[date] = None
     readings: List[MeterReadingInput]
+
+
+class MeterSwapRequest(BaseModel):
+    old_final_meter: float
+    new_initial_meter: float = 0.0
+    reason: str = "W&M Stamping / Meter Servicing"
+    wm_seal_no: Optional[str] = None
+    manager_pin: str = "1234"
+
+
+@router.post("/nozzles/{nozzle_id}/meter-swap", summary="Record Physical Meter Replacement / W&M Stamping Reset")
+async def record_meter_swap(
+    nozzle_id: int,
+    payload: MeterSwapRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if payload.manager_pin != "1234":
+        raise HTTPException(status_code=403, detail="Invalid Manager Authorization PIN")
+
+    nozzle = await db.get(Nozzle, nozzle_id)
+    if not nozzle:
+        raise HTTPException(status_code=404, detail="Nozzle not found")
+
+    swap_record = NozzleMeterReplacement(
+        nozzle_id=nozzle.id,
+        replace_date=today_ist(),
+        old_final_meter=payload.old_final_meter,
+        new_initial_meter=payload.new_initial_meter,
+        reason=payload.reason,
+        wm_seal_no=payload.wm_seal_no,
+        authorized_by="Station Manager",
+    )
+    db.add(swap_record)
+
+    # Set nozzle current meter to new initial meter
+    nozzle.current_meter = payload.new_initial_meter
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Meter swap recorded for {nozzle.nozzle_name}. New starting meter: {payload.new_initial_meter:.2f}",
+        "old_final_meter": payload.old_final_meter,
+        "new_initial_meter": payload.new_initial_meter,
+        "wm_seal_no": payload.wm_seal_no,
+    }
+
+
+@router.get("/nozzles/{nozzle_id}/meter-swaps", summary="List Audit Log of Meter Replacements")
+async def list_meter_swaps(nozzle_id: int, db: AsyncSession = Depends(get_db)):
+    stmt = (
+        select(NozzleMeterReplacement)
+        .where(NozzleMeterReplacement.nozzle_id == nozzle_id)
+        .order_by(desc(NozzleMeterReplacement.replace_date), desc(NozzleMeterReplacement.id))
+    )
+    res = await db.execute(stmt)
+    swaps = res.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "nozzle_id": s.nozzle_id,
+            "date": str(s.replace_date),
+            "old_final_meter": s.old_final_meter,
+            "new_initial_meter": s.new_initial_meter,
+            "reason": s.reason,
+            "wm_seal_no": s.wm_seal_no,
+            "authorized_by": s.authorized_by,
+        }
+        for s in swaps
+    ]
 
 
 @router.get("/shifts/current", summary="Get Current Active Shift and Meter Readings")
@@ -334,13 +417,24 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
         vat_pct = prod.vat_percent if prod else 14.0
 
         raw_diff = r.closing_meter - r.opening_meter
-        if raw_diff < 0:
-            # Meter rollover detected (e.g., 999950.0 -> 45.0)
-            rollover_limit = 1_000_000.0 if r.opening_meter >= 900_000.0 else (100_000.0 if r.opening_meter >= 90_000.0 else 10_000_000.0)
+        if r.is_rollover or raw_diff < 0:
+            # Meter rollover detected or explicitly flagged (e.g., 999950.0 -> 45.0)
+            digits = r.max_meter_digits if r.max_meter_digits in (5, 6, 7, 8) else 6
+            rollover_limit = float(10 ** digits)
             raw_diff = (rollover_limit - r.opening_meter) + r.closing_meter
 
-        sale_qty = max(0.0, round(raw_diff - r.testing_qty, 2))
-        total_amt = round(sale_qty * rate, 2)
+        # Check for 06:00 AM Mid-Shift Rate Revision Split
+        if r.split_closing_meter is not None and r.split_rate is not None and r.split_closing_meter > r.opening_meter:
+            qty_1 = max(0.0, round(r.split_closing_meter - r.opening_meter, 2))
+            amt_1 = round(qty_1 * r.split_rate, 2)
+            qty_2 = max(0.0, round(r.closing_meter - r.split_closing_meter - r.testing_qty, 2))
+            amt_2 = round(qty_2 * rate, 2)
+            sale_qty = round(qty_1 + qty_2, 2)
+            total_amt = round(amt_1 + amt_2, 2)
+        else:
+            sale_qty = max(0.0, round(raw_diff - r.testing_qty, 2))
+            total_amt = round(sale_qty * rate, 2)
+
         vat_amt = round((total_amt * vat_pct) / (100 + vat_pct), 2)
 
         total_sale_amt += total_amt
@@ -369,6 +463,10 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
             total_amount=total_amt,
             vat_amount=vat_amt,
             lube_amount=r.lube_amount,
+            is_rollover=r.is_rollover,
+            max_meter_digits=r.max_meter_digits,
+            split_closing_meter=r.split_closing_meter,
+            split_rate=r.split_rate,
         )
         db.add(reading)
 
@@ -398,6 +496,11 @@ class CreditSaleCreate(BaseModel):
     rate: Optional[float] = None
     discount_percent: float = 0.0
     cash_paid: float = 0.0
+    odometer_km: Optional[float] = None
+    driver_name: Optional[str] = None
+    driver_mobile: Optional[str] = None
+    indent_no: Optional[str] = None
+    manager_override_pin: Optional[str] = None
     remarks: Optional[str] = None
 
 
@@ -426,6 +529,9 @@ async def list_credit_sales(db: AsyncSession = Depends(get_db)):
             "cash_paid": s.cash_paid,
             "credit_amount": s.credit_amount,
             "balance_after": s.customer_balance_after,
+            "odometer_km": s.odometer_km,
+            "driver_name": s.driver_name,
+            "indent_no": s.indent_no,
         }
         for s in sales
     ]
@@ -463,14 +569,44 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     net_amount = gross_amount - dis_amt
     credit_amount = max(0.0, round(net_amount - data.cash_paid, 2))
 
-    # Check credit limit alert
+    # Check credit limit alert & strict enforcement
     new_outstanding = round(customer.current_outstanding + credit_amount, 2)
     limit_warning = new_outstanding > customer.credit_limit if customer.credit_limit > 0 else False
+    if limit_warning and credit_amount > 0:
+        if data.manager_override_pin != "1234":
+            raise HTTPException(
+                status_code=400,
+                detail=f"CREDIT LIMIT EXCEEDED: Customer limit is ₹{customer.credit_limit:,.2f}. Current dues are ₹{customer.current_outstanding:,.2f}, resulting balance would be ₹{new_outstanding:,.2f}. Manager authorization PIN required to proceed.",
+            )
 
     # Atomic sequential bill numbering within locked transaction
     max_id_res = await db.execute(select(func.coalesce(func.max(CreditSale.id), 0)))
     bill_seq = (max_id_res.scalar() or 0) + 1
     bill_num = f"{bill_seq:04d}"
+
+    clean_vehicle = data.vehicle_no.upper().strip()
+
+    # Odometer mileage computation against previous vehicle slip
+    prior_odometer = None
+    mileage_kml = None
+    if data.odometer_km and data.odometer_km > 0:
+        prior_stmt = (
+            select(CreditSale)
+            .where(
+                CreditSale.vehicle_no == clean_vehicle,
+                CreditSale.odometer_km.is_not(None),
+                CreditSale.odometer_km > 0,
+            )
+            .order_by(desc(CreditSale.id))
+            .limit(1)
+        )
+        prior_res = await db.execute(prior_stmt)
+        prior_sale = prior_res.scalar_one_or_none()
+        if prior_sale and prior_sale.odometer_km:
+            prior_odometer = prior_sale.odometer_km
+            km_run = data.odometer_km - prior_sale.odometer_km
+            if km_run > 0 and data.qty > 0:
+                mileage_kml = round(km_run / data.qty, 2)
 
     # Auto-associate with current open shift if available
     active_shift_res = await db.execute(
@@ -492,7 +628,7 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     sale = CreditSale(
         shift_id=shift_id,
         customer_id=customer.id,
-        vehicle_no=data.vehicle_no.upper().strip(),
+        vehicle_no=clean_vehicle,
         product_id=product.id,
         nozzle_id=data.nozzle_id,
         slip_no=data.slip_no,
@@ -506,6 +642,10 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
         cash_paid=data.cash_paid,
         credit_amount=credit_amount,
         customer_balance_after=new_outstanding,
+        odometer_km=data.odometer_km,
+        driver_name=data.driver_name,
+        driver_mobile=data.driver_mobile,
+        indent_no=data.indent_no,
         remarks=data.remarks,
     )
     db.add(sale)
@@ -515,14 +655,19 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     await db.commit()
     await db.refresh(sale)
 
-    # Formatted WhatsApp Slip Payload
+    # Formatted WhatsApp Slip Payload with anti-fraud metadata
+    odo_str = f" | Odo: {data.odometer_km:.0f} KM" if data.odometer_km else ""
+    driver_str = f" | Driver: {data.driver_name}" if data.driver_name else ""
+    indent_str = f" | Indent: {data.indent_no}" if data.indent_no else ""
+    mileage_str = f"\nEstimated Mileage: {mileage_kml:.2f} KM/L" if mileage_kml else ""
+
     whatsapp_text = (
         f"Delivery Note Details :\n"
         f"Material supplied from NSAIPETROSOFT\n"
-        f"Delivery Date is {today_ist().strftime('%d-%m-%Y')}. Slip No is {data.slip_no}\n"
-        f"Vehicle Number - {data.vehicle_no.upper()} Product {product.name}\n"
-        f"(Qty: {data.qty:.2f}; Rate: {rate:.2f}; Amount: {net_amount:.2f})\n"
-        f"Purchased. Your available balance is {new_outstanding:.2f}.\n"
+        f"Delivery Date is {today_ist().strftime('%d-%m-%Y')}. Slip No is {data.slip_no}{indent_str}\n"
+        f"Vehicle Number - {clean_vehicle}{odo_str}{driver_str}\n"
+        f"Product: {product.name} (Qty: {data.qty:.2f} L; Rate: {rate:.2f}; Amount: {net_amount:.2f}){mileage_str}\n"
+        f"Purchased. Your updated outstanding is ₹{new_outstanding:,.2f}.\n"
         f"Thank you for your Business Visit Again"
     )
 
@@ -1107,6 +1252,24 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
     shift.total_credit = data.credit_total
     shift.total_digital = data.digital_total
 
+    # Automatically post cashier shortage to Employee Shortage & Recovery Ledger
+    shortage_posted = 0.0
+    if data.gap_amount < 0 and data.employee_id:
+        emp = await db.get(Employee, data.employee_id)
+        if emp:
+            shortage_posted = abs(round(data.gap_amount, 2))
+            emp.shortage_balance = round((emp.shortage_balance or 0.0) + shortage_posted, 2)
+            shortage_entry = EmployeeShortageLedger(
+                employee_id=emp.id,
+                shift_id=shift.id,
+                date=shift.date or today_ist(),
+                amount=shortage_posted,
+                gap_type="SHORTAGE",
+                status="PENDING",
+                notes=f"Cashier shortage from Shift #{shift.so_number} settlement handover",
+            )
+            db.add(shortage_entry)
+
     await db.commit()
     return {
         "status": "success",
@@ -1114,6 +1277,85 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
         "settlement_id": settlement.id,
         "shift_id": shift.id,
         "gap_amount": data.gap_amount,
+        "shortage_posted_to_employee": shortage_posted,
+    }
+
+
+class SettleShortageRequest(BaseModel):
+    amount: float
+    settlement_type: str = "CASH_RECOVERY"  # CASH_RECOVERY or SALARY_DEDUCTION
+    notes: Optional[str] = None
+    manager_pin: str = "1234"
+
+
+@router.post("/employees/{employee_id}/settle-shortage", summary="Record Cash Recovery or Payroll Deduction of Employee Shortage")
+async def settle_employee_shortage(
+    employee_id: int,
+    payload: SettleShortageRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if payload.manager_pin != "1234":
+        raise HTTPException(status_code=403, detail="Invalid Manager Authorization PIN")
+
+    emp = await db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Settlement amount must be positive")
+
+    new_balance = max(0.0, round((emp.shortage_balance or 0.0) - payload.amount, 2))
+    emp.shortage_balance = new_balance
+
+    recovery_entry = EmployeeShortageLedger(
+        employee_id=emp.id,
+        date=today_ist(),
+        amount=-payload.amount,
+        gap_type="RECOVERY",
+        status=payload.settlement_type,
+        settled_at=datetime.now(timezone.utc),
+        notes=payload.notes or f"Shortage cleared via {payload.settlement_type}",
+    )
+    db.add(recovery_entry)
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Successfully settled ₹{payload.amount:.2f} via {payload.settlement_type}",
+        "employee_name": emp.name,
+        "remaining_shortage_balance": new_balance,
+    }
+
+
+@router.get("/employees/{employee_id}/shortages", summary="Get Employee Shortage Recovery History")
+async def get_employee_shortages(employee_id: int, db: AsyncSession = Depends(get_db)):
+    emp = await db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    stmt = (
+        select(EmployeeShortageLedger)
+        .where(EmployeeShortageLedger.employee_id == employee_id)
+        .order_by(desc(EmployeeShortageLedger.date), desc(EmployeeShortageLedger.id))
+    )
+    res = await db.execute(stmt)
+    entries = res.scalars().all()
+    return {
+        "employee_id": emp.id,
+        "employee_name": emp.name,
+        "shortage_balance": emp.shortage_balance or 0.0,
+        "ledger": [
+            {
+                "id": e.id,
+                "date": str(e.date),
+                "amount": e.amount,
+                "gap_type": e.gap_type,
+                "status": e.status,
+                "notes": e.notes,
+                "settled_at": str(e.settled_at) if e.settled_at else None,
+            }
+            for e in entries
+        ],
     }
 
 
@@ -1155,7 +1397,11 @@ class PurchaseCreate(BaseModel):
     tanker_vehicle_no: str
     wooden_seals: Optional[str] = "Seal 1, 2, 3, 4"
     aluminum_seals: Optional[str] = "Seal 1, 2, 3, 4"
-    sample_density: float
+    sample_density: float = 0.0
+    observed_temp: float = 15.0
+    observed_density: float = 0.0
+    invoice_density_15c: float = 0.0
+    manager_override_pin: Optional[str] = None
     product_id: int
     tank_id: Optional[int] = None
     qty_kl: float
@@ -1179,6 +1425,34 @@ async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_d
     cess_amt = round((gross_amount * data.cess_percent) / 100, 2)
     final_amount = round(gross_amount + vat_amt + cess_amt + data.tcs_amount + data.freight, 2)
 
+    # ASTM Table 53B Density Reduction & Statutory Tolerance Verification
+    eff_obs_density = data.observed_density if data.observed_density > 0 else data.sample_density
+    density_res = reduce_density_to_15c(
+        observed_density=eff_obs_density,
+        temperature_celsius=data.observed_temp,
+        product_code=product.code if product else "HSD",
+    )
+    density_15c = density_res["density_15c"]
+    density_var = 0.0
+    density_status = "PASSED"
+
+    if data.invoice_density_15c > 0:
+        density_var = round(abs(density_15c - data.invoice_density_15c), 2)
+        if density_var > 3.0:
+            density_status = "EXCEEDED_TOLERANCE"
+            if data.manager_override_pin != "1234":
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"STATUTORY DECANTING REJECTION: Converted 15°C density is {density_15c:.2f} kg/m³ "
+                        f"vs Invoice 15°C density {data.invoice_density_15c:.2f} kg/m³. "
+                        f"Variance of {density_var:.2f} kg/m³ exceeds OMC statutory ±3.0 kg/m³ limit. "
+                        f"Decanting is legally prohibited. Manager authorization PIN required to override."
+                    ),
+                )
+        else:
+            density_status = "PASSED"
+
     entry = PurchaseEntry(
         invoice_no=data.invoice_no,
         date=today_ist(),
@@ -1186,7 +1460,13 @@ async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_d
         tanker_vehicle_no=data.tanker_vehicle_no.upper().strip(),
         wooden_seals=data.wooden_seals,
         aluminum_seals=data.aluminum_seals,
-        sample_density=data.sample_density,
+        sample_density=eff_obs_density,
+        observed_temp=data.observed_temp,
+        observed_density=eff_obs_density,
+        density_15c=density_15c,
+        invoice_density_15c=data.invoice_density_15c,
+        density_variance=density_var,
+        density_status=density_status,
         product_id=product.id,
         tank_id=data.tank_id,
         qty_kl=data.qty_kl,
@@ -1217,6 +1497,9 @@ async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_d
         "invoice_no": data.invoice_no,
         "qty_liters": qty_liters,
         "final_amount": final_amount,
+        "density_15c": density_15c,
+        "density_variance": density_var,
+        "density_status": density_status,
     }
 
 
@@ -1330,6 +1613,23 @@ async def get_dsr_report(report_date: Optional[date] = Query(None), db: AsyncSes
         closing_book = round(open_stock + receipt - net_sale, 2)
         variation = round(actual_dip - closing_book, 2)
 
+        # Statutory OMC Permissible Loss Limits: MS -0.59%, HSD -0.15%
+        is_ms = "MS" in (t.product.code if t.product else "").upper() or "PETROL" in prod_name.upper()
+        tolerance_pct = -0.59 if is_ms else -0.15
+        permissible_loss_liters = round((net_sale * tolerance_pct) / 100.0, 2) if net_sale > 0 else 0.0
+
+        if net_sale > 0:
+            loss_pct = round((variation / net_sale) * 100.0, 2)
+        else:
+            loss_pct = 0.0
+
+        if variation < permissible_loss_liters:
+            statutory_status = "EXCESS_EVAPORATION_LOSS"  # Flag potential pipeline leak or theft
+        elif variation > 50.0:
+            statutory_status = "UNEXPLAINED_SURPLUS"      # Flag potential water ingress or calibration error
+        else:
+            statutory_status = "WITHIN_PERMISSIBLE_LIMITS"
+
         report_data.append({
             "tank": t.tank_name,
             "product": prod_name,
@@ -1343,9 +1643,100 @@ async def get_dsr_report(report_date: Optional[date] = Query(None), db: AsyncSes
             "actual_dip_stock": round(actual_dip, 2),
             "daily_variation": round(variation, 2),
             "cumulative_variation": round(variation, 2),
+            "permissible_tolerance_pct": tolerance_pct,
+            "permissible_loss_liters": permissible_loss_liters,
+            "loss_pct": loss_pct,
+            "statutory_status": statutory_status,
         })
 
     return report_data
+
+
+@router.get("/reports/stamping-register", summary="Weights & Measures Nozzle Stamping Due Register")
+async def get_stamping_register(db: AsyncSession = Depends(get_db)):
+    nozzles_res = await db.execute(
+        select(Nozzle).options(selectinload(Nozzle.product), selectinload(Nozzle.meter_swaps)).order_by(Nozzle.id)
+    )
+    nozzles = nozzles_res.scalars().all()
+    today = today_ist()
+
+    register = []
+    for n in nozzles:
+        # Latest meter swap or default 1 year validity from installation
+        latest_swap = n.meter_swaps[-1] if n.meter_swaps else None
+        last_date = latest_swap.replace_date if latest_swap else (today - timedelta(days=90))
+        next_due = last_date + timedelta(days=365)  # Statutory annual W&M re-stamping
+        days_left = (next_due - today).days
+
+        if days_left < 0:
+            status = "EXPIRED"
+        elif days_left <= 30:
+            status = "DUE_SOON"
+        else:
+            status = "VALID"
+
+        register.append({
+            "nozzle_id": n.id,
+            "nozzle_name": n.nozzle_name,
+            "machine_name": n.machine_name,
+            "product": n.product.name if n.product else "Fuel",
+            "current_meter": n.current_meter,
+            "last_stamping_date": str(last_date),
+            "next_stamping_due": str(next_due),
+            "days_left": days_left,
+            "wm_seal_no": latest_swap.wm_seal_no if latest_swap else "WM-IND-2026-A",
+            "status": status,
+        })
+
+    return register
+
+
+@router.get("/reports/density-register", summary="Statutory 15°C Morning Tank Density Register")
+async def get_density_register(db: AsyncSession = Depends(get_db)):
+    # 1. Tank dip entries with density
+    dips_res = await db.execute(
+        select(TankDipEntry).options(selectinload(TankDipEntry.tank)).order_by(desc(TankDipEntry.date), desc(TankDipEntry.id)).limit(30)
+    )
+    dips = dips_res.scalars().all()
+
+    # 2. Tanker purchase entries with density
+    purch_res = await db.execute(
+        select(PurchaseEntry).options(selectinload(PurchaseEntry.product), selectinload(PurchaseEntry.tank)).order_by(desc(PurchaseEntry.date), desc(PurchaseEntry.id)).limit(20)
+    )
+    purchases = purch_res.scalars().all()
+
+    tank_records = [
+        {
+            "date": str(d.date),
+            "tank": d.tank.tank_name if d.tank else "-",
+            "dip_cm": d.closing_dip,
+            "closing_stock": d.closing_stock,
+            "standard_density": 830.0 if "HSD" in (d.tank.tank_name if d.tank else "") else 745.0,
+            "status": "RECORDED",
+        }
+        for d in dips
+    ]
+
+    tanker_records = [
+        {
+            "date": str(p.date),
+            "invoice_no": p.invoice_no,
+            "vehicle_no": p.tanker_vehicle_no,
+            "product": p.product.name if p.product else "Fuel",
+            "observed_density": p.observed_density or p.sample_density,
+            "observed_temp": p.observed_temp or 15.0,
+            "density_15c": p.density_15c,
+            "invoice_density_15c": p.invoice_density_15c,
+            "density_variance": p.density_variance,
+            "status": p.density_status,
+        }
+        for p in purchases
+    ]
+
+    return {
+        "tank_records": tank_records,
+        "tanker_decanting_records": tanker_records,
+    }
 
 
 @router.get("/reports/vat-summary", summary="State VAT Purchase vs Sale Summary")
@@ -2034,7 +2425,7 @@ async def toggle_customer_block(customer_id: int, db: AsyncSession = Depends(get
     }
 
 
-@router.get("/tanks/{tank_id}/calculate-dip", summary="Calculate Tank Volume from Dip Height (cm)")
+@router.get("/tanks/{tank_id}/calculate-dip", summary="Calculate Tank Volume from Dip Height (cm) via Strapping Chart")
 async def calculate_dip_volume(
     tank_id: int,
     dip_cm: float = Query(..., ge=0.0, description="Measured dip in centimeters"),
@@ -2044,12 +2435,234 @@ async def calculate_dip_volume(
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
 
-    result = calculate_tank_volume_from_dip(
+    result = await get_calibrated_tank_volume(
+        db=db,
+        tank_id=tank_id,
         dip_cm=dip_cm,
         capacity_liters=tank.capacity_liters or 20000.0,
     )
     result["tank_name"] = tank.tank_name
     return result
+
+
+@router.get("/tanks/{tank_id}/strapping-chart", summary="Get Tank W&M Strapping Calibration Chart Points")
+async def get_tank_strapping_chart(tank_id: int, db: AsyncSession = Depends(get_db)):
+    tank = await db.get(Tank, tank_id)
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
+
+    stmt = (
+        select(TankCalibrationChart)
+        .where(TankCalibrationChart.tank_id == tank_id)
+        .order_by(TankCalibrationChart.dip_cm.asc())
+    )
+    res = await db.execute(stmt)
+    points = res.scalars().all()
+
+    # If no custom points uploaded, auto-seed standard calibrated points for 20KL/15KL tank
+    if not points:
+        std_points = generate_standard_strapping_points(tank.capacity_liters or 20000.0)
+        for p in std_points:
+            db.add(TankCalibrationChart(
+                tank_id=tank.id,
+                dip_cm=p["dip_cm"],
+                volume_liters=p["volume_liters"],
+                notes="Standard W&M Calibrated Strapping",
+            ))
+        await db.commit()
+        res = await db.execute(stmt)
+        points = res.scalars().all()
+
+    return {
+        "tank_id": tank.id,
+        "tank_name": tank.tank_name,
+        "capacity_liters": tank.capacity_liters,
+        "total_calibration_points": len(points),
+        "calibration_points": [
+            {
+                "id": p.id,
+                "dip_cm": p.dip_cm,
+                "volume_liters": p.volume_liters,
+                "notes": p.notes,
+            }
+            for p in points
+        ],
+    }
+
+
+class StrappingPointInput(BaseModel):
+    dip_cm: float
+    volume_liters: float
+    notes: Optional[str] = None
+
+
+class SaveStrappingChartRequest(BaseModel):
+    points: List[StrappingPointInput]
+
+
+@router.post("/tanks/{tank_id}/strapping-chart", summary="Upload / Set Custom W&M Tank Strapping Points")
+async def save_tank_strapping_chart(
+    tank_id: int,
+    payload: SaveStrappingChartRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    tank = await db.get(Tank, tank_id)
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
+
+    # Clear prior custom points
+    await db.execute(delete(TankCalibrationChart).where(TankCalibrationChart.tank_id == tank_id))
+
+    for p in payload.points:
+        db.add(TankCalibrationChart(
+            tank_id=tank.id,
+            dip_cm=p.dip_cm,
+            volume_liters=p.volume_liters,
+            notes=p.notes or "Official Strapping Chart Entry",
+        ))
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Successfully updated {len(payload.points)} calibrated strapping points for {tank.tank_name}",
+        "tank_id": tank.id,
+    }
+
+
+# -------------------------------------------------------------
+# 20. Packaged Lubricants (Lubes / DEF / AdBlue) API
+# -------------------------------------------------------------
+class LubeProductCreate(BaseModel):
+    code: str
+    name: str
+    category: str = "LUBE_OIL"  # LUBE_OIL, 2T_OIL, DEF_ADBLUE, GREASE, COOLANT
+    package_size: str = "1 Ltr"
+    barcode: Optional[str] = None
+    mrp: float
+    sale_price: float
+    cost_price: float = 0.0
+    current_stock_units: int = 10
+    reorder_level: int = 5
+
+
+@router.get("/lubes", summary="List Packaged Lubricants & DEF (AdBlue) Stock")
+async def list_lubes(db: AsyncSession = Depends(get_db)):
+    stmt = select(LubeProduct).order_by(LubeProduct.category, LubeProduct.name)
+    res = await db.execute(stmt)
+    lubes = res.scalars().all()
+
+    # Auto-seed standard petrol pump packaged items if table empty
+    if not lubes:
+        seeds = [
+            LubeProduct(code="SERVO-4T-1L", name="Servo 4T Super 20W40", category="LUBE_OIL", package_size="1 Ltr", mrp=380.0, sale_price=360.0, cost_price=300.0, current_stock_units=48, reorder_level=12),
+            LubeProduct(code="SERVO-2T-40ML", name="Servo 2T Pouch", category="2T_OIL", package_size="40 ml", mrp=15.0, sale_price=15.0, cost_price=11.5, current_stock_units=200, reorder_level=50),
+            LubeProduct(code="DEF-ADBLUE-20L", name="Mak Blue DEF Bucket", category="DEF_ADBLUE", package_size="20 Ltr", mrp=1100.0, sale_price=1050.0, cost_price=850.0, current_stock_units=25, reorder_level=8),
+            LubeProduct(code="MAK-DIAMOND-15W40", name="Mak Diamond 15W40 CI-4", category="LUBE_OIL", package_size="5 Ltr", mrp=1850.0, sale_price=1750.0, cost_price=1400.0, current_stock_units=16, reorder_level=5),
+            LubeProduct(code="COOLANT-1L", name="Long Life Radiator Coolant", category="COOLANT", package_size="1 Ltr", mrp=240.0, sale_price=220.0, cost_price=170.0, current_stock_units=30, reorder_level=10),
+        ]
+        db.add_all(seeds)
+        await db.commit()
+        res = await db.execute(stmt)
+        lubes = res.scalars().all()
+
+    return [
+        {
+            "id": l.id,
+            "code": l.code,
+            "name": l.name,
+            "category": l.category,
+            "package_size": l.package_size,
+            "barcode": l.barcode or "",
+            "mrp": l.mrp,
+            "sale_price": l.sale_price,
+            "cost_price": l.cost_price,
+            "current_stock_units": l.current_stock_units,
+            "reorder_level": l.reorder_level,
+            "is_low_stock": l.current_stock_units <= l.reorder_level,
+        }
+        for l in lubes
+    ]
+
+
+@router.post("/lubes", summary="Create or Update Packaged Lube / DEF Item")
+async def save_lube_product(payload: LubeProductCreate, db: AsyncSession = Depends(get_db)):
+    stmt = select(LubeProduct).where(LubeProduct.code == payload.code.strip().upper())
+    res = await db.execute(stmt)
+    lube = res.scalar_one_or_none()
+    if not lube:
+        lube = LubeProduct(code=payload.code.strip().upper())
+        db.add(lube)
+
+    lube.name = payload.name.strip()
+    lube.category = payload.category
+    lube.package_size = payload.package_size
+    lube.barcode = payload.barcode
+    lube.mrp = payload.mrp
+    lube.sale_price = payload.sale_price
+    lube.cost_price = payload.cost_price
+    lube.current_stock_units = payload.current_stock_units
+    lube.reorder_level = payload.reorder_level
+
+    await db.commit()
+    await db.refresh(lube)
+    return {
+        "status": "success",
+        "message": f"Packaged item '{lube.name}' saved successfully",
+        "id": lube.id,
+        "code": lube.code,
+        "current_stock_units": lube.current_stock_units,
+    }
+
+
+class LubeSaleRequest(BaseModel):
+    shift_id: Optional[int] = None
+    lube_product_id: int
+    qty_units: int
+    rate: Optional[float] = None
+    payment_mode: str = "CASH"
+
+
+@router.post("/lubes/sale", summary="Record Packaged Lube / DEF Sale & Deduct Discrete Stock")
+async def record_lube_sale(payload: LubeSaleRequest, db: AsyncSession = Depends(get_db)):
+    if payload.qty_units <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
+
+    stmt = select(LubeProduct).where(LubeProduct.id == payload.lube_product_id).with_for_update()
+    res = await db.execute(stmt)
+    lube = res.scalar_one_or_none()
+    if not lube:
+        raise HTTPException(status_code=404, detail="Lube product not found")
+
+    if lube.current_stock_units < payload.qty_units:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient stock for '{lube.name}'. Available: {lube.current_stock_units} units, requested: {payload.qty_units} units",
+        )
+
+    rate = payload.rate if payload.rate is not None and payload.rate > 0 else lube.sale_price
+    total_amount = round(payload.qty_units * rate, 2)
+
+    # Deduct discrete package units from stock
+    lube.current_stock_units -= payload.qty_units
+
+    sale_entry = LubeSaleEntry(
+        shift_id=payload.shift_id,
+        lube_product_id=lube.id,
+        qty_units=payload.qty_units,
+        rate=rate,
+        total_amount=total_amount,
+        date=today_ist(),
+        payment_mode=payload.payment_mode,
+    )
+    db.add(sale_entry)
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Sold {payload.qty_units} unit(s) of '{lube.name}' for ₹{total_amount:.2f}",
+        "remaining_stock_units": lube.current_stock_units,
+        "total_amount": total_amount,
+    }
 
 
 @router.post("/purchases/verify-density", summary="Convert Ambient Density to 15°C (ASTM Table 53B)")
