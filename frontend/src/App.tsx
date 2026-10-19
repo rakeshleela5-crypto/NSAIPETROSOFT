@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import './App.css';
 import {
   API_BASE_URL,
@@ -69,29 +69,19 @@ import type {
   DialogType,
   StationProfile,
 } from './models';
-import { calculateNetMeterQty } from './utils/petroUtils';
+import { calculateNetMeterQty, validateCreditSaleInputs, validateMeterReading } from './utils/petroUtils';
 import {
   BankAccountsMasterModal,
   CalculatorModal,
   CardEntryModal,
   CashBillModal,
   CashierDenominationModal,
-  CloudBackupModal,
-  ControlPanelModal,
   CreditCustomerSaleModal,
-  CrystalReportViewerModal,
-  CustomerFleetMasterModal,
   CustomerStatementModal,
-  DayBookReportModal,
-  EmployeeSettlementModal,
   ExpenseBookModal,
   FuelRateMasterModal,
   HelpDeskModal,
   ManagerAuthModal,
-  NozzleTotalizerMasterModal,
-  PaymentReceiptModal,
-  PurchaseEntryModal,
-  ReportCriteriaModal,
   SelectCustomerBillModal,
   ShiftSalesModal,
   StampingReminderModal,
@@ -100,6 +90,38 @@ import {
   UndergroundTankMasterModal,
   ViewStockModal,
 } from './components';
+
+// Code-split heavy reporting and management modals on demand (QA-08)
+const CrystalReportViewerModal = lazy(() =>
+  import('./components/CrystalReportViewerModal').then((m) => ({ default: m.CrystalReportViewerModal }))
+);
+const EmployeeSettlementModal = lazy(() =>
+  import('./components/EmployeeSettlementModal').then((m) => ({ default: m.EmployeeSettlementModal }))
+);
+const ControlPanelModal = lazy(() =>
+  import('./components/ControlPanelModal').then((m) => ({ default: m.ControlPanelModal }))
+);
+const PurchaseEntryModal = lazy(() =>
+  import('./components/PurchaseEntryModal').then((m) => ({ default: m.PurchaseEntryModal }))
+);
+const DayBookReportModal = lazy(() =>
+  import('./components/DayBookReportModal').then((m) => ({ default: m.DayBookReportModal }))
+);
+const PaymentReceiptModal = lazy(() =>
+  import('./components/PaymentReceiptModal').then((m) => ({ default: m.PaymentReceiptModal }))
+);
+const NozzleTotalizerMasterModal = lazy(() =>
+  import('./components/NozzleTotalizerMasterModal').then((m) => ({ default: m.NozzleTotalizerMasterModal }))
+);
+const ReportCriteriaModal = lazy(() =>
+  import('./components/ReportCriteriaModal').then((m) => ({ default: m.ReportCriteriaModal }))
+);
+const CloudBackupModal = lazy(() =>
+  import('./components/CloudBackupModal').then((m) => ({ default: m.CloudBackupModal }))
+);
+const CustomerFleetMasterModal = lazy(() =>
+  import('./components/CustomerFleetMasterModal').then((m) => ({ default: m.CustomerFleetMasterModal }))
+);
 
 export const getFinancialYear = (): string => {
   const now = new Date();
@@ -204,6 +226,7 @@ export default function App() {
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(getOfflineQueueCount());
   const [whatsappSlip, setWhatsappSlip] = useState<string | null>(null);
   const [creditRecipientMobile, setCreditRecipientMobile] = useState<string>('');
+  const [isSavingCreditSale, setIsSavingCreditSale] = useState<boolean>(false);
 
   // Past Credit Bills
   const [creditBillsList, setCreditBillsList] = useState<any[]>([]);
@@ -966,6 +989,19 @@ export default function App() {
 
   const handleSaveCreditSale = async (e: React.FormEvent) => {
     e.preventDefault();
+    const custObj = customers.find((c) => c.id === creditCustId);
+    const valResult = validateCreditSaleInputs(
+      creditQty,
+      creditRate,
+      0,
+      creditCashPaid,
+      custObj?.credit_limit || 0,
+      custObj?.current_outstanding || 0
+    );
+    if (!valResult.isValid) {
+      showToast(`❌ Validation Error: ${valResult.error}`);
+      return;
+    }
     // Prompt Frame 0050: Are you Sure? Do you want to Print this Receipt..??
     setShowPrintConfirm(true);
   };
@@ -1065,6 +1101,8 @@ export default function App() {
   };
 
   const executeCreditSaleSave = async (printSlip: boolean) => {
+    if (isSavingCreditSale) return;
+    setIsSavingCreditSale(true);
     setShowPrintConfirm(false);
     const salePayload = {
       customer_id: creditCustId,
@@ -1081,50 +1119,54 @@ export default function App() {
     };
 
     if (!navigator.onLine) {
-      enqueueOfflineRecord('CREDIT_SALE', salePayload);
-      setOfflineQueueCount(getOfflineQueueCount());
-      const custObj = customers.find((c) => c.id === creditCustId);
-      const prodObj = ratesList.find((r) => r.id === creditProductId);
-      const tempBillNo = `OFF-${Date.now().toString().slice(-4)}`;
-      const netTotal = creditQty * creditRate - creditCashPaid;
-      const estBalance = (custObj?.current_outstanding || 0) + netTotal;
+      try {
+        enqueueOfflineRecord('CREDIT_SALE', salePayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        const custObj = customers.find((c) => c.id === creditCustId);
+        const prodObj = ratesList.find((r) => r.id === creditProductId);
+        const tempBillNo = `OFF-${Date.now().toString().slice(-4)}`;
+        const netTotal = creditQty * creditRate - creditCashPaid;
+        const estBalance = (custObj?.current_outstanding || 0) + netTotal;
 
-      const formattedWa = formatCreditSaleWhatsApp({
-        stationName: stationProfile.stationName,
-        stationCity: stationProfile.city,
-        billNo: tempBillNo,
-        slipNo: creditSlipNo,
-        date: formatErpDate(creditDate),
-        customerName: custObj?.name || 'CUSTOMER',
-        vehicleNo: creditVehicle,
-        productName: prodObj?.name || 'High Speed Diesel (HSD)',
-        qty: creditQty,
-        rate: creditRate,
-        amount: creditQty * creditRate,
-        cashPaid: creditCashPaid,
-        balanceAfter: estBalance,
-        odometerKm: creditOdometer,
-        driverName: creditDriverName,
-        indentNo: creditIndentNo,
-      });
-      setWhatsappSlip(formattedWa);
-      setCreditRecipientMobile(custObj?.mobile || '');
+        const formattedWa = formatCreditSaleWhatsApp({
+          stationName: stationProfile.stationName,
+          stationCity: stationProfile.city,
+          billNo: tempBillNo,
+          slipNo: creditSlipNo,
+          date: formatErpDate(creditDate),
+          customerName: custObj?.name || 'CUSTOMER',
+          vehicleNo: creditVehicle,
+          productName: prodObj?.name || 'High Speed Diesel (HSD)',
+          qty: creditQty,
+          rate: creditRate,
+          amount: creditQty * creditRate,
+          cashPaid: creditCashPaid,
+          balanceAfter: estBalance,
+          odometerKm: creditOdometer,
+          driverName: creditDriverName,
+          indentNo: creditIndentNo,
+        });
+        setWhatsappSlip(formattedWa);
+        setCreditRecipientMobile(custObj?.mobile || '');
 
-      const offlineBill = {
-        id: Date.now(),
-        date: formatErpDate(creditDate),
-        shift: 'First',
-        slip: creditSlipNo,
-        bill: tempBillNo,
-        cust: custObj?.name || 'CUSTOMER',
-        mobile: custObj?.mobile || '',
-        vehicle: creditVehicle,
-        qty: creditQty,
-        total: netTotal,
-      };
-      setCreditBillsList([offlineBill, ...creditBillsList]);
-      setLastCreditSlip(offlineBill);
-      showToast(`💾 Offline Forecourt: Slip #${creditSlipNo} saved to local queue. Will auto-sync when connected.`);
+        const offlineBill = {
+          id: Date.now(),
+          date: formatErpDate(creditDate),
+          shift: 'First',
+          slip: creditSlipNo,
+          bill: tempBillNo,
+          cust: custObj?.name || 'CUSTOMER',
+          mobile: custObj?.mobile || '',
+          vehicle: creditVehicle,
+          qty: creditQty,
+          total: netTotal,
+        };
+        setCreditBillsList([offlineBill, ...creditBillsList]);
+        setLastCreditSlip(offlineBill);
+        showToast(`💾 Offline Forecourt: Slip #${creditSlipNo} saved to local queue. Will auto-sync when connected.`);
+      } finally {
+        setIsSavingCreditSale(false);
+      }
       return;
     }
 
@@ -1144,6 +1186,8 @@ export default function App() {
               await processCreditSaleSuccess(overrideRes, printSlip);
             } catch (authErr: any) {
               showToast(`❌ Authorization override failed: ${authErr.message}`);
+            } finally {
+              setIsSavingCreditSale(false);
             }
           });
           return;
@@ -1159,10 +1203,21 @@ export default function App() {
       } else {
         showToast(err.message || 'Error saving credit bill');
       }
+    } finally {
+      setIsSavingCreditSale(false);
     }
   };
 
   const handleSaveShiftMeters = async () => {
+    for (let i = 0; i < salesReadings.length; i++) {
+      const r = salesReadings[i];
+      const isRollover = r.close < r.open && r.open > 0;
+      const val = validateMeterReading(r.open, r.close, isRollover, r.test);
+      if (!val.isValid) {
+        showToast(`❌ Totalizer Error (Pump #${i + 1}): ${val.error}`);
+        return;
+      }
+    }
     requestManagerAuthorization(`Update Dispenser Meter Totalizers (${shiftName} Shift)`, async () => {
       const payload = {
         shift_name: shiftName,
@@ -1868,6 +1923,7 @@ export default function App() {
       {/* =============================================================
        * MODULAR WINDOWS MODALS (Components Decoupled from App.tsx)
        * ============================================================= */}
+      <Suspense fallback={null}>
       <ShiftSalesModal
         isOpen={activeDialog === 'sales'}
         onClose={() => setActiveDialog(null)}
@@ -2288,6 +2344,7 @@ export default function App() {
         onClose={() => setManagerPinModal(null)}
         correctPin={stationProfile.managerPin || '1234'}
       />
+      </Suspense>
 
     </div>
   );

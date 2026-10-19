@@ -1,0 +1,17 @@
+{
+  "short_name": "NSaiPetroSoft",
+  "name": "NSaiPetroSoft - Fuel Station ERP",
+  "description": "Petroleum Retail Enterprise ERP & Forecourt Automation System",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0055ea",
+  "background_color": "#ece9d8",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ]
+}

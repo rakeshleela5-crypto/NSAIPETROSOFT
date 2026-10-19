@@ -1,0 +1,6 @@
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self' https: data: 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https://nsaipetrosoft-production.up.railway.app http://127.0.0.1:8000 http://localhost:8000 http://127.0.0.1:9100 https://api.qrserver.com; img-src 'self' https: data: blob:; font-src 'self' https: data:;

@@ -14,3 +14,20 @@ html, body, #root {
 *, *::before, *::after {
   box-sizing: border-box;
 }
+
+/* Accessibility & Keyboard Navigation (QA-09) */
+:focus-visible {
+  outline: 2px solid #0055ea !important;
+  outline-offset: 1px !important;
+  box-shadow: 0 0 0 2px rgba(0, 85, 234, 0.3) !important;
+}
+
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #0055ea !important;
+  background-color: #ffffd8 !important; /* Classic ERP active field indicator */
+}
+
+button:focus-visible {
+  outline: 2px solid #0a246a !important;
+}
+
