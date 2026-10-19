@@ -110,3 +110,36 @@ def generate_thermal_slip_html(slip_text: str, title: str = "Thermal Slip") -> s
   <pre>{escaped_text}</pre>
 </body>
 </html>"""
+
+
+def generate_raw_esc_pos_bytes(
+    slip_text: str,
+    cut_paper: bool = True,
+    open_cash_drawer: bool = False,
+) -> bytes:
+    """
+    Generates exact binary ESC/POS byte sequence for direct hardware printing
+    over TCP/IP raw port 9100, Serial COM port, or USB endpoint.
+    """
+    commands = bytearray()
+
+    # 1. ESC @ (Initialize printer)
+    commands.extend(b"\x1b\x40")
+
+    # 2. Open Cash Drawer if requested: ESC p 0 25 250
+    if open_cash_drawer:
+        commands.extend(b"\x1b\x70\x00\x19\xfa")
+
+    # 3. Text content encoded in ASCII / CP437
+    encoded_text = slip_text.encode("latin-1", errors="replace")
+    commands.extend(encoded_text)
+
+    # 4. Feed 4 lines before cut
+    commands.extend(b"\n\n\n\n")
+
+    # 5. GS V 66 0 (Partial paper cut with feed)
+    if cut_paper:
+        commands.extend(b"\x1d\x56\x42\x00")
+
+    return bytes(commands)
+

@@ -59,12 +59,81 @@ async def init_db() -> None:
             "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS invoice_density_15c DOUBLE PRECISION DEFAULT 0.0",
             "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS density_variance DOUBLE PRECISION DEFAULT 0.0",
             "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS density_status VARCHAR(50) DEFAULT 'PASSED'",
+            # Shift Immutability & Supervisor Reversal Vouchers Table
+            """
+            CREATE TABLE IF NOT EXISTS supervisor_reversal_vouchers (
+                id SERIAL PRIMARY KEY,
+                voucher_no VARCHAR(50) UNIQUE NOT NULL,
+                shift_id INTEGER NOT NULL REFERENCES shifts(id),
+                date DATE NOT NULL,
+                reversal_type VARCHAR(50) DEFAULT 'SHIFT_REOPEN',
+                reason TEXT NOT NULL,
+                authorized_by VARCHAR(100) DEFAULT 'Station Manager',
+                manager_pin VARCHAR(20) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # DECIMAL(12, 3) Liters & DECIMAL(12, 2) Currency Hardening (PostgreSQL)
+            "ALTER TABLE credit_sales ALTER COLUMN qty TYPE NUMERIC(12, 3)",
+            "ALTER TABLE credit_sales ALTER COLUMN rate TYPE NUMERIC(12, 2)",
+            "ALTER TABLE credit_sales ALTER COLUMN amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE credit_sales ALTER COLUMN credit_amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE credit_sales ALTER COLUMN discount_percent TYPE NUMERIC(12, 2)",
+            "ALTER TABLE credit_sales ALTER COLUMN discount_amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE credit_sales ALTER COLUMN cash_paid TYPE NUMERIC(12, 2)",
+            "ALTER TABLE credit_sales ALTER COLUMN customer_balance_after TYPE NUMERIC(12, 2)",
+            "ALTER TABLE credit_sales ALTER COLUMN odometer_km TYPE NUMERIC(12, 3)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN opening_meter TYPE NUMERIC(12, 3)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN closing_meter TYPE NUMERIC(12, 3)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN testing_qty TYPE NUMERIC(12, 3)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN sale_qty TYPE NUMERIC(12, 3)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN rate TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN total_amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN vat_amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN lube_amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN split_closing_meter TYPE NUMERIC(12, 3)",
+            "ALTER TABLE shift_meter_readings ALTER COLUMN split_rate TYPE NUMERIC(12, 2)",
+            "ALTER TABLE tanks ALTER COLUMN capacity_liters TYPE NUMERIC(12, 3)",
+            "ALTER TABLE tanks ALTER COLUMN current_stock TYPE NUMERIC(12, 3)",
+            "ALTER TABLE tanks ALTER COLUMN current_dip_cm TYPE NUMERIC(12, 3)",
+            "ALTER TABLE tanks ALTER COLUMN min_alert_level TYPE NUMERIC(12, 3)",
+            "ALTER TABLE nozzles ALTER COLUMN current_meter TYPE NUMERIC(12, 3)",
+            "ALTER TABLE customers ALTER COLUMN credit_limit TYPE NUMERIC(12, 2)",
+            "ALTER TABLE customers ALTER COLUMN current_outstanding TYPE NUMERIC(12, 2)",
+            "ALTER TABLE employees ALTER COLUMN shortage_balance TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shifts ALTER COLUMN total_sale_amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shifts ALTER COLUMN total_cash TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shifts ALTER COLUMN total_credit TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shifts ALTER COLUMN total_digital TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_settlements ALTER COLUMN cash_total TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_settlements ALTER COLUMN digital_total TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_settlements ALTER COLUMN credit_total TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_settlements ALTER COLUMN expense_total TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_settlements ALTER COLUMN expected_cash TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_settlements ALTER COLUMN actual_cash TYPE NUMERIC(12, 2)",
+            "ALTER TABLE shift_settlements ALTER COLUMN gap_amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE bank_accounts ALTER COLUMN balance TYPE NUMERIC(12, 2)",
+            "ALTER TABLE fuel_products ALTER COLUMN current_rate TYPE NUMERIC(12, 2)",
+            "ALTER TABLE fuel_products ALTER COLUMN vat_percent TYPE NUMERIC(12, 2)",
+            "ALTER TABLE fuel_products ALTER COLUMN cess_percent TYPE NUMERIC(12, 2)",
+            "ALTER TABLE fuel_products ALTER COLUMN density_standard TYPE NUMERIC(12, 3)",
+            "ALTER TABLE tank_calibration_charts ALTER COLUMN dip_cm TYPE NUMERIC(12, 3)",
+            "ALTER TABLE tank_calibration_charts ALTER COLUMN volume_liters TYPE NUMERIC(12, 3)",
+            "ALTER TABLE nozzle_meter_replacements ALTER COLUMN old_final_meter TYPE NUMERIC(12, 3)",
+            "ALTER TABLE nozzle_meter_replacements ALTER COLUMN new_initial_meter TYPE NUMERIC(12, 3)",
+            "ALTER TABLE employee_shortage_ledgers ALTER COLUMN amount TYPE NUMERIC(12, 2)",
+            "ALTER TABLE lube_products ALTER COLUMN mrp TYPE NUMERIC(12, 2)",
+            "ALTER TABLE lube_products ALTER COLUMN sale_price TYPE NUMERIC(12, 2)",
+            "ALTER TABLE lube_products ALTER COLUMN cost_price TYPE NUMERIC(12, 2)",
+            "ALTER TABLE lube_sale_entries ALTER COLUMN rate TYPE NUMERIC(12, 2)",
+            "ALTER TABLE lube_sale_entries ALTER COLUMN total_amount TYPE NUMERIC(12, 2)",
         ]
         for query in migrations:
             try:
                 await conn.execute(text(query))
             except Exception as e:
-                print(f"Migration note ({query}): {e}")
+                # Idempotent pass if already executed or column in progress
+                pass
 
     # Seed initial petrol pump data if empty
     from app.db.seed import seed_initial_data

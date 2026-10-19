@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 import json
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,11 @@ from sqlalchemy.orm import selectinload
 from app.core.security import get_current_user_optional, require_roles
 from app.core.time import today_ist, now_ist
 from app.db.session import get_db
-from app.services.thermal_printer import generate_credit_slip_text, generate_thermal_slip_html
+from app.services.thermal_printer import (
+    generate_credit_slip_text,
+    generate_thermal_slip_html,
+    generate_raw_esc_pos_bytes,
+)
 from app.services.tank_calibration import (
     calculate_tank_volume_from_dip,
     get_calibrated_tank_volume,
@@ -41,6 +45,7 @@ from app.models.petrol_pump import (
     EmployeeShortageLedger,
     LubeProduct,
     LubeSaleEntry,
+    SupervisorReversalVoucher,
 )
 
 router = APIRouter()
@@ -262,6 +267,8 @@ class MeterReadingInput(BaseModel):
 class ShiftSaveRequest(BaseModel):
     shift_name: str = "First"
     date: Optional[date] = None
+    supervisor_pin: Optional[str] = None
+    reversal_reason: Optional[str] = None
     readings: List[MeterReadingInput]
 
 
@@ -398,6 +405,27 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
         )
         db.add(shift)
         await db.flush()
+    elif shift.status == "Closed":
+        # Shift Security & Immutability Enforcement:
+        # Finalized shifts cannot be modified directly without supervisor authorization.
+        if data.supervisor_pin != "1234":
+            raise HTTPException(
+                status_code=403,
+                detail="SHIFT IMMUTABILITY ENFORCED: Shift is finalized and closed. Direct edits are disabled. A Supervisor Reversal Voucher with manager PIN authorization is required to alter closed shifts.",
+            )
+        # Log Supervisor Reversal Voucher audit entry
+        max_v_res = await db.execute(select(func.coalesce(func.max(SupervisorReversalVoucher.id), 0)))
+        v_seq = (max_v_res.scalar() or 0) + 1
+        voucher = SupervisorReversalVoucher(
+            voucher_no=f"SRV-{v_seq:04d}",
+            shift_id=shift.id,
+            date=today_ist(),
+            reversal_type="METER_CORRECTION",
+            reason=data.reversal_reason or "Supervisor authorized meter adjustment on finalized shift",
+            authorized_by="Station Manager",
+            manager_pin=data.supervisor_pin,
+        )
+        db.add(voucher)
 
     # Clear prior meter readings for this specific shift to prevent duplicates on re-save
     await db.execute(delete(ShiftMeterReading).where(ShiftMeterReading.shift_id == shift.id))
@@ -480,6 +508,138 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
         "total_vat": round(total_vat_amt, 2),
         "basic_amount": round(total_sale_amt - total_vat_amt, 2),
     }
+
+
+class ShiftCloseRequest(BaseModel):
+    manager_pin: str = "1234"
+    notes: Optional[str] = None
+
+
+class ReversalVoucherCreate(BaseModel):
+    reversal_type: str = "SHIFT_REOPEN"  # SHIFT_REOPEN, METER_CORRECTION, SALE_VOID
+    reason: str
+    manager_pin: str = "1234"
+    authorized_by: str = "Station Manager"
+
+
+@router.post("/shifts/{shift_id}/close", summary="Finalize & Close Shift (Enforce Immutability)")
+async def close_shift_endpoint(
+    shift_id: int,
+    payload: ShiftCloseRequest = ShiftCloseRequest(),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Shift).where(Shift.id == shift_id).with_for_update()
+    res = await db.execute(stmt)
+    shift = res.scalar_one_or_none()
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift not found")
+
+    shift.status = "Closed"
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Shift #{shift.so_number} is now closed and marked immutable.",
+        "shift_id": shift.id,
+        "shift_status": shift.status,
+    }
+
+
+@router.post("/shifts/{shift_id}/reversal-voucher", summary="Issue Supervisor Reversal Voucher to Correct Finalized Shift")
+async def create_shift_reversal_voucher(
+    shift_id: int,
+    payload: ReversalVoucherCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    if payload.manager_pin != "1234":
+        raise HTTPException(status_code=403, detail="Invalid Manager Authorization PIN. Reversal rejected.")
+
+    stmt = select(Shift).where(Shift.id == shift_id).with_for_update()
+    res = await db.execute(stmt)
+    shift = res.scalar_one_or_none()
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift not found")
+
+    max_v_res = await db.execute(select(func.coalesce(func.max(SupervisorReversalVoucher.id), 0)))
+    v_seq = (max_v_res.scalar() or 0) + 1
+    voucher = SupervisorReversalVoucher(
+        voucher_no=f"SRV-{v_seq:04d}",
+        shift_id=shift.id,
+        date=today_ist(),
+        reversal_type=payload.reversal_type,
+        reason=payload.reason,
+        authorized_by=payload.authorized_by,
+        manager_pin=payload.manager_pin,
+    )
+    db.add(voucher)
+
+    # If supervisor requested to re-open shift for correction
+    if payload.reversal_type == "SHIFT_REOPEN":
+        shift.status = "Open"
+
+    await db.commit()
+    await db.refresh(voucher)
+    return {
+        "status": "success",
+        "message": f"Supervisor Reversal Voucher {voucher.voucher_no} generated and audit-logged.",
+        "voucher": {
+            "id": voucher.id,
+            "voucher_no": voucher.voucher_no,
+            "shift_id": voucher.shift_id,
+            "date": str(voucher.date),
+            "reversal_type": voucher.reversal_type,
+            "reason": voucher.reason,
+            "authorized_by": voucher.authorized_by,
+            "created_at": voucher.created_at.isoformat() if voucher.created_at else None,
+        },
+        "shift_current_status": shift.status,
+    }
+
+
+@router.get("/shifts/{shift_id}/reversal-vouchers", summary="Get Reversal Vouchers for a Specific Shift")
+async def get_shift_reversal_vouchers(shift_id: int, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(SupervisorReversalVoucher)
+        .where(SupervisorReversalVoucher.shift_id == shift_id)
+        .order_by(desc(SupervisorReversalVoucher.id))
+    )
+    vouchers = res.scalars().all()
+    return [
+        {
+            "id": v.id,
+            "voucher_no": v.voucher_no,
+            "shift_id": v.shift_id,
+            "date": str(v.date),
+            "reversal_type": v.reversal_type,
+            "reason": v.reason,
+            "authorized_by": v.authorized_by,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        }
+        for v in vouchers
+    ]
+
+
+@router.get("/reversal-vouchers", summary="Audit Log: List All Supervisor Reversal Vouchers")
+async def list_all_reversal_vouchers(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(SupervisorReversalVoucher)
+        .options(selectinload(SupervisorReversalVoucher.shift))
+        .order_by(desc(SupervisorReversalVoucher.id))
+    )
+    vouchers = res.scalars().all()
+    return [
+        {
+            "id": v.id,
+            "voucher_no": v.voucher_no,
+            "shift_id": v.shift_id,
+            "shift_so": v.shift.so_number if v.shift else "N/A",
+            "date": str(v.date),
+            "reversal_type": v.reversal_type,
+            "reason": v.reason,
+            "authorized_by": v.authorized_by,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        }
+        for v in vouchers
+    ]
 
 
 # -------------------------------------------------------------
@@ -614,6 +774,16 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     )
     active_shift = active_shift_res.scalar_one_or_none()
     shift_id = data.shift_id or (active_shift.id if active_shift else None)
+    if shift_id:
+        sh_stmt = select(Shift).where(Shift.id == shift_id).with_for_update()
+        sh_res = await db.execute(sh_stmt)
+        sh_obj = sh_res.scalar_one_or_none()
+        if sh_obj and sh_obj.status in ("Closed", "Settled"):
+            if data.manager_override_pin != "1234":
+                raise HTTPException(
+                    status_code=403,
+                    detail="SHIFT IMMUTABILITY ENFORCED: Target shift is finalized and closed. Cannot append credit slip to a closed shift without supervisor authorization PIN.",
+                )
 
     # Optional tank stock atomic deduction
     if data.nozzle_id:
@@ -749,6 +919,35 @@ async def get_credit_sale_thermal_slip(sale_id: int, db: AsyncSession = Depends(
         "slip_text": slip_text,
         "html": slip_html,
     }
+
+
+@router.get("/credit-sales/{sale_id}/raw-escpos", summary="Get Raw Binary ESC/POS Commands for Hardware Thermal Printer")
+async def get_credit_sale_raw_escpos(
+    sale_id: int,
+    cut: bool = True,
+    drawer: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    sale = await db.get(CreditSale, sale_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Credit sale not found")
+    customer = await db.get(Customer, sale.customer_id)
+    product = await db.get(FuelProduct, sale.product_id)
+    customer_name = customer.name if customer else "Unknown Customer"
+    product_name = product.name if product else "Fuel Product"
+
+    slip_text = generate_credit_slip_text(
+        sale=sale,
+        customer_name=customer_name,
+        product_name=product_name,
+    )
+    raw_bytes = generate_raw_esc_pos_bytes(slip_text, cut_paper=cut, open_cash_drawer=drawer)
+    return Response(
+        content=raw_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="slip_{sale.bill_no}.bin"'},
+    )
+
 
 
 
@@ -1202,16 +1401,21 @@ class SettlementSaveRequest(BaseModel):
     expected_cash: float
     actual_cash: float
     gap_amount: float
+    supervisor_pin: Optional[str] = None
+    reversal_reason: Optional[str] = None
 
 
 @router.post("/settlements/save", summary="Persist Cashier Shift Settlement to Database")
 async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depends(get_db)):
-    # 1. Resolve or create shift
+    # 1. Resolve or create shift with row-level lock
     shift = None
     if data.shift_id:
-        shift = await db.get(Shift, data.shift_id)
+        shift_res = await db.execute(
+            select(Shift).where(Shift.id == data.shift_id).with_for_update()
+        )
+        shift = shift_res.scalar_one_or_none()
     if not shift:
-        res = await db.execute(select(Shift).order_by(desc(Shift.id)).limit(1))
+        res = await db.execute(select(Shift).order_by(desc(Shift.id)).limit(1).with_for_update())
         shift = res.scalar_one_or_none()
         if not shift:
             shift = Shift(
@@ -1226,6 +1430,28 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
             )
             db.add(shift)
             await db.flush()
+
+    # Shift Security & Immutability Enforcement:
+    # If shift is already Closed or Settled, require supervisor PIN authorization
+    if shift.status in ("Closed", "Settled"):
+        if data.supervisor_pin != "1234":
+            raise HTTPException(
+                status_code=403,
+                detail="SHIFT IMMUTABILITY ENFORCED: Shift has already been settled and finalized. Direct edits are disabled. Supervisor PIN authorization required to re-settle or adjust balances.",
+            )
+        # Record Supervisor Reversal Voucher
+        max_v_res = await db.execute(select(func.coalesce(func.max(SupervisorReversalVoucher.id), 0)))
+        v_seq = (max_v_res.scalar() or 0) + 1
+        voucher = SupervisorReversalVoucher(
+            voucher_no=f"SRV-{v_seq:04d}",
+            shift_id=shift.id,
+            date=today_ist(),
+            reversal_type="SETTLEMENT_REVISE",
+            reason=data.reversal_reason or "Supervisor authorized re-settlement on finalized shift",
+            authorized_by="Station Manager",
+            manager_pin=data.supervisor_pin,
+        )
+        db.add(voucher)
 
     # 2. Check if a settlement record already exists for this shift
     settlement_res = await db.execute(

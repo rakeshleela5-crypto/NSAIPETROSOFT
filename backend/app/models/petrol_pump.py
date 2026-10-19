@@ -7,12 +7,21 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.core.time import today_ist
+
+# -------------------------------------------------------------
+# Production Decimal Standards:
+# Liters, Dips, Meters: DECIMAL(12, 3) (3 decimal places)
+# Currency, Amounts, Balances, Rates: DECIMAL(12, 2) (2 decimal places)
+# -------------------------------------------------------------
+DECIMAL_LITERS = Numeric(12, 3, asdecimal=False)
+DECIMAL_CURRENCY = Numeric(12, 2, asdecimal=False)
 
 
 class FuelProduct(Base):
@@ -22,10 +31,10 @@ class FuelProduct(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), default="Ltr")
-    current_rate: Mapped[float] = mapped_column(Float, default=0.0)
-    vat_percent: Mapped[float] = mapped_column(Float, default=0.0)
-    cess_percent: Mapped[float] = mapped_column(Float, default=0.0)
-    density_standard: Mapped[float] = mapped_column(Float, default=0.0)
+    current_rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    vat_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    cess_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    density_standard: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -40,7 +49,7 @@ class RateHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("fuel_products.id"), nullable=False)
-    rate: Mapped[float] = mapped_column(Float, nullable=False)
+    rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -55,10 +64,10 @@ class Tank(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tank_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("fuel_products.id"), nullable=False)
-    capacity_liters: Mapped[float] = mapped_column(Float, default=20000.0)
-    current_stock: Mapped[float] = mapped_column(Float, default=0.0)
-    current_dip_cm: Mapped[float] = mapped_column(Float, default=0.0)
-    min_alert_level: Mapped[float] = mapped_column(Float, default=3000.0)
+    capacity_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, default=20000.0)
+    current_stock: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    current_dip_cm: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    min_alert_level: Mapped[float] = mapped_column(DECIMAL_LITERS, default=3000.0)
 
     product = relationship("FuelProduct", back_populates="tanks")
     nozzles = relationship("Nozzle", back_populates="tank")
@@ -74,7 +83,7 @@ class Nozzle(Base):
     machine_name: Mapped[str] = mapped_column(String(50), nullable=False, default="MPD 1")
     tank_id: Mapped[int] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("fuel_products.id"), nullable=False)
-    current_meter: Mapped[float] = mapped_column(Float, default=0.0)
+    current_meter: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     tank = relationship("Tank", back_populates="nozzles")
@@ -91,7 +100,7 @@ class Employee(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     role: Mapped[str] = mapped_column(String(50), default="Attendant")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    shortage_balance: Mapped[float] = mapped_column(Float, default=0.0)
+    shortage_balance: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
 
     shortage_entries = relationship("EmployeeShortageLedger", back_populates="employee", cascade="all, delete-orphan")
 
@@ -108,8 +117,8 @@ class Customer(Base):
     gst_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     pan_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     mobile: Mapped[str] = mapped_column(String(20), nullable=False)
-    credit_limit: Mapped[float] = mapped_column(Float, default=0.0)
-    current_outstanding: Mapped[float] = mapped_column(Float, default=0.0)
+    credit_limit: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    current_outstanding: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     bill_period: Mapped[str] = mapped_column(String(50), default="30 day")
     is_tanker: Mapped[bool] = mapped_column(Boolean, default=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -139,10 +148,10 @@ class Shift(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     shift_name: Mapped[str] = mapped_column(String(50), default="First")
     status: Mapped[str] = mapped_column(String(20), default="Open")
-    total_sale_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    total_cash: Mapped[float] = mapped_column(Float, default=0.0)
-    total_credit: Mapped[float] = mapped_column(Float, default=0.0)
-    total_digital: Mapped[float] = mapped_column(Float, default=0.0)
+    total_sale_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    total_cash: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    total_credit: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    total_digital: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -160,18 +169,18 @@ class ShiftMeterReading(Base):
     shift_id: Mapped[int] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=False)
     nozzle_id: Mapped[int] = mapped_column(Integer, ForeignKey("nozzles.id"), nullable=False)
     employee_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("employees.id"), nullable=True)
-    opening_meter: Mapped[float] = mapped_column(Float, default=0.0)
-    closing_meter: Mapped[float] = mapped_column(Float, default=0.0)
-    testing_qty: Mapped[float] = mapped_column(Float, default=0.0)
-    sale_qty: Mapped[float] = mapped_column(Float, default=0.0)
-    rate: Mapped[float] = mapped_column(Float, default=0.0)
-    total_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    vat_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    lube_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    opening_meter: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    closing_meter: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    testing_qty: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    sale_qty: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    total_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    vat_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    lube_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     is_rollover: Mapped[bool] = mapped_column(Boolean, default=False)
     max_meter_digits: Mapped[int] = mapped_column(Integer, default=6)
-    split_closing_meter: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    split_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    split_closing_meter: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
+    split_rate: Mapped[Optional[float]] = mapped_column(DECIMAL_CURRENCY, nullable=True)
 
     shift = relationship("Shift", back_populates="meter_readings")
     nozzle = relationship("Nozzle")
@@ -191,15 +200,15 @@ class CreditSale(Base):
     slip_no: Mapped[str] = mapped_column(String(50), default="0")
     bill_no: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
-    rate: Mapped[float] = mapped_column(Float, nullable=False)
-    qty: Mapped[float] = mapped_column(Float, nullable=False)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
-    discount_percent: Mapped[float] = mapped_column(Float, default=0.0)
-    discount_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    cash_paid: Mapped[float] = mapped_column(Float, default=0.0)
-    credit_amount: Mapped[float] = mapped_column(Float, nullable=False)
-    customer_balance_after: Mapped[float] = mapped_column(Float, default=0.0)
-    odometer_km: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    qty: Mapped[float] = mapped_column(DECIMAL_LITERS, nullable=False)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    discount_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    discount_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    cash_paid: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    credit_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    customer_balance_after: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    odometer_km: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
     driver_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     driver_mobile: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     indent_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -220,13 +229,13 @@ class PaymentReceipt(Base):
     customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     payment_mode: Mapped[str] = mapped_column(String(50), default="CASH")
     bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     receiving_account: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     cheque_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    tcs_percent: Mapped[float] = mapped_column(Float, default=0.0)
-    tcs_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    tcs_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    tcs_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_cheque_bounced: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -240,7 +249,7 @@ class Expense(Base):
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     narration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     paid_to: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
@@ -254,13 +263,13 @@ class ShiftSettlement(Base):
     shift_id: Mapped[int] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=False, unique=True)
     employee_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("employees.id"), nullable=True)
     denomination_json: Mapped[str] = mapped_column(Text, default="{}")
-    cash_total: Mapped[float] = mapped_column(Float, default=0.0)
-    digital_total: Mapped[float] = mapped_column(Float, default=0.0)
-    credit_total: Mapped[float] = mapped_column(Float, default=0.0)
-    expense_total: Mapped[float] = mapped_column(Float, default=0.0)
-    expected_cash: Mapped[float] = mapped_column(Float, default=0.0)
-    actual_cash: Mapped[float] = mapped_column(Float, default=0.0)
-    gap_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    cash_total: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    digital_total: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    credit_total: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    expense_total: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    expected_cash: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    actual_cash: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    gap_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     settled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -276,15 +285,15 @@ class TankDipEntry(Base):
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     tank_id: Mapped[int] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=False)
-    opening_dip: Mapped[float] = mapped_column(Float, default=0.0)
-    opening_stock: Mapped[float] = mapped_column(Float, default=0.0)
-    receipt_liters: Mapped[float] = mapped_column(Float, default=0.0)
-    closing_dip: Mapped[float] = mapped_column(Float, default=0.0)
-    closing_stock: Mapped[float] = mapped_column(Float, default=0.0)
-    dip_wise_sale: Mapped[float] = mapped_column(Float, default=0.0)
-    meter_wise_sale: Mapped[float] = mapped_column(Float, default=0.0)
-    variation_liters: Mapped[float] = mapped_column(Float, default=0.0)
-    tolerance_limit: Mapped[float] = mapped_column(Float, default=0.0)
+    opening_dip: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    opening_stock: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    receipt_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    closing_dip: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    closing_stock: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    dip_wise_sale: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    meter_wise_sale: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    variation_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    tolerance_limit: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     tank = relationship("Tank", back_populates="dip_entries")
@@ -300,27 +309,27 @@ class PurchaseEntry(Base):
     tanker_vehicle_no: Mapped[str] = mapped_column(String(50), nullable=False)
     wooden_seals: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     aluminum_seals: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    sample_density: Mapped[float] = mapped_column(Float, default=0.0)
-    observed_temp: Mapped[float] = mapped_column(Float, default=15.0)
-    observed_density: Mapped[float] = mapped_column(Float, default=0.0)
-    density_15c: Mapped[float] = mapped_column(Float, default=0.0)
-    invoice_density_15c: Mapped[float] = mapped_column(Float, default=0.0)
-    density_variance: Mapped[float] = mapped_column(Float, default=0.0)
+    sample_density: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    observed_temp: Mapped[float] = mapped_column(DECIMAL_LITERS, default=15.0)
+    observed_density: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    density_15c: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    invoice_density_15c: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    density_variance: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     density_status: Mapped[str] = mapped_column(String(50), default="PASSED")
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("fuel_products.id"), nullable=False)
     tank_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=True)
-    qty_kl: Mapped[float] = mapped_column(Float, default=0.0)
-    qty_liters: Mapped[float] = mapped_column(Float, default=0.0)
-    rate_per_kl: Mapped[float] = mapped_column(Float, default=0.0)
-    gross_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    basic_excise: Mapped[float] = mapped_column(Float, default=0.0)
-    vat_percent: Mapped[float] = mapped_column(Float, default=0.0)
-    vat_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    cess_percent: Mapped[float] = mapped_column(Float, default=0.0)
-    cess_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    tcs_amount: Mapped[float] = mapped_column(Float, default=0.0)
-    freight: Mapped[float] = mapped_column(Float, default=0.0)
-    final_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    qty_kl: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    qty_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    rate_per_kl: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    gross_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    basic_excise: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    vat_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    vat_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    cess_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    cess_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    tcs_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    freight: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    final_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
 
     product = relationship("FuelProduct")
     tank = relationship("Tank")
@@ -332,7 +341,7 @@ class BankAccount(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     account_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     account_type: Mapped[str] = mapped_column(String(50), default="BANK")
-    balance: Mapped[float] = mapped_column(Float, default=0.0)
+    balance: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
 
 
 class User(Base):
@@ -378,8 +387,8 @@ class TankCalibrationChart(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tank_id: Mapped[int] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=False, index=True)
-    dip_cm: Mapped[float] = mapped_column(Float, nullable=False, index=True)
-    volume_liters: Mapped[float] = mapped_column(Float, nullable=False)
+    dip_cm: Mapped[float] = mapped_column(DECIMAL_LITERS, nullable=False, index=True)
+    volume_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     tank = relationship("Tank", back_populates="calibration_points")
@@ -391,8 +400,8 @@ class NozzleMeterReplacement(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     nozzle_id: Mapped[int] = mapped_column(Integer, ForeignKey("nozzles.id"), nullable=False, index=True)
     replace_date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
-    old_final_meter: Mapped[float] = mapped_column(Float, nullable=False)
-    new_initial_meter: Mapped[float] = mapped_column(Float, default=0.0)
+    old_final_meter: Mapped[float] = mapped_column(DECIMAL_LITERS, nullable=False)
+    new_initial_meter: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     reason: Mapped[str] = mapped_column(String(200), default="W&M Stamping / Meter Servicing")
     wm_seal_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     authorized_by: Mapped[str] = mapped_column(String(100), default="Manager")
@@ -410,7 +419,7 @@ class EmployeeShortageLedger(Base):
     employee_id: Mapped[int] = mapped_column(Integer, ForeignKey("employees.id"), nullable=False, index=True)
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     gap_type: Mapped[str] = mapped_column(String(20), default="SHORTAGE")  # SHORTAGE or EXCESS
     status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING, RECOVERED_CASH, PAYROLL_DEDUCTION
     settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -429,9 +438,9 @@ class LubeProduct(Base):
     category: Mapped[str] = mapped_column(String(50), default="LUBE_OIL")  # LUBE_OIL, 2T_OIL, DEF_ADBLUE, GREASE, COOLANT
     package_size: Mapped[str] = mapped_column(String(50), default="1 Ltr")
     barcode: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
-    mrp: Mapped[float] = mapped_column(Float, default=0.0)
-    sale_price: Mapped[float] = mapped_column(Float, default=0.0)
-    cost_price: Mapped[float] = mapped_column(Float, default=0.0)
+    mrp: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    sale_price: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    cost_price: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     current_stock_units: Mapped[int] = mapped_column(Integer, default=0)
     reorder_level: Mapped[int] = mapped_column(Integer, default=10)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -446,12 +455,35 @@ class LubeSaleEntry(Base):
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
     lube_product_id: Mapped[int] = mapped_column(Integer, ForeignKey("lube_products.id"), nullable=False)
     qty_units: Mapped[int] = mapped_column(Integer, default=1)
-    rate: Mapped[float] = mapped_column(Float, nullable=False)
-    total_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    total_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     payment_mode: Mapped[str] = mapped_column(String(50), default="CASH")
 
     lube_product = relationship("LubeProduct", back_populates="sales")
+    shift = relationship("Shift")
+
+
+class SupervisorReversalVoucher(Base):
+    """
+    Shift Security Audit Trail:
+    Immutable closed shifts cannot be edited directly. Any correction on finalized shifts
+    must generate a Supervisor Reversal Voucher authorized with manager PIN.
+    """
+    __tablename__ = "supervisor_reversal_vouchers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    voucher_no: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    shift_id: Mapped[int] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=False, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    reversal_type: Mapped[str] = mapped_column(String(50), default="SHIFT_REOPEN")  # SHIFT_REOPEN, METER_CORRECTION, SALE_VOID
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    authorized_by: Mapped[str] = mapped_column(String(100), default="Station Manager")
+    manager_pin: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
     shift = relationship("Shift")
 
 

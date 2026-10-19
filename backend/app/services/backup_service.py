@@ -35,6 +35,13 @@ from app.models.petrol_pump import (
     TankDipEntry,
     Vehicle,
     CreditSale,
+    StationProfileSetting,
+    TankCalibrationChart,
+    NozzleMeterReplacement,
+    EmployeeShortageLedger,
+    LubeProduct,
+    LubeSaleEntry,
+    SupervisorReversalVoucher,
 )
 
 logger = logging.getLogger(__name__)
@@ -216,6 +223,13 @@ async def generate_database_snapshot(db: AsyncSession) -> Tuple[str, bytes, Dict
         "tank_dip_entries": TankDipEntry,
         "shift_settlements": ShiftSettlement,
         "bank_accounts": BankAccount,
+        "station_profile_settings": StationProfileSetting,
+        "tank_calibration_charts": TankCalibrationChart,
+        "nozzle_meter_replacements": NozzleMeterReplacement,
+        "employee_shortage_ledgers": EmployeeShortageLedger,
+        "lube_products": LubeProduct,
+        "lube_sale_entries": LubeSaleEntry,
+        "supervisor_reversal_vouchers": SupervisorReversalVoucher,
     }
 
     dump_data: Dict[str, Any] = {}
