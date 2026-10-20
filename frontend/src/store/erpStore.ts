@@ -838,6 +838,7 @@ class ErpStore {
     qty: number;
     rate: number;
     slip_no?: string;
+    shift?: string;
     indent_no?: string;
     driver_name?: string;
     odometer_km?: number;
@@ -873,6 +874,7 @@ class ErpStore {
       bill_no: `CR-${Date.now().toString().slice(-4)}`,
       slip_no: bill.slip_no || `SL-${Date.now().toString().slice(-4)}`,
       date: this.state.activeShift.date,
+      shift: bill.shift || this.state.activeShift.shift_name,
       customer_name: customer.name,
       customer_mobile: customer.mobile,
       vehicle_no: bill.vehicle_no || 'WALK-IN',

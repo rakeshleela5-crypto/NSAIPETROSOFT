@@ -122,8 +122,8 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
 
   // 4. Two-step Cleaning Data Purge
   const handleExecuteClean = () => {
-    if (cleanConfirmText.trim() !== 'DELETE') {
-      showToast('⚠ You must type "DELETE" exactly to confirm data purge.');
+    if (cleanConfirmText.trim() !== 'DELETE-DATA') {
+      showToast('⚠ You must type "DELETE-DATA" exactly to confirm data purge.');
       return;
     }
     requestManagerAuthorization('Permanently purge operational transaction data', async () => {
@@ -796,28 +796,28 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
 
                 <div style={{ background: '#fafafa', border: '1px solid #e0e0e0', padding: '12px', borderRadius: '4px' }}>
                   <div style={{ fontSize: '11px', fontWeight: 700, color: '#b71c1c', marginBottom: '6px' }}>
-                    2. Type <span style={{ background: '#ffcdd2', padding: '1px 5px', borderRadius: '2px', fontFamily: 'monospace' }}>DELETE</span> to unlock purge:
+                    2. Type <span style={{ background: '#ffcdd2', padding: '1px 5px', borderRadius: '2px', fontFamily: 'monospace' }}>DELETE-DATA</span> to unlock purge (Safety backup will auto-download):
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input
                       type="text"
                       className="win-input"
-                      placeholder="Type DELETE in capital letters"
+                      placeholder="Type DELETE-DATA in capital letters"
                       value={cleanConfirmText}
                       onChange={(e) => setCleanConfirmText(e.target.value)}
-                      style={{ width: '260px', fontWeight: 700, letterSpacing: '1px' }}
+                      style={{ width: '280px', fontWeight: 700, letterSpacing: '1px' }}
                     />
                     <button
                       type="button"
                       className="win-btn-classic"
-                      disabled={cleanConfirmText.trim() !== 'DELETE' || isCleaning}
+                      disabled={cleanConfirmText.trim() !== 'DELETE-DATA' || isCleaning}
                       style={{
-                        background: cleanConfirmText.trim() === 'DELETE' ? '#d32f2f' : '#e0e0e0',
-                        color: cleanConfirmText.trim() === 'DELETE' ? '#fff' : '#888',
-                        borderColor: cleanConfirmText.trim() === 'DELETE' ? '#b71c1c' : '#ccc',
+                        background: cleanConfirmText.trim() === 'DELETE-DATA' ? '#d32f2f' : '#e0e0e0',
+                        color: cleanConfirmText.trim() === 'DELETE-DATA' ? '#fff' : '#888',
+                        borderColor: cleanConfirmText.trim() === 'DELETE-DATA' ? '#b71c1c' : '#ccc',
                         fontWeight: 700,
                         padding: '6px 16px',
-                        cursor: cleanConfirmText.trim() === 'DELETE' ? 'pointer' : 'not-allowed',
+                        cursor: cleanConfirmText.trim() === 'DELETE-DATA' ? 'pointer' : 'not-allowed',
                       }}
                       onClick={handleExecuteClean}
                     >

@@ -280,6 +280,7 @@ export interface CreditSaleItem {
   odometer_km?: number;
   driver_name?: string;
   indent_no?: string;
+  shift?: string;
 }
 
 export interface CustomerFull {

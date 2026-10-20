@@ -4,6 +4,7 @@ import { createPaymentReceipt, deletePaymentReceipt, fetchPayments } from '../ap
 import { exportToCsv } from '../utils/exportCsv';
 import { formatPaymentReceiptWhatsApp, openWhatsAppChat } from '../utils/whatsapp';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
+import { erpStore } from '../store/erpStore';
 
 interface PaymentReceiptModalProps {
   isOpen: boolean;
@@ -242,13 +243,27 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                   try {
                     const custObj = customers.find((c) => c.name === payCustName);
                     const custId = custObj ? custObj.id : (customers[0]?.id || 1);
-                    await createPaymentReceipt({
-                      customer_id: custId,
+
+                    // Atomically decrement customer outstanding & increment receiving bank/cash ledger
+                    erpStore.recordPaymentReceipt({
+                      customer_name: custObj?.name || payCustName,
                       amount: payAmount,
                       payment_mode: payMode,
                       bank_name: payBank,
                     });
-                    showToast(`✔ Receipt recorded in PostgreSQL! Outstanding reduced by ₹${payAmount.toFixed(2)}`);
+
+                    try {
+                      await createPaymentReceipt({
+                        customer_id: custId,
+                        amount: payAmount,
+                        payment_mode: payMode,
+                        bank_name: payBank,
+                      });
+                    } catch (backendErr) {
+                      console.warn('Backend payment sync deferred or offline:', backendErr);
+                    }
+
+                    showToast(`✔ Receipt of ₹${payAmount.toFixed(2)} recorded! Customer outstanding decremented.`);
                     setPayAmount(0);
                     await loadAllErpData();
                   } catch (err: any) {

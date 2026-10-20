@@ -22,6 +22,7 @@ interface DayBookReportModalProps {
   empSettlementEmp: string;
   empSettlementMachine: string;
   showToast: (msg: string) => void;
+  empCreditReceived?: number;
 }
 
 export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
@@ -42,6 +43,7 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
   empSettlementEmp,
   empSettlementMachine,
   showToast,
+  empCreditReceived = 0,
 }) => {
   if (!isOpen) return null;
 
@@ -66,13 +68,30 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
   const effectiveExpenseTotal = expensesList.length > 0
     ? expensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0)
     : empExpensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0);
+  const effectiveCreditCollections = Number(empCreditReceived || 0);
 
-  const totalReconciled = effectiveCash + effectiveCreditTotal + effectiveDigitalTotal + effectiveExpenseTotal;
-  const totalMeterSales = (salesReadings.length > 0
+  const totalFuelSales = salesReadings.length > 0
     ? salesReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0)
-    : empNozzleReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0)) +
-    empLubeItems.reduce((acc, l) => acc + Number(l.amount || 0), 0);
-  const gap = totalReconciled - totalMeterSales;
+    : empNozzleReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+  const totalLubeSales = empLubeItems.reduce((acc, l) => acc + Number(l.amount || 0), 0);
+  const totalThroughput = Math.round((totalFuelSales + totalLubeSales + Number.EPSILON) * 100) / 100;
+
+  // Airtight Shift Settlement Formulas:
+  // 1. Expected Cash = Net Nozzle Sales + Lube Sales - Credit Bills - Card/UPI Receipts - Shift Expenses + Credit Collections
+  const expectedCash = Math.round((totalThroughput - effectiveCreditTotal - effectiveDigitalTotal - effectiveExpenseTotal + effectiveCreditCollections + Number.EPSILON) * 100) / 100;
+
+  // 2. Cashier Shortage / Excess = Physical Cash Handed Over - Expected Cash
+  const cashierDiff = Math.round((effectiveCash - expectedCash + Number.EPSILON) * 100) / 100;
+  const isShortage = cashierDiff < -1.0;
+  const isExcess = cashierDiff > 1.0;
+  const tallyStatus = isShortage
+    ? `SHORTAGE (Cashier Owes: ₹ ${Math.abs(cashierDiff).toFixed(2)})`
+    : isExcess
+    ? `EXCESS (+₹ ${cashierDiff.toFixed(2)})`
+    : 'BALANCED (₹ 0.00)';
+  const totalReconciled = effectiveCash + effectiveCreditTotal + effectiveDigitalTotal + effectiveExpenseTotal;
+  const totalMeterSales = totalThroughput;
+  const gap = cashierDiff;
 
   const handlePrintThermalZReport = () => {
     const is58mm = stationProfile.printerPaperWidth === '58mm';
@@ -123,30 +142,39 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
           <span>Rs. ${effectiveCash.toFixed(2)}</span>
         </div>
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
         <div style="display: flex; justify-content: space-between;">
-          <span>Credit Fleet Slips:</span>
+          <span>Net Sales (Nozzle + Lube):</span>
+          <span>Rs. ${totalThroughput.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>— Credit Slips:</span>
           <span>Rs. ${effectiveCreditTotal.toFixed(2)}</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span>Digital / Bank POS:</span>
+          <span>— Digital / Bank POS:</span>
           <span>Rs. ${effectiveDigitalTotal.toFixed(2)}</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span>Shift Expenses:</span>
+          <span>— Shift Expenses:</span>
           <span>Rs. ${effectiveExpenseTotal.toFixed(2)}</span>
         </div>
-        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
-        <div style="display: flex; justify-content: space-between; font-weight: bold;">
-          <span>Reconciled Collection:</span>
-          <span>Rs. ${totalReconciled.toFixed(2)}</span>
+        ${effectiveCreditCollections > 0 ? `
+        <div style="display: flex; justify-content: space-between;">
+          <span>+ Credit Recoveries:</span>
+          <span>Rs. ${effectiveCreditCollections.toFixed(2)}</span>
+        </div>` : ''}
+        <div style="border-top: 1px dashed #000; margin-top: 3px; padding-top: 3px; display: flex; justify-content: space-between; font-weight: bold;">
+          <span>EXPECTED CASH:</span>
+          <span>Rs. ${expectedCash.toFixed(2)}</span>
         </div>
         <div style="display: flex; justify-content: space-between; font-weight: bold;">
-          <span>Nozzle Meter Sales:</span>
-          <span>Rs. ${totalMeterSales.toFixed(2)}</span>
+          <span>PHYSICAL CASH:</span>
+          <span>Rs. ${effectiveCash.toFixed(2)}</span>
         </div>
         <div style="border-top: 1px dashed #000; margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: bold; font-size: ${titleSize};">
-          <span>GAP STATUS:</span>
-          <span>${gap >= 0 ? `+Rs. ${gap.toFixed(2)} (BALANCED)` : `-Rs. ${Math.abs(gap).toFixed(2)} (SHORTAGE)`}</span>
+          <span>TALLY STATUS:</span>
+          <span>${tallyStatus}</span>
         </div>
         <div style="margin-top: 30px; border-top: 1px solid #000; padding-top: 4px; font-size: 9.5px; display: flex; justify-content: space-between;">
           <span>Cashier Sign</span>
@@ -308,19 +336,54 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Gap Amount Display */}
-                <div style={{ background: '#fff59d', border: '2px solid #f57f17', padding: '6px 8px', marginTop: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                    <span>Reconciled Collection:</span>
-                    <strong>₹ {totalReconciled.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                {/* Airtight Shift Settlement Audit Card */}
+                <div style={{ background: isShortage ? '#ffebee' : isExcess ? '#e8f5e9' : '#fffde7', border: `2px solid ${isShortage ? '#c62828' : isExcess ? '#2e7d32' : '#f57f17'}`, padding: '8px', marginTop: '8px' }}>
+                  <div style={{ fontWeight: 800, fontSize: '11px', color: '#333', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '3px' }}>
+                    FORECOURT SHIFT SETTLEMENT AUDIT:
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                    <span>Total Nozzle Meter Sales:</span>
-                    <strong>₹ {totalMeterSales.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    <span>1. Net Nozzle & Lube Throughput:</span>
+                    <strong>₹ {totalThroughput.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                   </div>
-                  <div style={{ borderTop: '1px solid #f57f17', paddingTop: '4px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '13px', color: gap < 0 ? '#b71c1c' : '#2e7d32' }}>
-                    <span>Gap Amount:</span>
-                    <span>{gap >= 0 ? `+${gap.toFixed(2)} (Excess)` : `${gap.toFixed(2)} (Shortage)`}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#555' }}>
+                    <span>— Credit Fleet Slips:</span>
+                    <span>- ₹ {effectiveCreditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#555' }}>
+                    <span>— Bank POS / Digital Collections:</span>
+                    <span>- ₹ {effectiveDigitalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#555' }}>
+                    <span>— Shift Petty Cash Expenses:</span>
+                    <span>- ₹ {effectiveExpenseTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  {effectiveCreditCollections > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#2e7d32' }}>
+                      <span>+ Credit Dues Received:</span>
+                      <span>+ ₹ {effectiveCreditCollections.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  <div style={{ borderTop: '1px solid #ccc', margin: '4px 0', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', fontWeight: 700 }}>
+                    <span>= EXPECTED CASH:</span>
+                    <span>₹ {expectedCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', fontWeight: 700 }}>
+                    <span>= PHYSICAL CASH HANDED OVER:</span>
+                    <span>₹ {effectiveCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{
+                    borderTop: `2px solid ${isShortage ? '#c62828' : isExcess ? '#2e7d32' : '#f57f17'}`,
+                    paddingTop: '6px',
+                    marginTop: '6px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontWeight: 900,
+                    fontSize: '12.5px',
+                    color: isShortage ? '#b71c1c' : isExcess ? '#1b5e20' : '#e65100',
+                  }}>
+                    <span>CASHIER TALLY STATUS:</span>
+                    <span>{tallyStatus}</span>
                   </div>
                 </div>
               </div>

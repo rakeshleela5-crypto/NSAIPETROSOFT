@@ -25,7 +25,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
   showToast,
   loadAllErpData,
 }) => {
-  const [billMode, setBillMode] = useState<'CASH' | 'CREDIT' | 'UPI'>('CASH');
+  const [billMode, setBillMode] = useState<'CASH' | 'CREDIT' | 'UPI' | 'SPLIT'>('CASH');
   const [cashMemoBillNo, setCashMemoBillNo] = useState<string>(`POS-${Date.now().toString().slice(-4)}`);
   const [cashMemoVehicle, setCashMemoVehicle] = useState<string>('GJ05AB1234');
   const [cashMemoProduct, setCashMemoProduct] = useState<string>('MS');
@@ -34,11 +34,33 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
   const [selectedCustomerId, setSelectedCustomerId] = useState<number>(customers[0]?.id || 1);
   const [driverName, setDriverName] = useState<string>('');
 
+  // Multi-Mode Tender Breakdown (Split Tender)
+  const [splitCash, setSplitCash] = useState<number>(0);
+  const [splitUpi, setSplitUpi] = useState<number>(0);
+  const [splitCredit, setSplitCredit] = useState<number>(0);
+
   // Sync rate when product changes
   useEffect(() => {
     const r = ratesList.find((p) => p.code === cashMemoProduct);
     if (r) setCashMemoRate(r.rate);
   }, [cashMemoProduct, ratesList]);
+
+  // Recalculate split defaults when total changes
+  const totalAmount = calcSaleAmount(cashMemoLiters, cashMemoRate);
+  const taxSplit = calcTaxSplit(totalAmount, 13.7);
+
+  useEffect(() => {
+    if (billMode === 'SPLIT' && splitCash === 0 && splitUpi === 0 && splitCredit === 0) {
+      setSplitCash(Math.floor(totalAmount / 2));
+      setSplitUpi(Math.round((totalAmount - Math.floor(totalAmount / 2)) * 100) / 100);
+      setSplitCredit(0);
+    }
+  }, [billMode, totalAmount]);
+
+  // Multi-mode validation
+  const allocatedTender = Math.round((splitCash + splitUpi + splitCredit + Number.EPSILON) * 100) / 100;
+  const tenderGap = Math.round((totalAmount - allocatedTender + Number.EPSILON) * 100) / 100;
+  const isSplitValid = Math.abs(tenderGap) < 0.01;
 
   // Keyboard shortcuts: F2 (Quick Save & Print), F4 (Cash Mode), F8 (Credit Mode)
   useEffect(() => {
@@ -64,17 +86,55 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, cashMemoLiters, cashMemoRate, cashMemoVehicle, billMode, selectedCustomerId, cashMemoProduct]);
+  }, [isOpen, cashMemoLiters, cashMemoRate, cashMemoVehicle, billMode, selectedCustomerId, cashMemoProduct, splitCash, splitUpi, splitCredit, totalAmount]);
 
   if (!isOpen) return null;
 
-  const totalAmount = calcSaleAmount(cashMemoLiters, cashMemoRate);
-  const taxSplit = calcTaxSplit(totalAmount, 13.7);
-
   const handleExecuteSaveAndPrint = async () => {
     try {
-      if (billMode === 'CREDIT') {
-        // Record as credit bill in store
+      const state = erpStore.getState();
+
+      if (billMode === 'SPLIT') {
+        if (!isSplitValid) {
+          showToast(`❌ Multi-mode split mismatch: Allocated ₹${allocatedTender} vs Bill ₹${totalAmount}. Difference: ₹${tenderGap}`);
+          return;
+        }
+
+        // 1. Post Cash portion if > 0
+        if (splitCash > 0 && state.bankAccounts.length > 0) {
+          state.bankAccounts[0].balance = Math.round((state.bankAccounts[0].balance + splitCash + Number.EPSILON) * 100) / 100;
+        }
+
+        // 2. Post Digital / UPI portion if > 0
+        if (splitUpi > 0) {
+          erpStore.recordCardSettlement({
+            machine_name: 'PHONEPE / PAYTM QR',
+            batch_no: `UPI-${cashMemoBillNo}`,
+            slip_count: 1,
+            amount: splitUpi,
+          });
+        }
+
+        // 3. Post Credit portion if > 0
+        if (splitCredit > 0) {
+          erpStore.recordCreditBill({
+            customer_id: selectedCustomerId,
+            vehicle_no: cashMemoVehicle.toUpperCase(),
+            product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
+            qty: Math.round(((splitCredit / cashMemoRate) + Number.EPSILON) * 100) / 100,
+            rate: cashMemoRate,
+            slip_no: `SPLIT-${cashMemoBillNo}`,
+            driver_name: driverName || 'Driver',
+          });
+        }
+
+        // 4. Atomically deduct total fuel volume from tank stock
+        const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
+        tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+
+        showToast(`✔ Multi-Mode Split Bill #${cashMemoBillNo} Saved (Cash: ₹${splitCash}, UPI: ₹${splitUpi}, Credit: ₹${splitCredit})!`);
+      } else if (billMode === 'CREDIT') {
         erpStore.recordCreditBill({
           customer_id: selectedCustomerId,
           vehicle_no: cashMemoVehicle.toUpperCase(),
@@ -84,9 +144,8 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
           slip_no: `POS-${cashMemoBillNo}`,
           driver_name: driverName || 'Driver',
         });
+        showToast(`✔ Credit Fleet Bill #${cashMemoBillNo} Saved for ${customers.find(c => c.id === selectedCustomerId)?.name || 'Fleet'}!`);
       } else {
-        // Record in store cash/digital breakdown
-        const state = erpStore.getState();
         if (billMode === 'UPI') {
           erpStore.recordCardSettlement({
             machine_name: 'PHONEPE / PAYTM QR',
@@ -94,18 +153,16 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
             slip_count: 1,
             amount: totalAmount,
           });
-        } else {
-          // Increment Cash On Hand
-          state.bankAccounts[0].balance += totalAmount;
+        } else if (state.bankAccounts.length > 0) {
+          state.bankAccounts[0].balance = Math.round((state.bankAccounts[0].balance + totalAmount + Number.EPSILON) * 100) / 100;
         }
 
-        // Deduct from tank stock
         const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
-        tank.current_stock = Math.max(0, tank.current_stock - cashMemoLiters);
-        tank.book_stock = Math.max(0, tank.book_stock - cashMemoLiters);
+        tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        showToast(`✔ Retail Bill #${cashMemoBillNo} Saved (Mode: ${billMode})! Printing 80mm slip...`);
       }
 
-      showToast(`✔ Retail Bill #${cashMemoBillNo} Saved (Mode: ${billMode})! Printing 80mm slip...`);
       handlePrintThermalSlip();
       await loadAllErpData();
       setCashMemoBillNo(`POS-${Date.now().toString().slice(-4)}`);
@@ -201,14 +258,14 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
         <div className="win-dialog-body" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
           {/* Left: Input Form */}
           <div>
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
               <button
                 type="button"
                 className={`win-btn-classic ${billMode === 'CASH' ? 'win-btn-primary' : ''}`}
                 onClick={() => setBillMode('CASH')}
                 style={{ flex: 1, fontWeight: 700 }}
               >
-                💵 Cash Mode (F4)
+                💵 Cash (F4)
               </button>
               <button
                 type="button"
@@ -216,7 +273,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                 onClick={() => setBillMode('CREDIT')}
                 style={{ flex: 1, fontWeight: 700 }}
               >
-                📋 Credit Fleet (F8)
+                📋 Credit (F8)
               </button>
               <button
                 type="button"
@@ -226,9 +283,71 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
               >
                 📱 UPI / QR
               </button>
+              <button
+                type="button"
+                className={`win-btn-classic ${billMode === 'SPLIT' ? 'win-btn-primary' : ''}`}
+                onClick={() => setBillMode('SPLIT')}
+                style={{ flex: 1.2, fontWeight: 700, background: billMode === 'SPLIT' ? '#6b21a8' : undefined, color: billMode === 'SPLIT' ? '#fff' : undefined }}
+                title="Multi-Mode Tender: Split across Cash + UPI + Fleet Credit"
+              >
+                ⚡ Multi-Split
+              </button>
             </div>
 
-            {billMode === 'CREDIT' && (
+            {/* Split Tender Allocation Panel */}
+            {billMode === 'SPLIT' && (
+              <div style={{
+                background: '#f5f3ff',
+                border: '1px solid #c4b5fd',
+                padding: '8px',
+                borderRadius: '4px',
+                marginBottom: '10px',
+              }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#5b21b6', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Multi-Tender Allocation (Must equal ₹{totalAmount.toFixed(2)})</span>
+                  <span style={{ color: isSplitValid ? '#15803d' : '#b91c1c' }}>
+                    {isSplitValid ? '✔ Balanced' : `⚠ Gap: ₹${tenderGap.toFixed(2)}`}
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                  <div>
+                    <span style={{ fontSize: '10px', fontWeight: 600, color: '#333' }}>💵 Cash Paid</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="win-input"
+                      style={{ width: '100%', fontWeight: 700 }}
+                      value={splitCash}
+                      onChange={(e) => setSplitCash(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '10px', fontWeight: 600, color: '#333' }}>📱 UPI / QR</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="win-input"
+                      style={{ width: '100%', fontWeight: 700 }}
+                      value={splitUpi}
+                      onChange={(e) => setSplitUpi(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '10px', fontWeight: 600, color: '#333' }}>📋 Credit Fleet</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="win-input"
+                      style={{ width: '100%', fontWeight: 700 }}
+                      value={splitCredit}
+                      onChange={(e) => setSplitCredit(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(billMode === 'CREDIT' || (billMode === 'SPLIT' && splitCredit > 0)) && (
               <div className="win-form-row">
                 <span className="win-label" style={{ width: '90px' }}>Customer</span>
                 <select
@@ -368,6 +487,13 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                 <span>TOTAL AMOUNT:</span>
                 <span>₹ {totalAmount.toFixed(2)}</span>
               </div>
+              {billMode === 'SPLIT' && (
+                <div style={{ fontSize: '9.5px', margin: '4px 0', borderTop: '1px dashed #555', paddingTop: '3px', color: '#222' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>• Cash:</span><span>₹ {splitCash.toFixed(2)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>• UPI / QR:</span><span>₹ {splitUpi.toFixed(2)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>• Fleet Credit:</span><span>₹ {splitCredit.toFixed(2)}</span></div>
+                </div>
+              )}
               <div style={{ textAlign: 'center', fontSize: '9px', marginTop: '10px', color: '#666' }}>
                 *** THANK YOU! VISIT AGAIN ***
               </div>

@@ -579,9 +579,17 @@ export default function App() {
           }))
         );
       }
-      if (expensesData && expensesData.length > 0) {
-        setExpensesList(expensesData);
-      }
+      const activeExpenses = (expensesData && expensesData.length > 0) ? expensesData : erpStore.getState().expenses;
+      setExpensesList(activeExpenses);
+      setEmpExpensesList(
+        activeExpenses.map((e: any) => ({
+          id: e.id,
+          category: e.category,
+          amount: Number(e.amount || 0),
+          narration: e.narration,
+          paid_to: e.paid_to,
+        }))
+      );
       if (purchasesData && purchasesData.length > 0) {
         setPurPoHistory(
           purchasesData.map((p: any) => ({
@@ -1110,6 +1118,10 @@ export default function App() {
 
   const handleSaveCreditSale = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!creditVehicle || !creditVehicle.trim()) {
+      showToast('❌ Vehicle registration number is mandatory for all credit sales.');
+      return;
+    }
     const custObj = customers.find((c) => c.id === creditCustId);
     const valResult = validateCreditSaleInputs(
       creditQty,
@@ -1159,6 +1171,7 @@ export default function App() {
       qty: creditQty,
       rate: creditRate,
       slip_no: creditSlipNo,
+      shift: creditShift || shiftName,
       indent_no: creditIndentNo,
       driver_name: creditDriverName,
       odometer_km: creditOdometer,
@@ -1243,6 +1256,7 @@ export default function App() {
       vehicle_no: creditVehicle,
       product_id: creditProductId,
       slip_no: creditSlipNo,
+      shift: creditShift || shiftName,
       qty: creditQty,
       rate: creditRate,
       cash_paid: creditCashPaid,
@@ -1286,7 +1300,7 @@ export default function App() {
         const offlineBill = {
           id: Date.now(),
           date: formatErpDate(creditDate),
-          shift: 'First',
+          shift: creditShift || shiftName,
           slip: creditSlipNo,
           bill: tempBillNo,
           cust: custObj?.name || 'CUSTOMER',
@@ -1399,20 +1413,39 @@ export default function App() {
   const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      erpStore.recordExpense({
+      const newExp = erpStore.recordExpense({
         category: expCategory,
         amount: expAmount,
         narration: expNarration,
         paid_to: expPaidTo,
         paid_from_account_id: 1,
       });
-      await createExpense({
-        category: expCategory,
-        amount: expAmount,
-        narration: expNarration,
-        paid_to: expPaidTo,
-      });
-      showToast(`✔ Expense of ₹${expAmount} recorded in Cash Book!`);
+
+      // Instantly update active shift cashier expenses
+      setExpensesList((prev) => [newExp, ...prev]);
+      setEmpExpensesList((prev) => [
+        {
+          id: newExp.id,
+          category: newExp.category,
+          amount: newExp.amount,
+          narration: newExp.narration,
+          paid_to: newExp.paid_to,
+        },
+        ...prev,
+      ]);
+
+      try {
+        await createExpense({
+          category: expCategory,
+          amount: expAmount,
+          narration: expNarration,
+          paid_to: expPaidTo,
+        });
+      } catch (e) {
+        console.warn('Backend expense sync deferred or offline:', e);
+      }
+
+      showToast(`✔ Shift Expense of ₹${expAmount} recorded! Cashier liability reduced in real time.`);
       await loadAllErpData();
     } catch (err: any) {
       showToast(`✔ Expense of ₹${expAmount} recorded locally!`);
@@ -1424,11 +1457,13 @@ export default function App() {
     requestManagerAuthorization(`Delete Expense Voucher #${id} (${expItem?.category || 'General'} - ₹${Number(expItem?.amount || 0).toFixed(2)})`, async () => {
       try {
         await deleteExpense(id);
-        showToast(`✔ Expense voucher #${id} permanently deleted & cash book updated!`);
-        await loadAllErpData();
-      } catch (err: any) {
-        showToast(`⚠ Error deleting expense: ${err.message || 'Database error'}`);
+      } catch (e) {
+        console.warn('Backend expense delete deferred or offline:', e);
       }
+      setExpensesList((prev) => prev.filter((x) => x.id !== id));
+      setEmpExpensesList((prev) => prev.filter((x) => x.id !== id));
+      showToast(`✔ Expense voucher #${id} deleted & cashier liability restored!`);
+      await loadAllErpData();
     });
   };
 
@@ -2465,6 +2500,7 @@ export default function App() {
         stationProfile={stationProfile}
         empSettlementEmp={empSettlementEmp}
         empSettlementMachine={empSettlementMachine}
+        empCreditReceived={empCreditReceived}
         showToast={showToast}
       />
 

@@ -468,48 +468,82 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                   <input type="number" step="0.01" className="win-input" value={empUplagBaki} onChange={(e) => setEmpUplagBaki(parseFloat(e.target.value) || 0)} style={{ flex: 1 }} />
                 </div>
 
-                {/* Total Collection vs Meter Sales Calculation */}
-                <div style={{ background: '#f5f5f5', border: '1px solid #aaa', padding: '8px', marginTop: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                    <span>Total Reconciled Collection:</span>
-                    <strong>₹ {(empCashAmount + empCreditSaleAmount + empCardSwipes.reduce((acc, c) => acc + c.amount, 0) + empExpensesList.reduce((acc, e) => acc + e.amount, 0) - empCreditReceived).toFixed(2)}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                    <span>Nozzle Sales + Lube Total:</span>
-                    <strong>₹ {(
-                      (salesReadings.length > 0
-                        ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
-                        : empNozzleReadings.reduce((acc, r) => acc + (r.amount || 0), 0)) +
-                      empLubeItems.reduce((acc, l) => acc + (l.amount || 0), 0)
-                    ).toFixed(2)}</strong>
-                  </div>
+                {/* Airtight Shift Settlement Calculation */}
+                {(() => {
+                  const meterAndLubeTotal = (
+                    (salesReadings.length > 0
+                      ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
+                      : empNozzleReadings.reduce((acc, r) => acc + (r.amount || 0), 0)) +
+                    empLubeItems.reduce((acc, l) => acc + (l.amount || 0), 0)
+                  );
+                  const cardTotal = empCardSwipes.reduce((acc, c) => acc + c.amount, 0);
+                  const expTotal = empExpensesList.reduce((acc, e) => acc + e.amount, 0);
 
-                  {/* Gap Amount Banner */}
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '8px',
-                    background: '#ffebee',
-                    border: '2px solid #c62828',
-                    textAlign: 'center',
-                  }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#c62828' }}>Gap of account</div>
-                    <div style={{ fontSize: '18px', fontWeight: 900, color: '#b71c1c' }}>
-                      ₹ {(
-                        empCashAmount +
-                        empCreditSaleAmount +
-                        empCardSwipes.reduce((acc, c) => acc + c.amount, 0) +
-                        empExpensesList.reduce((acc, e) => acc + e.amount, 0) -
-                        empCreditReceived -
-                        ((salesReadings.length > 0
-                          ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
-                          : empNozzleReadings.reduce((acc, r) => acc + (r.amount || 0), 0)) +
-                        empLubeItems.reduce((acc, l) => acc + (l.amount || 0), 0))
-                      ).toFixed(2)}
+                  // 1. Expected Cash = (Net Nozzle Sales × Rate) + Lube Sales - Credit Bills - Card/UPI Receipts - Shift Expenses + Credit Collections
+                  const expectedCash = Math.round((meterAndLubeTotal - empCreditSaleAmount - cardTotal - expTotal + empCreditReceived + Number.EPSILON) * 100) / 100;
+
+                  // 2. Cashier Shortage / Excess = Physical Cash Handed Over - Expected Cash
+                  const cashierDiff = Math.round((empCashAmount - expectedCash + Number.EPSILON) * 100) / 100;
+                  const isShortage = cashierDiff < -1.0;
+                  const isExcess = cashierDiff > 1.0;
+
+                  return (
+                    <div style={{ background: '#f5f5f5', border: '1px solid #aaa', padding: '8px', marginTop: '6px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#333', borderBottom: '1px solid #ccc', paddingBottom: '3px', marginBottom: '4px' }}>
+                        SHIFT SETTLEMENT AUDIT FORMULA:
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '2px' }}>
+                        <span>Total Sales (Nozzle + Lube):</span>
+                        <strong>₹ {meterAndLubeTotal.toFixed(2)}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#555' }}>
+                        <span>— Credit Bills:</span>
+                        <span>- ₹ {empCreditSaleAmount.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#555' }}>
+                        <span>— Card / POS Total:</span>
+                        <span>- ₹ {cardTotal.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#555' }}>
+                        <span>— Shift Expenses:</span>
+                        <span>- ₹ {expTotal.toFixed(2)}</span>
+                      </div>
+                      {empCreditReceived > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#2e7d32' }}>
+                          <span>+ Credit Dues Received:</span>
+                          <span>+ ₹ {empCreditReceived.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div style={{ borderTop: '1px solid #ddd', marginTop: '3px', paddingTop: '3px', display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 700 }}>
+                        <span>= 1. Expected Cash:</span>
+                        <span>₹ {expectedCash.toFixed(2)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 700 }}>
+                        <span>= 2. Physical Cash Handed Over:</span>
+                        <span>₹ {empCashAmount.toFixed(2)}</span>
+                      </div>
+
+                      {/* Gap Amount Banner */}
+                      <div style={{
+                        marginTop: '8px',
+                        padding: '8px',
+                        background: isShortage ? '#ffebee' : isExcess ? '#e8f5e9' : '#fffde7',
+                        border: `2px solid ${isShortage ? '#c62828' : isExcess ? '#2e7d32' : '#f57f17'}`,
+                        textAlign: 'center',
+                      }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: isShortage ? '#c62828' : isExcess ? '#2e7d32' : '#f57f17' }}>
+                          Cashier Shortage / Excess (Physical - Expected)
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 900, color: isShortage ? '#b71c1c' : isExcess ? '#1b5e20' : '#e65100' }}>
+                          {cashierDiff >= 0 ? `+₹ ${cashierDiff.toFixed(2)}` : `-₹ ${Math.abs(cashierDiff).toFixed(2)}`}
+                        </div>
+                        <div style={{ fontSize: '10px', fontWeight: 700, color: isShortage ? '#d32f2f' : isExcess ? '#2e7d32' : '#555', marginTop: '2px' }}>
+                          {isShortage ? '⚠️ CASHIER SHORTAGE: Amount must be recovered' : isExcess ? '🟢 CASHIER EXCESS: Surplus handed over' : '✔ BALANCED: Physical cash matches expected'}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: '10px', color: '#555', marginTop: '2px' }}>
-                      (Negative indicates Cashier Shortage to be recovered)
-                    </div>
-                  </div>
+                  );
+                })()}
 
                   {/* Cashier Accumulated Shortage Liability */}
                   <div style={{
@@ -557,7 +591,6 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                       💳 Settle / Ledger
                     </button>
                   </div>
-                </div>
 
                 <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                   <button
