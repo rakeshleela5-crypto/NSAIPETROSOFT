@@ -94,3 +94,7 @@ async def global_exception_handler(request, exc: Exception):
 
 app.include_router(health_router)
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Also mount Decentro webhooks directly at root (/webhooks/decentro/*)
+from app.routers.banking import webhooks_router
+app.include_router(webhooks_router)

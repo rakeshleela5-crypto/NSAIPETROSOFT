@@ -130,6 +130,9 @@ const CloudBackupModal = lazy(() =>
 const CustomerFleetMasterModal = lazy(() =>
   import('./components/CustomerFleetMasterModal').then((m) => ({ default: m.CustomerFleetMasterModal }))
 );
+const DecentroBankingModal = lazy(() =>
+  import('./components/DecentroBankingModal').then((m) => ({ default: m.DecentroBankingModal }))
+);
 
 export const getFinancialYear = (): string => {
   const now = new Date();
@@ -1787,6 +1790,7 @@ export default function App() {
         <button className="win-menu-item" onClick={() => setActiveDialog('selectCustomerBill')}>Credit Bills</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('cardEntry')}>Card Entry</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('cashBill')}>Sale POS</button>
+        <button className="win-menu-item" style={{ color: '#0284c7', fontWeight: 700 }} onClick={() => setActiveDialog('decentroBanking')}>⚡ Decentro Banking</button>
         <button className="win-menu-item" style={{ color: '#0d47a1', fontWeight: 700 }} onClick={openBackupDialog}>☁️ Cloudflare R2</button>
       </div>
 
@@ -1847,6 +1851,9 @@ export default function App() {
         </button>
         <button className="win-toolbar-btn" onClick={() => setActiveDialog('viewStock')} title="Live Underground Tank Stock Gauges">
           <span>⛽</span><span>View Stock</span>
+        </button>
+        <button className="win-toolbar-btn" style={{ borderColor: '#0284c7', color: '#0369a1', fontWeight: 700 }} onClick={() => setActiveDialog('decentroBanking')} title="Decentro API Banking V2 (Dynamic UPI QR, Fleet VANs, OMC Payouts, KYC)">
+          <span>⚡</span><span>Decentro BaaS</span>
         </button>
       </div>
 
@@ -2691,6 +2698,14 @@ export default function App() {
         modalState={managerPinModal}
         onClose={() => setManagerPinModal(null)}
         correctPin={stationProfile.managerPin || '1234'}
+      />
+
+      <DecentroBankingModal
+        isOpen={activeDialog === 'decentroBanking'}
+        onClose={() => setActiveDialog(null)}
+        customers={customers}
+        activeShiftId={shiftNumber}
+        onCustomerUpdated={loadAllErpData}
       />
       </Suspense>
 

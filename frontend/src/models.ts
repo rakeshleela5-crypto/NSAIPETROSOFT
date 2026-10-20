@@ -43,6 +43,7 @@ export type DialogType =
   | 'salesRegister'
   | 'buildMis'
   | 'nozzleStaffMaster'
+  | 'decentroBanking'
   | null;
 
 export interface StationProfile {

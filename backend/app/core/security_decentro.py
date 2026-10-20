@@ -124,11 +124,17 @@ class DecentroWebhookSignatureMiddleware(BaseHTTPMiddleware):
     and verify HMAC-SHA256 signature before allowing execution.
     """
 
-    WEBHOOK_PATHS = ("/api/v1/decentro/webhooks/incoming", "/decentro/webhooks/incoming")
+    WEBHOOK_PREFIXES = (
+        "/api/v1/decentro/webhooks",
+        "/decentro/webhooks",
+        "/api/v1/webhooks/decentro",
+        "/webhooks/decentro",
+    )
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path.rstrip("/")
-        if path in self.WEBHOOK_PATHS and request.method == "POST":
+        is_webhook = any(path.startswith(prefix) for prefix in self.WEBHOOK_PREFIXES)
+        if is_webhook and request.method == "POST":
             # Read body bytes
             raw_body = await request.body()
             secret = settings.DECENTRO_WEBHOOK_SECRET

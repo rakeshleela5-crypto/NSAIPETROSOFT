@@ -27,6 +27,14 @@ from app.models.decentro import (
     GstinVerificationAudit,
     SupplierPayout,
 )
+from app.models.banking import (
+    CollectionLedgerEntry,
+    DecentroWebhookAudit,
+    FleetVirtualAccount,
+    GstinVerificationRecord,
+    SupplierPayoutOrder,
+    UpiQrTransaction,
+)
 
 __all__ = [
     "Base",
@@ -54,5 +62,11 @@ __all__ = [
     "SupplierPayout",
     "DecentroWebhookLog",
     "GstinVerificationAudit",
+    "UpiQrTransaction",
+    "FleetVirtualAccount",
+    "CollectionLedgerEntry",
+    "SupplierPayoutOrder",
+    "GstinVerificationRecord",
+    "DecentroWebhookAudit",
 ]
 

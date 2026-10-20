@@ -28,8 +28,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     # Auto-create tables on startup (convenient for initial setup and prototyping)
+    from sqlmodel import SQLModel
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
 
         # Idempotent column migrations for existing PostgreSQL tables
         from sqlalchemy import text
