@@ -129,3 +129,95 @@ class DecentroWebhookAudit(SQLModel, table=True):
     status: str = Field(default="PROCESSED")
     payload_json: str = Field(default="{}")
     result_summary: Optional[str] = Field(default=None)
+
+
+# =============================================================================
+# Canonical Direct Models (User Specification Alignment)
+# =============================================================================
+from enum import Enum
+
+
+class TxnStatus(str, Enum):
+    PENDING = "PENDING"
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+    EXPIRED = "EXPIRED"
+    REVERSED = "REVERSED"
+
+
+class FleetCustomer(SQLModel, table=True):
+    """B2B Commercial Fleet / Credit Customers with Dedicated Virtual Accounts"""
+    __tablename__ = "fleet_customers"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    business_name: str = Field(index=True)
+    gstin: Optional[str] = Field(default=None, unique=True, index=True)
+    gstin_verified: bool = Field(default=False)
+    contact_phone: str
+    contact_email: str
+    virtual_account_number: Optional[str] = Field(default=None, unique=True, index=True)
+    virtual_account_ifsc: Optional[str] = Field(default=None)
+    virtual_account_upi_id: Optional[str] = Field(default=None)
+    credit_limit: float = Field(default=0.0)
+    current_outstanding: float = Field(default=0.0)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class NozzleUPITransaction(SQLModel, table=True):
+    """Dynamic UPI QR collections per Nozzle / Attendant Shift"""
+    __tablename__ = "nozzle_upi_transactions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    reference_id: str = Field(unique=True, index=True)
+    decentro_txn_id: Optional[str] = Field(default=None, index=True)
+    shift_id: str = Field(index=True)
+    nozzle_id: str = Field(index=True)
+    attendant_id: str
+    fuel_type: str  # MS (Petrol), HSD (Diesel), CNG
+    liters_dispensed: Optional[float] = Field(default=None)
+    amount: float
+    qr_base64: Optional[str] = Field(default=None)
+    upi_uri: Optional[str] = Field(default=None)
+    payer_vpa: Optional[str] = Field(default=None)
+    bank_utr: Optional[str] = Field(default=None, unique=True, index=True)
+    status: TxnStatus = Field(default=TxnStatus.PENDING)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    paid_at: Optional[datetime] = Field(default=None)
+
+
+class VirtualAccountWebhookLog(SQLModel, table=True):
+    """Idempotent ledger for inbound RTGS/NEFT/IMPS/UPI Virtual Account credits"""
+    __tablename__ = "va_webhook_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    decentro_txn_id: str = Field(unique=True, index=True)
+    bank_utr: str = Field(unique=True, index=True)
+    virtual_account_number: str = Field(index=True)
+    transfer_type: str  # RTGS, NEFT, IMPS, UPI
+    amount: float
+    payer_name: Optional[str] = Field(default=None)
+    payer_account: Optional[str] = Field(default=None)
+    payer_ifsc: Optional[str] = Field(default=None)
+    raw_payload: str
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SupplierPayout(SQLModel, table=True):
+    """Outbound disbursements to Oil Marketing Companies (IOCL/BPCL/HPCL) & Tankers"""
+    __tablename__ = "supplier_payouts"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    reference_id: str = Field(unique=True, index=True)
+    decentro_txn_id: Optional[str] = Field(default=None, index=True)
+    supplier_name: str
+    supplier_gstin: Optional[str] = Field(default=None)
+    invoice_number: str  # e.g., IOCL Tanker Load Invoice
+    beneficiary_account: str
+    beneficiary_ifsc: str
+    transfer_type: str  # RTGS, NEFT, IMPS
+    amount: float
+    bank_utr: Optional[str] = Field(default=None, index=True)
+    status: TxnStatus = Field(default=TxnStatus.PENDING)
+    failure_reason: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

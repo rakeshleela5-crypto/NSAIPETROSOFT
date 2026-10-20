@@ -288,5 +288,121 @@ class DecentroBankingService {
   }
 }
 
+export interface NozzleQRResponse {
+  reference_id: string;
+  decentro_txn_id: string;
+  amount: number;
+  qr_base64: string; // Render as <img src={`data:image/png;base64,${qr_base64}`} />
+  upi_uri: string;
+  status: "PENDING" | "SUCCESS" | "FAILURE" | "EXPIRED";
+}
+
+export const PetroSoftBankingAPI = {
+  /**
+   * 1. Generate Dynamic UPI QR for a Nozzle Dispense Sale (No Razorpay)
+   */
+  async createNozzleQR(payload: {
+    shift_id: string;
+    nozzle_id: string;
+    attendant_id: string;
+    fuel_type: "MS" | "HSD" | "CNG" | "XP95";
+    liters_dispensed?: number;
+    amount: number;
+  }): Promise<NozzleQRResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/v1/banking/upi-qr`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Failed to generate Nozzle UPI QR");
+    return res.json();
+  },
+
+  /**
+   * 2. Poll Nozzle QR Payment Status (Auto-resolves when customer scans & pays)
+   */
+  pollQRStatus(
+    referenceId: string,
+    onSuccess: (utr: string, payerVpa: string) => void,
+    onFailure: () => void,
+    intervalMs = 2500
+  ): () => void {
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/v1/banking/upi-qr/${referenceId}/status`, {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === "SUCCESS") {
+          clearInterval(timer);
+          onSuccess(data.bank_utr, data.payer_vpa);
+        } else if (data.status === "FAILURE" || data.status === "EXPIRED") {
+          clearInterval(timer);
+          onFailure();
+        }
+      } catch (err) {
+        console.error("QR polling error:", err);
+      }
+    }, intervalMs);
+
+    return () => clearInterval(timer);
+  },
+
+  /**
+   * 3. Verify Fleet Customer or Tanker Supplier GSTIN & Auto-Fill Form
+   */
+  async verifyGSTIN(gstin: string) {
+    const res = await fetch(`${API_BASE_URL}/api/v1/banking/kyc/gstin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ gstin, consent: true }),
+    });
+    if (!res.ok) throw new Error("Invalid GSTIN or verification failed");
+    return res.json();
+  },
+
+  /**
+   * 4. Create Dedicated RTGS/NEFT Virtual Account for a B2B Fleet Customer
+   */
+  async createFleetVirtualAccount(payload: {
+    business_name: string;
+    gstin?: string;
+    contact_phone: string;
+    contact_email: string;
+    credit_limit: number;
+  }) {
+    const res = await fetch(`${API_BASE_URL}/api/v1/banking/virtual-accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Failed to provision Virtual Account");
+    return res.json();
+  },
+
+  /**
+   * 5. Initiate OMC (IOCL/BPCL/HPCL) or Tanker Supplier RTGS/NEFT/IMPS Payout
+   */
+  async initiateSupplierPayout(payload: {
+    supplier_name: string;
+    supplier_gstin?: string;
+    invoice_number: string;
+    beneficiary_account: string;
+    beneficiary_ifsc: string;
+    transfer_type: "IMPS" | "NEFT" | "RTGS";
+    amount: number;
+  }) {
+    const res = await fetch(`${API_BASE_URL}/api/v1/banking/payouts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Supplier payout initiation failed");
+    return res.json();
+  },
+};
+
 export const decentroBanking = new DecentroBankingService();
 export default decentroBanking;
+

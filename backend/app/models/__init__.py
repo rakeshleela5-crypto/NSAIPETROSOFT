@@ -30,10 +30,14 @@ from app.models.decentro import (
 from app.models.banking import (
     CollectionLedgerEntry,
     DecentroWebhookAudit,
+    FleetCustomer,
     FleetVirtualAccount,
     GstinVerificationRecord,
+    NozzleUPITransaction,
     SupplierPayoutOrder,
+    TxnStatus,
     UpiQrTransaction,
+    VirtualAccountWebhookLog,
 )
 
 __all__ = [

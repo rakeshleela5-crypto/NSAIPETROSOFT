@@ -38,13 +38,18 @@ class Settings(BaseSettings):
     DECENTRO_CLIENT_ID: str = "decentro_demo_client_id"
     DECENTRO_CLIENT_SECRET: str = "decentro_demo_client_secret"
     DECENTRO_MODULE_SECRET: str = "decentro_demo_module_secret"
+    DECENTRO_ACCOUNTS_MODULE_SECRET: str = "sandbox_accounts_secret"
+    DECENTRO_PAYMENTS_MODULE_SECRET: str = "sandbox_payments_secret"
+    DECENTRO_KYC_MODULE_SECRET: str = "sandbox_kyc_secret"
     DECENTRO_PROVIDER_SECRET: str = "decentro_demo_provider_secret"
     DECENTRO_WEBHOOK_SECRET: str = "decentro_webhook_secret_nsai_2026"
     DECENTRO_BASE_URL: str = "https://in.staging.decentro.tech"
     DECENTRO_TIMEOUT_SECONDS: float = 30.0
     DECENTRO_MAX_RETRIES: int = 3
     DECENTRO_VAN_PREFIX: str = "NSAI"
-    DECENTRO_MASTER_ACCOUNT: str = "912345678901"
+    STATION_MASTER_VA_NUMBER: str = "46251000000012"
+    STATION_MASTER_IFSC: str = "YESB0CMSNOC"
+    DECENTRO_MASTER_ACCOUNT: str = "46251000000012"
     DECENTRO_MASTER_IFSC: str = "YESB0CMSNOC"
     DECENTRO_SIMULATION_MODE: bool = False
 

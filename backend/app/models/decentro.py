@@ -92,7 +92,7 @@ class SupplierPayout(Base):
     Outbound vendor/oil-company payment orders (IMPS/NEFT/RTGS) with strict idempotency keys
     to eliminate duplicate disbursements.
     """
-    __tablename__ = "supplier_payouts"
+    __tablename__ = "decentro_supplier_payouts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     reference_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
