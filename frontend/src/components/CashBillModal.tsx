@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { CustomerFull, FuelProductRate, StationProfile } from '../models';
-import { createPaymentReceipt } from '../api/client';
+import { erpStore } from '../store/erpStore';
 import { getTodayErpDate } from '../utils/dateUtils';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
+import { calcSaleAmount, calcTaxSplit } from '../utils/mathEngine';
 
 interface CashBillModalProps {
   isOpen: boolean;
@@ -19,32 +20,113 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
   isOpen,
   onClose,
   ratesList,
-  salesReadings,
   customers,
   stationProfile,
   showToast,
   loadAllErpData,
 }) => {
-  const [cashMemoBillNo, setCashMemoBillNo] = useState<string>('CB-9021');
+  const [billMode, setBillMode] = useState<'CASH' | 'CREDIT' | 'UPI'>('CASH');
+  const [cashMemoBillNo, setCashMemoBillNo] = useState<string>(`POS-${Date.now().toString().slice(-4)}`);
   const [cashMemoVehicle, setCashMemoVehicle] = useState<string>('GJ05AB1234');
   const [cashMemoProduct, setCashMemoProduct] = useState<string>('MS');
   const [cashMemoRate, setCashMemoRate] = useState<number>(102.65);
   const [cashMemoLiters, setCashMemoLiters] = useState<number>(20.0);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number>(customers[0]?.id || 1);
+  const [driverName, setDriverName] = useState<string>('');
+
+  // Sync rate when product changes
+  useEffect(() => {
+    const r = ratesList.find((p) => p.code === cashMemoProduct);
+    if (r) setCashMemoRate(r.rate);
+  }, [cashMemoProduct, ratesList]);
+
+  // Keyboard shortcuts: F2 (Quick Save & Print), F4 (Cash Mode), F8 (Credit Mode)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        handleExecuteSaveAndPrint();
+      } else if (e.key === 'F4') {
+        e.preventDefault();
+        setBillMode('CASH');
+        showToast('💵 Switched to Cash Billing Mode');
+      } else if (e.key === 'F8') {
+        e.preventDefault();
+        setBillMode('CREDIT');
+        showToast('📋 Switched to Credit Fleet Billing Mode');
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, cashMemoLiters, cashMemoRate, cashMemoVehicle, billMode, selectedCustomerId, cashMemoProduct]);
 
   if (!isOpen) return null;
 
-  const handlePrintCashReceipt = () => {
-    const tot = (cashMemoLiters * cashMemoRate).toFixed(2);
+  const totalAmount = calcSaleAmount(cashMemoLiters, cashMemoRate);
+  const taxSplit = calcTaxSplit(totalAmount, 13.7);
+
+  const handleExecuteSaveAndPrint = async () => {
+    try {
+      if (billMode === 'CREDIT') {
+        // Record as credit bill in store
+        erpStore.recordCreditBill({
+          customer_id: selectedCustomerId,
+          vehicle_no: cashMemoVehicle.toUpperCase(),
+          product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
+          qty: cashMemoLiters,
+          rate: cashMemoRate,
+          slip_no: `POS-${cashMemoBillNo}`,
+          driver_name: driverName || 'Driver',
+        });
+      } else {
+        // Record in store cash/digital breakdown
+        const state = erpStore.getState();
+        if (billMode === 'UPI') {
+          erpStore.recordCardSettlement({
+            machine_name: 'PHONEPE / PAYTM QR',
+            batch_no: 'UPI-RETAIL',
+            slip_count: 1,
+            amount: totalAmount,
+          });
+        } else {
+          // Increment Cash On Hand
+          state.bankAccounts[0].balance += totalAmount;
+        }
+
+        // Deduct from tank stock
+        const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
+        tank.current_stock = Math.max(0, tank.current_stock - cashMemoLiters);
+        tank.book_stock = Math.max(0, tank.book_stock - cashMemoLiters);
+      }
+
+      showToast(`✔ Retail Bill #${cashMemoBillNo} Saved (Mode: ${billMode})! Printing 80mm slip...`);
+      handlePrintThermalSlip();
+      await loadAllErpData();
+      setCashMemoBillNo(`POS-${Date.now().toString().slice(-4)}`);
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handlePrintThermalSlip = () => {
     const is58mm = stationProfile.printerPaperWidth === '58mm';
     const paperWidth = is58mm ? 58 : 80;
     const bodyWidth = is58mm ? '200px' : '280px';
     const fontSize = is58mm ? '10px' : '11.5px';
     const titleSize = is58mm ? '13px' : '15px';
 
-    const qrImg = stationProfile.upiVpa
+    const customer = customers.find((c) => c.id === selectedCustomerId);
+
+    const qrImg = stationProfile.upiVpa && billMode !== 'CREDIT'
       ? `<div style="text-align: center; margin: 6px 0;">
-          <img src="${generateUpiQrUrl(stationProfile.upiVpa, stationProfile.stationName, Number(tot), `FUEL-${cashMemoBillNo}`)}" style="width: 100px; height: 100px;" alt="UPI QR"/>
-          <div style="font-size: 8.5px;">UPI: ${stationProfile.upiVpa}</div>
+          <img src="${generateUpiQrUrl(stationProfile.upiVpa, stationProfile.stationName, totalAmount, `FUEL-${cashMemoBillNo}`)}" style="width: 90px; height: 90px;" alt="UPI QR"/>
+          <div style="font-size: 8px;">UPI: ${stationProfile.upiVpa}</div>
          </div>`
       : '';
 
@@ -52,39 +134,53 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
       <div style="font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 0 auto; line-height: 1.35; color: #000;">
         <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
           <div style="font-size: ${titleSize}; font-weight: bold;">${stationProfile.stationName}</div>
-          <div style="font-size: 10.5px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
-          ${stationProfile.dealerCode ? `<div style="font-size: 9.5px;">RO Code: ${stationProfile.dealerCode}</div>` : ''}
-          <div style="font-size: 9.5px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
-          <div style="font-size: 9.5px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-size: 10px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+          ${stationProfile.dealerCode ? `<div style="font-size: 9px;">RO Code: ${stationProfile.dealerCode}</div>` : ''}
+          <div style="font-size: 9px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 9px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-weight: bold; margin-top: 3px; font-size: 11px;">*** ${billMode === 'CREDIT' ? 'FLEET CREDIT MEMO' : 'RETAIL CASH MEMO'} ***</div>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span>Memo No: ${cashMemoBillNo}</span>
-          <span>${getTodayErpDate()}</span>
+          <span>Bill No: ${cashMemoBillNo}</span>
+          <span>Date: ${getTodayErpDate()}</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span>Vehicle: ${cashMemoVehicle || 'WALK-IN'}</span>
-          <span>${new Date().toLocaleTimeString()}</span>
+          <span>Vehicle: <b>${cashMemoVehicle.toUpperCase() || 'WALK-IN'}</b></span>
+          <span>Time: ${new Date().toLocaleTimeString()}</span>
         </div>
+        ${billMode === 'CREDIT' && customer ? `<div style="font-size: 9.5px;">Account: ${customer.name}</div>` : ''}
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
         <div style="display: flex; justify-content: space-between; font-weight: bold;">
-          <span>${cashMemoProduct === 'MS' ? 'PETROL (MS)' : 'DIESEL (HSD)'}</span>
+          <span>${cashMemoProduct === 'MS' ? 'PETROL (MS BS-VI)' : 'DIESEL (HSD BS-VI)'}</span>
           <span>${cashMemoLiters.toFixed(2)} L</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span>Rate/L:</span>
-          <span>Rs ${cashMemoRate.toFixed(2)}</span>
+          <span>Rate per Litre:</span>
+          <span>₹ ${cashMemoRate.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #333;">
+          <span>Taxable Base:</span>
+          <span>₹ ${taxSplit.baseAmount.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #333;">
+          <span>State VAT (13.7%):</span>
+          <span>₹ ${taxSplit.taxAmount.toFixed(2)}</span>
         </div>
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
         <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13.5px;">
-          <span>TOTAL AMOUNT:</span>
-          <span>Rs ${tot}</span>
+          <span>NET PAYABLE:</span>
+          <span>₹ ${totalAmount.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
+          <span>Settlement Mode:</span>
+          <span><b>${billMode}</b></span>
         </div>
         ${qrImg}
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
-        <div style="text-align: center; font-size: 8.5px; margin-top: 6px;">
-          <div>*** CASH MEMO / RETAIL INVOICE ***</div>
+        <div style="text-align: center; font-size: 8.5px; margin-top: 4px;">
           <div>THANK YOU! VISIT AGAIN</div>
-          <div>SAVE FUEL - SAVE ENVIRONMENT</div>
+          <div>SAVE FUEL • SAVE NATURE • DRIVE SAFE</div>
+          <div>Powered by NSaiPetroSoft Cloud Forecourt</div>
         </div>
       </div>
     `;
@@ -93,149 +189,195 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
 
   return (
     <div className="win-modal-overlay">
-      <div className="win-form-dialog" style={{ width: '680px' }}>
+      <div className="win-form-dialog" style={{ width: '740px' }}>
         <div className="win-dialog-titlebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>🧾</span>
-            <span>Retail Cash Sale Memo (Thermal Receipt Generator)</span>
+            <span>⛽</span>
+            <span>Sale POS — Fast Retail Billing & Thermal Receipt [F2=Print, F4=Cash, F8=Credit]</span>
           </div>
           <button className="win-btn" onClick={onClose}>✕</button>
         </div>
-        <div className="win-dialog-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+
+        <div className="win-dialog-body" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
+          {/* Left: Input Form */}
           <div>
-            <div style={{ fontWeight: 700, marginBottom: '6px' }}>Cash Fuel Dispense Memo</div>
-            <div className="win-form-row">
-              <span className="win-label">Bill No</span>
-              <input type="text" className="win-input" value={cashMemoBillNo} onChange={(e) => setCashMemoBillNo(e.target.value)} style={{ flex: 1, fontWeight: 700 }} />
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+              <button
+                type="button"
+                className={`win-btn-classic ${billMode === 'CASH' ? 'win-btn-primary' : ''}`}
+                onClick={() => setBillMode('CASH')}
+                style={{ flex: 1, fontWeight: 700 }}
+              >
+                💵 Cash Mode (F4)
+              </button>
+              <button
+                type="button"
+                className={`win-btn-classic ${billMode === 'CREDIT' ? 'win-btn-primary' : ''}`}
+                onClick={() => setBillMode('CREDIT')}
+                style={{ flex: 1, fontWeight: 700 }}
+              >
+                📋 Credit Fleet (F8)
+              </button>
+              <button
+                type="button"
+                className={`win-btn-classic ${billMode === 'UPI' ? 'win-btn-primary' : ''}`}
+                onClick={() => setBillMode('UPI')}
+                style={{ flex: 1, fontWeight: 700 }}
+              >
+                📱 UPI / QR
+              </button>
             </div>
+
+            {billMode === 'CREDIT' && (
+              <div className="win-form-row">
+                <span className="win-label" style={{ width: '90px' }}>Customer</span>
+                <select
+                  className="win-select"
+                  value={selectedCustomerId}
+                  onChange={(e) => setSelectedCustomerId(Number(e.target.value))}
+                  style={{ flex: 1, fontWeight: 600 }}
+                >
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} (Bal: ₹{c.current_outstanding})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="win-form-row">
-              <span className="win-label">Vehicle No</span>
-              <input type="text" className="win-input" value={cashMemoVehicle} onChange={(e) => setCashMemoVehicle(e.target.value.toUpperCase())} style={{ flex: 1 }} />
+              <span className="win-label" style={{ width: '90px' }}>Vehicle No *</span>
+              <input
+                type="text"
+                className="win-input"
+                placeholder="GJ05AB1234"
+                value={cashMemoVehicle}
+                onChange={(e) => setCashMemoVehicle(e.target.value.toUpperCase())}
+                style={{ flex: 1, fontWeight: 700 }}
+              />
             </div>
+
             <div className="win-form-row">
-              <span className="win-label">Product</span>
+              <span className="win-label" style={{ width: '90px' }}>Fuel Grade</span>
               <select
                 className="win-select"
-                style={{ flex: 1, fontWeight: 600 }}
                 value={cashMemoProduct}
-                onChange={(e) => {
-                  const prod = e.target.value;
-                  setCashMemoProduct(prod);
-                  const rateItem = ratesList.find(p => prod === 'MS' ? (p.code === 'MS' || p.name.includes('Petrol')) : (p.code === 'HSD' || p.name.includes('Diesel')));
-                  const matched = salesReadings.find(r => prod === 'MS' ? r.item === 'Petrol' : r.item === 'Diesel');
-                  setCashMemoRate(rateItem?.rate || (matched ? matched.rate : 0));
-                }}
+                onChange={(e) => setCashMemoProduct(e.target.value)}
+                style={{ flex: 1, fontWeight: 700 }}
               >
-                <option value="MS">Motor Spirit (Petrol / MS)</option>
-                <option value="HSD">High Speed Diesel (HSD)</option>
+                <option value="MS">Motor Spirit (Petrol MS) - ₹102.65</option>
+                <option value="HSD">High Speed Diesel (HSD) - ₹94.50</option>
               </select>
             </div>
+
             <div className="win-form-row">
-              <span className="win-label">Rate / L (₹)</span>
+              <span className="win-label" style={{ width: '90px' }}>Sale Rate ₹</span>
               <input
                 type="number"
                 step="0.01"
                 className="win-input"
                 value={cashMemoRate}
                 onChange={(e) => setCashMemoRate(parseFloat(e.target.value) || 0)}
-                style={{ flex: 1, fontWeight: 700 }}
+                style={{ flex: 1 }}
               />
             </div>
+
             <div className="win-form-row">
-              <span className="win-label">Liters</span>
-              <input type="number" step="0.01" className="win-input" value={cashMemoLiters} onChange={(e) => setCashMemoLiters(parseFloat(e.target.value) || 0)} style={{ flex: 1, fontWeight: 700 }} />
+              <span className="win-label" style={{ width: '90px' }}>Fuel Litres *</span>
+              <input
+                type="number"
+                step="0.1"
+                className="win-input"
+                value={cashMemoLiters}
+                onChange={(e) => setCashMemoLiters(parseFloat(e.target.value) || 0)}
+                style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: '#0a246a' }}
+              />
             </div>
+
+            {/* Quick volume preset chips */}
+            <div style={{ display: 'flex', gap: '4px', margin: '6px 0 10px 95px' }}>
+              {[5, 10, 20, 50, 100].map((lit) => (
+                <button
+                  key={lit}
+                  type="button"
+                  className="win-btn-classic"
+                  onClick={() => setCashMemoLiters(lit)}
+                  style={{ fontSize: '10.5px', padding: '2px 6px' }}
+                >
+                  {lit} L
+                </button>
+              ))}
+            </div>
+
             <div className="win-form-row">
-              <span className="win-label">Total Amount</span>
-              <input type="text" className="win-input" readOnly value={`₹ ${(cashMemoLiters * cashMemoRate).toFixed(2)}`} style={{ flex: 1, fontWeight: 800, color: '#1565c0' }} />
+              <span className="win-label" style={{ width: '90px' }}>Driver / Note</span>
+              <input
+                type="text"
+                className="win-input"
+                placeholder="Driver name / slip note"
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                style={{ flex: 1 }}
+              />
             </div>
-            <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+
+            <div style={{ marginTop: '14px', display: 'flex', gap: '8px' }}>
               <button
                 type="button"
                 className="win-btn-classic win-btn-primary"
-                style={{ flex: 1, fontWeight: 700 }}
-                onClick={async () => {
-                  if (cashMemoLiters <= 0) {
-                    showToast('⚠ Please enter valid liters for Cash Memo');
-                    return;
-                  }
-                  try {
-                    const walkInCust = customers.find(c => c.name.toLowerCase().includes('walk') || c.name.toLowerCase().includes('cash')) || customers[0];
-                    if (walkInCust) {
-                      await createPaymentReceipt({
-                        customer_id: walkInCust.id,
-                        amount: cashMemoLiters * cashMemoRate,
-                        payment_mode: 'CASH',
-                        bank_name: 'CASH ON HAND',
-                        remarks: `Retail Cash Memo #${cashMemoBillNo} - ${cashMemoLiters}L ${cashMemoProduct} @ ${cashMemoRate} (Veh: ${cashMemoVehicle || 'WALK-IN'})`,
-                      });
-                    }
-                    showToast(`✔ Cash Memo #${cashMemoBillNo} recorded! Cash credited to Cash On Hand.`);
-                    handlePrintCashReceipt();
-                    await loadAllErpData();
-                  } catch (err: any) {
-                    showToast(`✔ Slip printed. Note: ${err.message}`);
-                    handlePrintCashReceipt();
-                  }
-                }}
+                onClick={handleExecuteSaveAndPrint}
+                style={{ flex: 1, height: '34px', fontSize: '13px', fontWeight: 700 }}
               >
-                💾 Save & Print Cash Memo
-              </button>
-              <button
-                type="button"
-                className="win-btn-classic"
-                onClick={handlePrintCashReceipt}
-                title="Print receipt without creating ledger entry"
-              >
-                🖨️ Print Slip
+                ⚡ Save & Print 80mm Slip (F2)
               </button>
             </div>
           </div>
 
-          {/* Thermal Paper Slip Preview */}
-          <div>
-            <div className="thermal-slip-box">
-              <div className="thermal-slip-header">
-                <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{stationProfile.stationName}</div>
-                <div style={{ fontSize: '10px', color: '#333' }}>{stationProfile.oilCompany} DEALER</div>
-                <div>{stationProfile.address ? `${stationProfile.address}, ` : ''}{stationProfile.city}, {stationProfile.state} - {stationProfile.pincode}</div>
-                <div>GSTIN: {stationProfile.gstin} {stationProfile.phone ? `| PH: ${stationProfile.phone}` : ''}</div>
-              </div>
-              <div className="thermal-slip-row"><span>Bill No: {cashMemoBillNo}</span><span>{getTodayErpDate()}</span></div>
-              <div className="thermal-slip-row"><span>Vehicle: {cashMemoVehicle || 'WALK-IN'}</span><span>{new Date().toLocaleTimeString()}</span></div>
+          {/* Right: Live 80mm Thermal Receipt Preview */}
+          <div style={{ background: '#f8f8f0', border: '1px solid #7f9db9', padding: '12px', borderRadius: '4px', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#555', textAlign: 'center', marginBottom: '8px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
+              Live 80mm Thermal Receipt Preview
+            </div>
+
+            <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: '1.4', color: '#000' }}>
+              <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13px' }}>{stationProfile.stationName}</div>
+              <div style={{ textAlign: 'center', fontSize: '10px' }}>{stationProfile.oilCompany} RETAIL OUTLET</div>
+              <div style={{ textAlign: 'center', fontSize: '9px' }}>{stationProfile.city} | GSTIN: {stationProfile.gstin}</div>
               <div style={{ borderBottom: '1px dashed #000', margin: '4px 0' }} />
-              <div className="thermal-slip-row">
-                <span>{cashMemoProduct === 'MS' ? 'PETROL (MS)' : 'DIESEL (HSD)'}</span>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Bill: {cashMemoBillNo}</span>
+                <span>{getTodayErpDate()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Veh: <b>{cashMemoVehicle.toUpperCase()}</b></span>
+                <span>Mode: {billMode}</span>
+              </div>
+              <div style={{ borderBottom: '1px dashed #000', margin: '4px 0' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                <span>{cashMemoProduct === 'MS' ? 'Petrol (MS)' : 'Diesel (HSD)'}</span>
                 <span>{cashMemoLiters.toFixed(2)} L</span>
               </div>
-              <div className="thermal-slip-row">
-                <span>Rate / L:</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Rate:</span>
                 <span>₹ {cashMemoRate.toFixed(2)}</span>
               </div>
               <div style={{ borderBottom: '1px dashed #000', margin: '4px 0' }} />
-              <div className="thermal-slip-row" style={{ fontWeight: 'bold', fontSize: '14px' }}>
-                <span>TOTAL:</span>
-                <span>₹ {(cashMemoLiters * cashMemoRate).toFixed(2)}</span>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', color: '#002b80' }}>
+                <span>TOTAL AMOUNT:</span>
+                <span>₹ {totalAmount.toFixed(2)}</span>
               </div>
-              <div className="thermal-slip-footer">
-                <div>THANK YOU! VISIT AGAIN</div>
-                <div>SAVE FUEL - SAVE ENVIRONMENT</div>
+              <div style={{ textAlign: 'center', fontSize: '9px', marginTop: '10px', color: '#666' }}>
+                *** THANK YOU! VISIT AGAIN ***
               </div>
             </div>
           </div>
         </div>
+
         <div className="win-dialog-footer">
-          <span className="hotkeys-hint-red">ESC=Exit</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button
-              type="button"
-              className="win-btn-classic win-btn-primary"
-              onClick={handlePrintCashReceipt}
-            >
-              🖨️ Print Thermal Cash Slip
-            </button>
-            <button className="win-btn-classic" onClick={onClose}>Close</button>
-          </div>
+          <span className="hotkeys-hint-red">F2=Save & Print | F4=Cash | F8=Credit | ESC=Exit</span>
+          <button className="win-btn-classic" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>

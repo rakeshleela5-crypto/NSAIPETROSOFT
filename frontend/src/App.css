@@ -132,6 +132,54 @@ body {
   border-color: #70c0e7;
 }
 
+/* Quick-Action Toolbar (Windows Classic Forecourt Desktop Chrome) */
+.win-quick-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: linear-gradient(180deg, #f0ede0 0%, #d8d4c8 100%);
+  border-bottom: 1px solid #7f9db9;
+  padding: 3px 6px;
+  overflow-x: auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+
+.win-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #111;
+  background: linear-gradient(180deg, #ffffff 0%, #ece9d8 100%);
+  border: 1px solid #7f9db9;
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  transition: all 0.1s ease-in-out;
+}
+
+.win-toolbar-btn:hover {
+  background: linear-gradient(180deg, #e5f1fb 0%, #cce5ff 100%);
+  border-color: #3399ff;
+}
+
+.win-toolbar-btn:active,
+.win-toolbar-btn.active {
+  background: #cce5ff;
+  border-color: #0066cc;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.win-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: #a0a0a0;
+  margin: 0 3px;
+}
+
 /* Top ERP Banner Ribbon (Welcome, Stamping, License, FY) */
 .win-ribbon-bar {
   height: 38px;

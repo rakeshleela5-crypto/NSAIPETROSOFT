@@ -36,6 +36,13 @@ export type DialogType =
   | 'crystalViewer'
   | 'selectCustomerBill'
   | 'backup'
+  | 'addProduct'
+  | 'bulkEditor'
+  | 'priceList'
+  | 'estimate'
+  | 'salesRegister'
+  | 'buildMis'
+  | 'nozzleStaffMaster'
   | null;
 
 export interface StationProfile {

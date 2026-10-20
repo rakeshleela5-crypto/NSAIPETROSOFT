@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type { StationProfile } from '../models';
 import { getTodayErpDate } from '../utils/dateUtils';
 import { resetOperationsToCleanSlate } from '../api/client';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
+import { erpStore } from '../store/erpStore';
+import { exportToCsv } from '../utils/exportCsv';
 
 interface ControlPanelModalProps {
   isOpen: boolean;
@@ -37,11 +39,122 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
   requestManagerAuthorization,
   loadAllErpData,
 }) => {
-  const [controlPanelTab, setControlPanelTab] = useState<'shift' | 'profile' | 'maintenance'>('shift');
+  const [controlPanelTab, setControlPanelTab] = useState<'shift' | 'profile' | 'backup' | 'cleaning' | 'companies'>('shift');
   const [profileForm, setProfileForm] = useState<StationProfile>(stationProfile);
+
+  // Backup & Restore states
+  const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Cleaning two-step states
+  const [cleanConfirmText, setCleanConfirmText] = useState<string>('');
+  const [keepMasters, setKeepMasters] = useState<boolean>(true);
+  const [isCleaning, setIsCleaning] = useState<boolean>(false);
+
+  // Multi-company / FY states
+  const [selectedStationBranch, setSelectedStationBranch] = useState<string>(stationProfile.stationName);
+  const [selectedFinancialYear, setSelectedFinancialYear] = useState<string>('2026-27');
 
   if (!isOpen) return null;
 
+  // 1. Download Backup JSON with Adler-32 Checksum
+  const handleDownloadBackup = () => {
+    try {
+      const backup = erpStore.exportBackupJson();
+      const blob = new Blob([backup.jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = backup.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`✔ Database backup downloaded! Checksum: ${backup.checksum}`);
+    } catch (err: any) {
+      showToast(`❌ Backup creation failed: ${err.message}`);
+    }
+  };
+
+  // 2. Restore Database JSON with Rollback Snapshot
+  const handleFileRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        setRestoreError(null);
+        setRestoreStatus('Validating backup schema & checksum...');
+        const content = evt.target?.result as string;
+        const result = erpStore.restoreBackupJson(content);
+        setRestoreStatus(`✔ Successfully restored ${result.recordsRestored} operational records. A rollback snapshot has been preserved.`);
+        showToast('✔ ERP Database successfully restored from backup!');
+        await loadAllErpData();
+      } catch (err: any) {
+        setRestoreError(`Restore failed: ${err.message}`);
+        setRestoreStatus(null);
+        showToast(`❌ Database restore error: ${err.message}`);
+      }
+    };
+    reader.onerror = () => {
+      setRestoreError('Failed to read the selected backup file.');
+    };
+    reader.readAsText(file);
+  };
+
+  // 3. Rollback Restore
+  const handleRollbackSnapshot = async () => {
+    try {
+      const snapshot = localStorage.getItem('nsaipetrosoft_erp_state_v2_pre_restore_snapshot');
+      if (!snapshot) {
+        showToast('ℹ No previous rollback snapshot found.');
+        return;
+      }
+      erpStore.restoreBackupJson(snapshot);
+      showToast('✔ Rollback successful: Reverted to state prior to last restore.');
+      await loadAllErpData();
+    } catch (err: any) {
+      showToast(`❌ Rollback error: ${err.message}`);
+    }
+  };
+
+  // 4. Two-step Cleaning Data Purge
+  const handleExecuteClean = () => {
+    if (cleanConfirmText.trim() !== 'DELETE') {
+      showToast('⚠ You must type "DELETE" exactly to confirm data purge.');
+      return;
+    }
+    requestManagerAuthorization('Permanently purge operational transaction data', async () => {
+      setIsCleaning(true);
+      try {
+        // Automatically download backup first
+        handleDownloadBackup();
+
+        // Clean local transactional tables
+        erpStore.cleanSlateDatabase(keepMasters);
+
+        // Also clean remote database if online
+        try {
+          await resetOperationsToCleanSlate();
+        } catch (backendErr) {
+          console.warn('Backend clean slate skipped or offline:', backendErr);
+        }
+
+        showToast('✔ Operational database cleaned. Pre-clean backup downloaded.');
+        setCleanConfirmText('');
+        await loadAllErpData();
+        onClose();
+      } catch (err: any) {
+        showToast(`❌ Error cleaning database: ${err.message}`);
+      } finally {
+        setIsCleaning(false);
+      }
+    });
+  };
+
+  // 5. Thermal Shift Audit Handover Sheet
   const handlePrintShiftAuditSheet = () => {
     const is58mm = stationProfile.printerPaperWidth === '58mm';
     const paperWidth = is58mm ? 58 : 80;
@@ -89,13 +202,38 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
     printThermalReceiptHtml(html, { paperWidthMm: paperWidth });
   };
 
+  // 6. Export BI Ready JSON
+  const handleExportBiJson = () => {
+    const state = erpStore.getState();
+    const biData = {
+      exportTimestamp: new Date().toISOString(),
+      station: stationProfile,
+      financialYear: selectedFinancialYear,
+      kpis: erpStore.getDashboardKPIs(),
+      tanks: state.tanks,
+      nozzles: state.nozzles,
+      customers: state.customers,
+      salesCount: state.salesEntries.length,
+      creditBillsCount: state.creditBills.length,
+      purchasesCount: state.purchases.length,
+    };
+    const blob = new Blob([JSON.stringify(biData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `NSAIPETROSOFT_BI_Dataset_${getTodayErpDate()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✔ BI-Ready JSON dataset exported successfully!');
+  };
+
   return (
     <div className="win-modal-overlay">
-      <div className="win-form-dialog" style={{ width: '740px' }}>
+      <div className="win-form-dialog" style={{ width: '800px' }}>
         <div className="win-dialog-titlebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>🎛️</span>
-            <span>Station Shift Management & Dealership Profile Control Panel</span>
+            <span>Station Control Panel: Shift, Profile, Backup, Restore & Maintenance</span>
           </div>
           <button className="win-btn" onClick={onClose}>✕</button>
         </div>
@@ -105,7 +243,7 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
             <button
               type="button"
               style={{
-                padding: '6px 16px',
+                padding: '6px 14px',
                 border: '1px solid #7f9db9',
                 borderBottom: controlPanelTab === 'shift' ? '2px solid #ece9d8' : '1px solid #7f9db9',
                 background: controlPanelTab === 'shift' ? '#ece9d8' : '#d4d0c8',
@@ -119,12 +257,12 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
               }}
               onClick={() => setControlPanelTab('shift')}
             >
-              ⚙️ Shift Operations & Dispenser Locks
+              ⚙️ Shift Operations
             </button>
             <button
               type="button"
               style={{
-                padding: '6px 16px',
+                padding: '6px 14px',
                 border: '1px solid #7f9db9',
                 borderBottom: controlPanelTab === 'profile' ? '2px solid #ece9d8' : '1px solid #7f9db9',
                 background: controlPanelTab === 'profile' ? '#ece9d8' : '#d4d0c8',
@@ -141,27 +279,67 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                 setControlPanelTab('profile');
               }}
             >
-              🏢 Station Outlet Profile & Dealership Settings
+              🏢 Station Profile
             </button>
             <button
               type="button"
               style={{
-                padding: '6px 16px',
+                padding: '6px 14px',
                 border: '1px solid #7f9db9',
-                borderBottom: controlPanelTab === 'maintenance' ? '2px solid #ece9d8' : '1px solid #7f9db9',
-                background: controlPanelTab === 'maintenance' ? '#ece9d8' : '#d4d0c8',
-                fontWeight: controlPanelTab === 'maintenance' ? 700 : 400,
+                borderBottom: controlPanelTab === 'backup' ? '2px solid #ece9d8' : '1px solid #7f9db9',
+                background: controlPanelTab === 'backup' ? '#ece9d8' : '#d4d0c8',
+                fontWeight: controlPanelTab === 'backup' ? 700 : 400,
                 cursor: 'pointer',
                 outline: 'none',
                 borderTopLeftRadius: '3px',
                 borderTopRightRadius: '3px',
-                marginBottom: controlPanelTab === 'maintenance' ? '-2px' : '0',
+                marginBottom: controlPanelTab === 'backup' ? '-2px' : '0',
+                fontSize: '11px',
+                color: '#1565c0',
+              }}
+              onClick={() => setControlPanelTab('backup')}
+            >
+              💾 Backup & Restore DB
+            </button>
+            <button
+              type="button"
+              style={{
+                padding: '6px 14px',
+                border: '1px solid #7f9db9',
+                borderBottom: controlPanelTab === 'cleaning' ? '2px solid #ece9d8' : '1px solid #7f9db9',
+                background: controlPanelTab === 'cleaning' ? '#ece9d8' : '#d4d0c8',
+                fontWeight: controlPanelTab === 'cleaning' ? 700 : 400,
+                cursor: 'pointer',
+                outline: 'none',
+                borderTopLeftRadius: '3px',
+                borderTopRightRadius: '3px',
+                marginBottom: controlPanelTab === 'cleaning' ? '-2px' : '0',
                 fontSize: '11px',
                 color: '#c0392b',
               }}
-              onClick={() => setControlPanelTab('maintenance')}
+              onClick={() => setControlPanelTab('cleaning')}
             >
-              🧹 Clean Operational Baseline
+              🧹 Cleaning / Clean Slate
+            </button>
+            <button
+              type="button"
+              style={{
+                padding: '6px 14px',
+                border: '1px solid #7f9db9',
+                borderBottom: controlPanelTab === 'companies' ? '2px solid #ece9d8' : '1px solid #7f9db9',
+                background: controlPanelTab === 'companies' ? '#ece9d8' : '#d4d0c8',
+                fontWeight: controlPanelTab === 'companies' ? 700 : 400,
+                cursor: 'pointer',
+                outline: 'none',
+                borderTopLeftRadius: '3px',
+                borderTopRightRadius: '3px',
+                marginBottom: controlPanelTab === 'companies' ? '-2px' : '0',
+                fontSize: '11px',
+                color: '#2e7d32',
+              }}
+              onClick={() => setControlPanelTab('companies')}
+            >
+              🌐 Sync, Share & Multi-Company
             </button>
           </div>
 
@@ -493,43 +671,246 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
             </form>
           )}
 
-          {/* TAB 3: Operational Data Reset */}
-          {controlPanelTab === 'maintenance' && (
+          {/* TAB 3: Backup & Restore DB */}
+          {controlPanelTab === 'backup' && (
             <div>
               <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '14px', marginBottom: '14px' }}>
-                <div style={{ fontWeight: 700, color: '#c0392b', fontSize: '13px', marginBottom: '8px', borderBottom: '1px solid #d4d0c8', paddingBottom: '4px' }}>
-                  ⚠ Operational Clean Baseline Reset (Purge Demo Data)
+                <div style={{ fontWeight: 700, color: '#1565c0', fontSize: '13px', marginBottom: '8px', borderBottom: '1px solid #d4d0c8', paddingBottom: '4px' }}>
+                  💾 Complete ERP Database Serialization, Backup & Restore
                 </div>
-                <div style={{ fontSize: '11px', color: '#444', lineHeight: '1.6', marginBottom: '12px' }}>
-                  This operation will permanently purge all historical demo shifts, meter sales, credit slips, cash vouchers, and expenses from the live PostgreSQL database on Railway.
-                  <br />
-                  <br />
-                  ✅ <b>Preserved Masters:</b> Fuel Products (MS, HSD, Lube), Underground Tanks, Dispensing Units & Nozzles, Fleet Customers list, and Bank Accounts structure.
-                  <br />
-                  🔄 <b>Reset Operational Balances:</b> Today's sales will become ₹ 0.00, customer outstanding balances will reset to ₹ 0.00, bank balances will reset to ₹ 0.00, and a fresh <b>Shift #00001 (Status: Open)</b> will be initialized.
-                  <br />
-                  🔒 <b>Security:</b> Requires Manager PIN authorization (default: <code>{stationProfile.managerPin || '1234'}</code>).
+                <div style={{ fontSize: '11.5px', color: '#444', lineHeight: '1.6', marginBottom: '14px' }}>
+                  Export your entire petrol pump database (tanks, meters, fuel rates, credit bills, ledger accounts, cashbook, and receipts) into a checksum-verified JSON file. You can restore this backup on any computer running Cloudflare Pages or desktop Chrome without loss of data.
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  {/* Backup Card */}
+                  <div style={{ border: '1px solid #90caf9', background: '#f0f7ff', padding: '12px', borderRadius: '4px' }}>
+                    <div style={{ fontWeight: 700, color: '#0d47a1', marginBottom: '6px', fontSize: '12px' }}>
+                      📥 Create Full System Backup
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#555', marginBottom: '10px' }}>
+                      Generates a timestamped JSON file (<code>NSaiPetroSoft_Backup_YYYY-MM-DD.json</code>) with an Adler-32 checksum to verify payload integrity.
+                    </div>
+                    <button
+                      type="button"
+                      className="win-btn-classic win-btn-primary"
+                      style={{ width: '100%', height: '34px', fontSize: '11.5px', fontWeight: 700 }}
+                      onClick={handleDownloadBackup}
+                    >
+                      💾 Download Checksummed Backup
+                    </button>
+                  </div>
+
+                  {/* Restore Card */}
+                  <div style={{ border: '1px solid #a5d6a7', background: '#f1f8e9', padding: '12px', borderRadius: '4px' }}>
+                    <div style={{ fontWeight: 700, color: '#1b5e20', marginBottom: '6px', fontSize: '12px' }}>
+                      📤 Restore Database from JSON
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#555', marginBottom: '10px' }}>
+                      Upload a previously exported <code>.json</code> backup. An automatic rollback snapshot is preserved before applying changes.
+                    </div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept=".json"
+                      onChange={handleFileRestore}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ width: '100%', height: '34px', fontSize: '11.5px', fontWeight: 700, background: '#2e7d32', color: '#fff', borderColor: '#1b5e20' }}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      📂 Select Backup File & Restore
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status / Error Messages */}
+                {restoreStatus && (
+                  <div style={{ marginTop: '12px', padding: '8px 12px', background: '#e8f5e9', border: '1px solid #81c784', color: '#1b5e20', fontSize: '11.5px', borderRadius: '3px' }}>
+                    {restoreStatus}
+                  </div>
+                )}
+                {restoreError && (
+                  <div style={{ marginTop: '12px', padding: '8px 12px', background: '#ffebee', border: '1px solid #e57373', color: '#b71c1c', fontSize: '11.5px', borderRadius: '3px' }}>
+                    {restoreError}
+                  </div>
+                )}
+
+                {/* Rollback Action */}
+                <div style={{ marginTop: '16px', paddingTop: '10px', borderTop: '1px dashed #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', color: '#666' }}>
+                    Need to revert a recent restore? A safety snapshot is kept automatically.
+                  </span>
                   <button
                     type="button"
                     className="win-btn-classic"
-                    style={{ background: '#d32f2f', color: '#fff', borderColor: '#b71c1c', fontWeight: 700, padding: '8px 16px', fontSize: '12px', cursor: 'pointer' }}
-                    onClick={() => {
-                      requestManagerAuthorization('Purge all demo transactions and reset to clean zero baseline', async () => {
-                        try {
-                          const res = await resetOperationsToCleanSlate();
-                          showToast(`✔ ${res.message}`);
-                          onClose();
-                          await loadAllErpData();
-                        } catch (err: any) {
-                          showToast(`⚠ Error resetting operations: ${err.message}`);
-                        }
-                      });
-                    }}
+                    style={{ fontSize: '11px', color: '#d32f2f' }}
+                    onClick={handleRollbackSnapshot}
                   >
-                    🧹 Purge Demo Data & Start Clean Baseline
+                    ↩ Rollback to Pre-Restore Snapshot
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Cleaning & Data Purge */}
+          {controlPanelTab === 'cleaning' && (
+            <div>
+              <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '14px', marginBottom: '14px' }}>
+                <div style={{ fontWeight: 700, color: '#c0392b', fontSize: '13px', marginBottom: '8px', borderBottom: '1px solid #d4d0c8', paddingBottom: '4px' }}>
+                  ⚠ Strict Two-Step Data Cleaning & Operational Reset
+                </div>
+                <div style={{ fontSize: '11px', color: '#444', lineHeight: '1.6', marginBottom: '12px' }}>
+                  This operation resets the transaction ledgers to an initial clean operational baseline. All historical shifts, meter sales, credit slips, cash vouchers, and expenses will be purged.
+                </div>
+
+                <div style={{ background: '#fff3cd', border: '1px solid #ffeeba', padding: '10px', borderRadius: '4px', marginBottom: '12px', fontSize: '11.5px' }}>
+                  <div style={{ fontWeight: 700, color: '#856404', marginBottom: '4px' }}>🛡️ Safety Guardrails:</div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={keepMasters}
+                      onChange={(e) => setKeepMasters(e.target.checked)}
+                    />
+                    Preserve Master Records (Tanks, Customer Fleet, Dispenser Nozzles, Lubricant Catalog & Bank Accounts)
+                  </label>
+                  <div style={{ fontSize: '10.5px', color: '#666', marginTop: '4px', marginLeft: '22px' }}>
+                    Recommended: Keeps your pump infrastructure intact while setting customer balances and sales tallies to ₹ 0.00.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
+                  <button
+                    type="button"
+                    className="win-btn-classic"
+                    style={{ background: '#e3f2fd', color: '#0d47a1', borderColor: '#90caf9', fontWeight: 700, padding: '6px 14px' }}
+                    onClick={handleDownloadBackup}
+                  >
+                    1. Download Safety Backup First 📥
+                  </button>
+                </div>
+
+                <div style={{ background: '#fafafa', border: '1px solid #e0e0e0', padding: '12px', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#b71c1c', marginBottom: '6px' }}>
+                    2. Type <span style={{ background: '#ffcdd2', padding: '1px 5px', borderRadius: '2px', fontFamily: 'monospace' }}>DELETE</span> to unlock purge:
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="win-input"
+                      placeholder="Type DELETE in capital letters"
+                      value={cleanConfirmText}
+                      onChange={(e) => setCleanConfirmText(e.target.value)}
+                      style={{ width: '260px', fontWeight: 700, letterSpacing: '1px' }}
+                    />
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      disabled={cleanConfirmText.trim() !== 'DELETE' || isCleaning}
+                      style={{
+                        background: cleanConfirmText.trim() === 'DELETE' ? '#d32f2f' : '#e0e0e0',
+                        color: cleanConfirmText.trim() === 'DELETE' ? '#fff' : '#888',
+                        borderColor: cleanConfirmText.trim() === 'DELETE' ? '#b71c1c' : '#ccc',
+                        fontWeight: 700,
+                        padding: '6px 16px',
+                        cursor: cleanConfirmText.trim() === 'DELETE' ? 'pointer' : 'not-allowed',
+                      }}
+                      onClick={handleExecuteClean}
+                    >
+                      {isCleaning ? 'Cleaning Data...' : '🚨 Confirm & Purge Transactions'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: Sync, Share & Multi-Company */}
+          {controlPanelTab === 'companies' && (
+            <div>
+              <div style={{ background: '#fff', border: '1px solid #7f9db9', padding: '14px', marginBottom: '14px' }}>
+                <div style={{ fontWeight: 700, color: '#2e7d32', fontSize: '13px', marginBottom: '8px', borderBottom: '1px solid #d4d0c8', paddingBottom: '4px' }}>
+                  🌐 Multi-Station Forecourt Profile Switcher & Business Intelligence Exports
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#444', lineHeight: '1.6', marginBottom: '12px' }}>
+                  Manage multiple retail pump outlets or switch financial years. Export standardized BI datasets for PowerBI, Excel Pivot, or CA tax auditing.
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '120px' }}>Active Forecourt</span>
+                    <select
+                      className="win-select"
+                      value={selectedStationBranch}
+                      onChange={(e) => {
+                        setSelectedStationBranch(e.target.value);
+                        showToast(`Switched active station profile to: ${e.target.value}`);
+                      }}
+                      style={{ flex: 1, fontWeight: 700 }}
+                    >
+                      <option value={stationProfile.stationName}>{stationProfile.stationName} (Main Branch)</option>
+                      <option value="SHREE AMBICA FUELS - HIGHWAY">SHREE AMBICA FUELS (Highway Branch #2)</option>
+                      <option value="SAI SERVICE STATION - CITY OUTLET">SAI SERVICE STATION (City Forecourt #3)</option>
+                    </select>
+                  </div>
+
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ minWidth: '110px' }}>Financial Year</span>
+                    <select
+                      className="win-select"
+                      value={selectedFinancialYear}
+                      onChange={(e) => {
+                        setSelectedFinancialYear(e.target.value);
+                        showToast(`Selected Financial Year: ${e.target.value}`);
+                      }}
+                      style={{ flex: 1, fontWeight: 700 }}
+                    >
+                      <option value="2026-27">FY 2026-27 (Current Active)</option>
+                      <option value="2025-26">FY 2025-26 (Audited / Closed)</option>
+                      <option value="2024-25">FY 2024-25 (Historical Archive)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid #c8e6c9', background: '#f1f8e9', padding: '12px', borderRadius: '4px' }}>
+                  <div style={{ fontWeight: 700, color: '#2e7d32', marginBottom: '6px', fontSize: '12px' }}>
+                    📊 Multi-Format Export Utilities (Excel / CSV / BI-Ready JSON)
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ background: '#1b5e20', color: '#fff', borderColor: '#0d3813', fontWeight: 700, padding: '6px 14px' }}
+                      onClick={() => {
+                        const state = erpStore.getState();
+                        exportToCsv(
+                          `NSAIPETROSOFT_Full_Station_Ledger_${getTodayErpDate()}`,
+                          ['Type', 'Identifier', 'Date', 'Entity / Customer', 'Product', 'Quantity / Volume', 'Total Amount (INR)'],
+                          [
+                            ...state.creditBills.map((b) => ['CREDIT_SALE', b.bill_no, b.date, b.customer_name, b.product, b.qty, b.amount]),
+                            ...state.purchases.map((p) => ['PURCHASE', p.invoice_no, p.date, p.dealer_name, p.product_name, p.qty_kl * 1000, p.final_amount]),
+                            ...state.paymentReceipts.map((r) => ['RECEIPT', r.receipt_no, r.date, r.customer_name, r.payment_mode, 1, r.amount]),
+                            ...state.expenses.map((e) => ['EXPENSE', `#${e.id}`, e.date, e.category, e.narration || '', 1, e.amount]),
+                          ]
+                        );
+                        showToast('✔ Complete station transactional register exported to Excel CSV!');
+                      }}
+                    >
+                      📥 Export Multi-Ledger Excel (.csv)
+                    </button>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ background: '#0d47a1', color: '#fff', borderColor: '#072458', fontWeight: 700, padding: '6px 14px' }}
+                      onClick={handleExportBiJson}
+                    >
+                      📑 Export BI-Ready JSON
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

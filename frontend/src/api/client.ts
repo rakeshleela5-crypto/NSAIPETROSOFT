@@ -9,6 +9,32 @@ export const API_BASE_URL = sanitizedUrl
     : `https://${sanitizedUrl}`
   : 'https://nsaipetrosoft-production.up.railway.app';
 
+/**
+ * Executes a fetch request with a strict AbortController timeout (default 2500ms).
+ * Prevents UI preloader deadlocks on Cloudflare Pages when the Railway backend is asleep/down.
+ */
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 2500
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error(`Forecourt API request timed out after ${timeoutMs}ms (${url})`);
+    }
+    throw err;
+  }
+}
 
 export type * from '../models';
 import type { StationProfile } from '../models';
@@ -27,7 +53,7 @@ export interface VerifyPinResponse {
 }
 
 export async function verifyManagerPinApi(pin: string, actionTitle?: string): Promise<VerifyPinResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/auth/verify-pin`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/auth/verify-pin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pin, action_title: actionTitle }),
@@ -54,7 +80,7 @@ export interface ThermalSlipResponse {
 }
 
 export async function fetchCreditSaleThermalSlip(saleId: number): Promise<ThermalSlipResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}/thermal-slip`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}/thermal-slip`);
   if (!res.ok) throw new Error(`Fetch thermal slip failed: ${res.status}`);
   return res.json();
 }
@@ -71,7 +97,7 @@ export interface HealthResponse {
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_BASE_URL}/health`);
+  const response = await fetchWithTimeout(`${API_BASE_URL}/health`);
   if (!response.ok) {
     throw new Error(`Health check failed with status: ${response.status}`);
   }
@@ -139,7 +165,7 @@ export interface DashboardResponse {
 }
 
 export async function fetchDashboard(): Promise<DashboardResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/dashboard`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/dashboard`);
   if (!res.ok) throw new Error(`Dashboard API failed: ${res.status}`);
   return res.json();
 }
@@ -169,13 +195,13 @@ export interface RatesResponse {
 }
 
 export async function fetchRates(): Promise<RatesResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/rates`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/rates`);
   if (!res.ok) throw new Error(`Rates API failed: ${res.status}`);
   return res.json();
 }
 
 export async function updateRate(productId: number, rate: number): Promise<{ message: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/rates`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/rates`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ product_id: productId, rate }),
@@ -210,7 +236,7 @@ export interface ShiftDetailsResponse {
 }
 
 export async function fetchCurrentShift(): Promise<ShiftDetailsResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/shifts/current`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/shifts/current`);
   if (!res.ok) throw new Error(`Current shift API failed: ${res.status}`);
   return res.json();
 }
@@ -230,7 +256,7 @@ export async function saveShiftMeters(data: {
     split_rate?: number;
   }[];
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/shifts/save`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/shifts/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -263,7 +289,7 @@ export interface CreditSaleItem {
 }
 
 export async function fetchCreditSales(): Promise<CreditSaleItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/credit-sales`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/credit-sales`);
   if (!res.ok) throw new Error(`Credit sales API failed: ${res.status}`);
   return res.json();
 }
@@ -285,7 +311,7 @@ export async function createCreditSale(data: {
   manager_override_pin?: string;
   remarks?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/credit-sales`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/credit-sales`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -298,7 +324,7 @@ export async function createCreditSale(data: {
 }
 
 export async function deleteCreditSale(saleId: number): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -329,7 +355,7 @@ export interface CustomerFull {
 }
 
 export async function fetchCustomers(): Promise<CustomerFull[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/customers`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers`);
   if (!res.ok) throw new Error(`Customers API failed: ${res.status}`);
   return res.json();
 }
@@ -345,7 +371,7 @@ export async function createCustomer(data: {
   credit_limit?: number;
   bill_period?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/customers`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -355,7 +381,7 @@ export async function createCustomer(data: {
 }
 
 export async function addVehicle(customerId: number, vehicleNo: string): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/vehicles`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/vehicles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ customer_id: customerId, vehicle_no: vehicleNo }),
@@ -383,7 +409,7 @@ export interface DipRegisterItem {
 }
 
 export async function fetchDips(): Promise<DipRegisterItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/dips`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/dips`);
   if (!res.ok) throw new Error(`Dips API failed: ${res.status}`);
   return res.json();
 }
@@ -397,7 +423,7 @@ export async function createTankDip(data: {
   closing_stock: number;
   notes?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/dips`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/dips`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -434,7 +460,7 @@ export async function calculateSettlement(data: {
   gap_amount: number;
   status: string;
 }> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/settlements/calculate`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/settlements/calculate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -457,7 +483,7 @@ export async function saveShiftSettlement(data: {
   actual_cash: number;
   gap_amount: number;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/settlements/save`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/settlements/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -483,7 +509,7 @@ export interface ShiftSettlementItem {
 }
 
 export async function fetchShiftSettlements(): Promise<ShiftSettlementItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/settlements`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/settlements`);
   if (!res.ok) throw new Error(`Settlements history API failed: ${res.status}`);
   return res.json();
 }
@@ -509,7 +535,7 @@ export interface PurchaseHistoryItem {
 }
 
 export async function fetchPurchases(): Promise<PurchaseHistoryItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/purchases`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/purchases`);
   if (!res.ok) throw new Error(`Purchases API failed: ${res.status}`);
   return res.json();
 }
@@ -535,7 +561,7 @@ export async function createPurchase(data: {
   tcs_amount?: number;
   freight?: number;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/purchases`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/purchases`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -548,7 +574,7 @@ export async function createPurchase(data: {
 }
 
 export async function deletePurchase(purchaseId: number): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/purchases/${purchaseId}`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/purchases/${purchaseId}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -562,43 +588,43 @@ export async function deletePurchase(purchaseId: number): Promise<any> {
 // Reports: DSR, VAT, Profit
 // ---------------------------------------------------------------------------
 export async function fetchDsrReport(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/dsr`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/dsr`);
   if (!res.ok) throw new Error(`DSR Report API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchVatSummary(): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/vat-summary`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/vat-summary`);
   if (!res.ok) throw new Error(`VAT Summary API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchProfitSummary(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/profit-summary`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/profit-summary`);
   if (!res.ok) throw new Error(`Profit Summary API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchTdsSummary(): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/tds-summary`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/tds-summary`);
   if (!res.ok) throw new Error(`TDS Summary API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchDealerCommission(): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/dealer-commission`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/dealer-commission`);
   if (!res.ok) throw new Error(`Dealer Commission API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchLfrSummary(): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/lfr-summary`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/lfr-summary`);
   if (!res.ok) throw new Error(`LFR Summary API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchProfitLossSummary(): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/profit-loss`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/profit-loss`);
   if (!res.ok) throw new Error(`Profit Loss API failed: ${res.status}`);
   return res.json();
 }
@@ -608,7 +634,7 @@ export async function fetchProfitLossSummary(): Promise<any> {
 // Expenses, Transfers, Customer Statements, Stamping
 // ---------------------------------------------------------------------------
 export async function fetchExpenses(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/expenses`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/expenses`);
   if (!res.ok) throw new Error(`Expenses API failed: ${res.status}`);
   return res.json();
 }
@@ -619,7 +645,7 @@ export async function createExpense(data: {
   narration?: string;
   paid_to?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/expenses`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/expenses`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -629,7 +655,7 @@ export async function createExpense(data: {
 }
 
 export async function deleteExpense(expenseId: number): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/expenses/${expenseId}`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/expenses/${expenseId}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -645,7 +671,7 @@ export async function createTransfer(data: {
   amount: number;
   remarks?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/transfers`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/transfers`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -655,19 +681,19 @@ export async function createTransfer(data: {
 }
 
 export async function fetchCustomerStatement(customerId: number): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/customers/${customerId}/statement`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}/statement`);
   if (!res.ok) throw new Error(`Statement API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchStampingReminders(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/stamping-reminders`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/stamping-reminders`);
   if (!res.ok) throw new Error(`Stamping API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchPayments(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/payments`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/payments`);
   if (!res.ok) throw new Error(`Payments API failed: ${res.status}`);
   return res.json();
 }
@@ -680,7 +706,7 @@ export async function createPaymentReceipt(data: {
   cheque_no?: string;
   remarks?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/payments`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/payments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -690,7 +716,7 @@ export async function createPaymentReceipt(data: {
 }
 
 export async function deletePaymentReceipt(paymentId: number): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/payments/${paymentId}`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/payments/${paymentId}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -705,7 +731,7 @@ export async function createBankAccount(data: {
   account_type?: string;
   balance?: number;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/bank-accounts`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/bank-accounts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -720,7 +746,7 @@ export async function createCardSettlement(data: {
   slip_count: number;
   amount: number;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/card-settlements`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/card-settlements`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -774,19 +800,19 @@ export interface CreateBackupResponse {
 }
 
 export async function fetchBackupStatus(): Promise<BackupStatusResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/backups/status`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/backups/status`);
   if (!res.ok) throw new Error(`Backup status API failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchBackupsList(): Promise<BackupItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/backups`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/backups`);
   if (!res.ok) throw new Error(`Backups list API failed: ${res.status}`);
   return res.json();
 }
 
 export async function triggerCreateBackup(): Promise<CreateBackupResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/backups/create`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/backups/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   });
@@ -803,7 +829,7 @@ export function getMasterExcelDownloadUrl(): string {
 }
 
 export async function resetOperationsToCleanSlate(): Promise<{ status: string; message: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/system/reset-operations?confirm=CONFIRM_CLEAN_SLATE`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/system/reset-operations?confirm=CONFIRM_CLEAN_SLATE`, {
     method: 'POST',
   });
   if (!res.ok) throw new Error(`Reset operations failed: ${res.status}`);
@@ -823,7 +849,7 @@ export interface DipCalculationResult {
 }
 
 export async function calculateDipVolumeApi(tankId: number, dipCm: number): Promise<DipCalculationResult> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/calculate-dip?dip_cm=${dipCm}`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/calculate-dip?dip_cm=${dipCm}`);
   if (!res.ok) throw new Error(`Calculate dip failed: ${res.status}`);
   return res.json();
 }
@@ -852,7 +878,7 @@ export interface DensityVerificationResult {
 }
 
 export async function verifyTankerDensityApi(payload: DensityVerificationRequest): Promise<DensityVerificationResult> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/purchases/verify-density`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/purchases/verify-density`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -873,7 +899,7 @@ export interface ToggleBlockResult {
 }
 
 export async function toggleCustomerBlockApi(customerId: number): Promise<ToggleBlockResult> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/customers/${customerId}/toggle-block`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}/toggle-block`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
   });
@@ -885,7 +911,7 @@ export async function toggleCustomerBlockApi(customerId: number): Promise<Toggle
 // Store / Station Profile Settings API (Cloud Database Sync)
 // ---------------------------------------------------------------------------
 export async function fetchStationProfileApi(): Promise<StationProfile> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/station-profile`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`);
   if (!res.ok) throw new Error(`Fetch station profile failed: ${res.status}`);
   const data = await res.json();
   return {
@@ -923,7 +949,7 @@ export async function saveStationProfileApi(profile: StationProfile): Promise<an
     printer_paper_width: profile.printerPaperWidth || '80mm',
     manager_pin: profile.managerPin || '1234',
   };
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/station-profile`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(payload),
@@ -945,7 +971,7 @@ export async function recordMeterSwapApi(
     manager_pin: string;
   }
 ): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}/meter-swap`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}/meter-swap`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
@@ -958,7 +984,7 @@ export async function recordMeterSwapApi(
 }
 
 export async function fetchMeterSwapsApi(nozzleId: number): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}/meter-swaps`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}/meter-swaps`);
   if (!res.ok) throw new Error(`Fetch meter swaps failed: ${res.status}`);
   return res.json();
 }
@@ -967,7 +993,7 @@ export async function fetchMeterSwapsApi(nozzleId: number): Promise<any[]> {
 // Underground Tank Strapping / Calibration Chart API
 // ---------------------------------------------------------------------------
 export async function fetchTankStrappingChartApi(tankId: number): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/strapping-chart`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/strapping-chart`);
   if (!res.ok) throw new Error(`Fetch strapping chart failed: ${res.status}`);
   return res.json();
 }
@@ -976,7 +1002,7 @@ export async function saveTankStrappingChartApi(
   tankId: number,
   points: Array<{ dip_cm: number; volume_liters: number; notes?: string }>
 ): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/strapping-chart`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/strapping-chart`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ points }),
@@ -989,13 +1015,13 @@ export async function saveTankStrappingChartApi(
 // Packaged Lubricants & DEF (AdBlue) Stock API
 // ---------------------------------------------------------------------------
 export async function fetchLubesApi(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/lubes`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes`);
   if (!res.ok) throw new Error(`Fetch lubes failed: ${res.status}`);
   return res.json();
 }
 
 export async function saveLubeProductApi(data: any): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/lubes`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
@@ -1011,7 +1037,7 @@ export async function recordLubeSaleApi(data: {
   rate?: number;
   payment_mode?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/lubes/sale`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes/sale`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
@@ -1035,7 +1061,7 @@ export async function settleEmployeeShortageApi(
     manager_pin: string;
   }
 ): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/employees/${empId}/settle-shortage`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/${empId}/settle-shortage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
@@ -1048,7 +1074,7 @@ export async function settleEmployeeShortageApi(
 }
 
 export async function fetchEmployeeShortagesApi(empId: number): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/employees/${empId}/shortages`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/${empId}/shortages`);
   if (!res.ok) throw new Error(`Fetch shortages failed: ${res.status}`);
   return res.json();
 }
@@ -1057,13 +1083,13 @@ export async function fetchEmployeeShortagesApi(empId: number): Promise<any> {
 // Statutory Inspection Registers (Weights & Measures & Density)
 // ---------------------------------------------------------------------------
 export async function fetchStampingRegisterApi(): Promise<any[]> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/stamping-register`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/stamping-register`);
   if (!res.ok) throw new Error(`Fetch stamping register failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchDensityRegisterApi(): Promise<any> {
-  const res = await fetch(`${API_BASE_URL}/api/v1/pump/reports/density-register`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/density-register`);
   if (!res.ok) throw new Error(`Fetch density register failed: ${res.status}`);
   return res.json();
 }

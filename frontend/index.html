@@ -136,11 +136,32 @@
           <div>
             <div class="app-shell-spinner"></div>
           </div>
-          <div class="app-shell-status">Initializing Forecourt POS Environment...</div>
+          <div class="app-shell-status" id="app-shell-status-text">Initializing Forecourt POS Environment...</div>
           <div class="app-shell-badge">ACID Transactions • Hardware Meter Sync • Cloud R2</div>
+          <div id="app-shell-deadlock-guard" style="display: none; margin-top: 14px;">
+            <button
+              type="button"
+              onclick="try { localStorage.removeItem('nsaipetrosoft_master_state_v2'); sessionStorage.clear(); window.location.reload(); } catch(e) {}"
+              style="background:#27ae60; color:#fff; border:1px solid #1e824c; border-radius:4px; padding:6px 12px; font-size:11.5px; font-weight:700; cursor:pointer;"
+            >
+              ⚡ Launch in Safe Standby Mode
+            </button>
+          </div>
         </div>
       </div>
     </div>
+
+    <script>
+      // Watchdog timer: If app hasn't mounted in 2800ms, reveal safe launch button
+      setTimeout(function() {
+        var guard = document.getElementById('app-shell-deadlock-guard');
+        var status = document.getElementById('app-shell-status-text');
+        if (guard && document.querySelector('.app-shell-skeleton')) {
+          guard.style.display = 'block';
+          if (status) status.innerText = 'Connecting to Forecourt Storage...';
+        }
+      }, 2800);
+    </script>
 
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -97,6 +97,8 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
 }) => {
   if (!isOpen) return null;
 
+  const [managerOverridePin, setManagerOverridePin] = React.useState<string>('');
+
   const handlePrintSlip = () => {
     const cust = customers.find((c) => c.id === creditCustId);
     const prod = ratesList.find((r) => r.id === creditProductId);
@@ -268,9 +270,26 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                 const isExceeded = newDue > cust.credit_limit;
                 if (isExceeded) {
                   return (
-                    <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#b91c1c', padding: '5px 8px', borderRadius: '3px', fontSize: '11px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span>⛔</span>
-                      <span><b>Limit Alert:</b> Max ₹{cust.credit_limit.toLocaleString('en-IN')}, Resulting: ₹{newDue.toLocaleString('en-IN', { maximumFractionDigits: 2 })} (Manager PIN required upon save)</span>
+                    <div style={{ background: '#fef2f2', border: '2px solid #ef4444', color: '#b91c1c', padding: '8px 10px', borderRadius: '4px', fontSize: '11px', marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                        <span style={{ fontSize: '14px' }}>⛔</span>
+                        <span>HARD CREDIT LIMIT EXCEEDED WARNING:</span>
+                      </div>
+                      <div style={{ margin: '4px 0', lineHeight: 1.4 }}>
+                        Customer limit is <strong>₹{cust.credit_limit.toLocaleString('en-IN')}</strong>. This bill would raise outstanding to <strong style={{ color: '#991b1b' }}>₹{newDue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong> (Exceeds by ₹{(newDue - cust.credit_limit).toLocaleString('en-IN')}).
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', background: '#fff', padding: '4px 6px', border: '1px solid #fca5a5', borderRadius: '3px' }}>
+                        <span style={{ fontWeight: 600, color: '#333' }}>Manager Override PIN:</span>
+                        <input
+                          type="password"
+                          placeholder="Manager PIN"
+                          className="win-input"
+                          style={{ width: '90px', height: '20px', fontWeight: 700 }}
+                          value={managerOverridePin || ''}
+                          onChange={(e) => setManagerOverridePin?.(e.target.value)}
+                        />
+                        <span style={{ fontSize: '10px', color: '#666' }}>(Default: 1234)</span>
+                      </div>
                     </div>
                   );
                 }

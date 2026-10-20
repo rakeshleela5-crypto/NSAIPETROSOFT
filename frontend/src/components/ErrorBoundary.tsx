@@ -46,6 +46,40 @@ export class ErrorBoundary extends Component<Props, State> {
     }
   };
 
+  private handleSafeModeResetAndExport = () => {
+    try {
+      // Export all raw localStorage to emergency file
+      const dump: Record<string, string | null> = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) dump[key] = localStorage.getItem(key);
+      }
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `NSaiPetroSoft_Emergency_Raw_State_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Quarantine corrupted payload
+      const current = localStorage.getItem('nsaipetrosoft_master_state_v2');
+      if (current) {
+        localStorage.setItem(`nsaipetrosoft_corrupted_backup_${Date.now()}`, current);
+      }
+
+      // Clear faulty keys
+      localStorage.removeItem('nsaipetrosoft_master_state_v2');
+      localStorage.removeItem('nsai_offline_queue');
+      sessionStorage.clear();
+    } catch (e) {
+      console.error('Emergency dump failed:', e);
+    }
+    window.location.reload();
+  };
+
   private toggleDetails = () => {
     this.setState((prev) => ({ showDetails: !prev.showDetails }));
   };
@@ -73,7 +107,7 @@ export class ErrorBoundary extends Component<Props, State> {
               boxShadow: '0 8px 32px rgba(0,0,0,0.5), inset 1px 1px #fff, inset -1px -1px #808080',
               borderRadius: '4px',
               width: '100%',
-              maxWidth: '560px',
+              maxWidth: '620px',
               overflow: 'hidden',
             }}
           >
@@ -104,7 +138,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   </h3>
                   <p style={{ margin: '0', fontSize: '13px', color: '#333333', lineHeight: 1.4 }}>
                     A component encountered an unexpected error. Your offline transaction records and database data
-                    remain secure.
+                    remain secure. You can safely export raw data and reset.
                   </p>
                 </div>
               </div>
@@ -127,6 +161,25 @@ export class ErrorBoundary extends Component<Props, State> {
                   }}
                 >
                   ⟳ Reload Application
+                </button>
+
+                <button
+                  type="button"
+                  onClick={this.handleSafeModeResetAndExport}
+                  style={{
+                    backgroundColor: '#27ae60',
+                    color: '#ffffff',
+                    border: '1px solid #1e824c',
+                    borderRadius: '3px',
+                    padding: '8px 14px',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    boxShadow: 'inset 1px 1px #a2d9ce, inset -1px -1px #1e824c',
+                  }}
+                  title="Export raw local database to JSON file and reboot safely"
+                >
+                  🛡️ Safe Mode Reset & Export Raw State
                 </button>
 
                 <button
