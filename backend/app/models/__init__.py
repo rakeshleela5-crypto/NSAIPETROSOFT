@@ -20,6 +20,13 @@ from app.models.petrol_pump import (
     User,
     StationProfileSetting,
 )
+from app.models.decentro import (
+    CustomerVirtualAccount,
+    DecentroTransaction,
+    DecentroWebhookLog,
+    GstinVerificationAudit,
+    SupplierPayout,
+)
 
 __all__ = [
     "Base",
@@ -42,5 +49,10 @@ __all__ = [
     "BankAccount",
     "User",
     "StationProfileSetting",
+    "DecentroTransaction",
+    "CustomerVirtualAccount",
+    "SupplierPayout",
+    "DecentroWebhookLog",
+    "GstinVerificationAudit",
 ]
 

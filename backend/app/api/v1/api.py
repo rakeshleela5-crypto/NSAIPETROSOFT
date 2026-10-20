@@ -1,5 +1,12 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, items, petrol_pump_endpoints, backup_endpoints, auth
+from app.api.v1.endpoints import (
+    auth,
+    backup_endpoints,
+    decentro_endpoints,
+    health,
+    items,
+    petrol_pump_endpoints,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["Health"])
@@ -7,3 +14,4 @@ api_router.include_router(auth.router, prefix="/auth", tags=["Authentication & S
 api_router.include_router(items.router, prefix="/items", tags=["Items"])
 api_router.include_router(petrol_pump_endpoints.router, prefix="/pump", tags=["Petrol Pump ERP"])
 api_router.include_router(backup_endpoints.router, prefix="/pump/backups", tags=["Cloudflare R2 Backups"])
+api_router.include_router(decentro_endpoints.router, prefix="/decentro", tags=["Decentro Banking-as-a-Service"])

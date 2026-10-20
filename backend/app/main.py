@@ -65,6 +65,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Decentro HMAC-SHA256 Webhook Security Middleware
+from app.core.security_decentro import DecentroWebhookSignatureMiddleware
+app.add_middleware(DecentroWebhookSignatureMiddleware)
+
 # Direct root & health endpoints (convenient for Railway health checks)
 @app.get("/", tags=["Root"])
 async def root():

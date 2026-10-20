@@ -6,6 +6,11 @@ Production-ready asynchronous FastAPI service with SQLAlchemy 2.0 and PostgreSQL
 
 ## 🚀 Features
 
+- **Decentro Banking-as-a-Service (BaaS) Integration**:
+  - **Dynamic UPI QR Code Generation**: Unique collect/intent QR generation per forecourt fuel lane or transaction bill.
+  - **Virtual Account & RTGS/NEFT Webhook Reconciliation**: Automated real-time customer ledger matching with HMAC-SHA256 signature verification.
+  - **Supplier Payouts**: Guaranteed idempotent IMPS/NEFT disbursements to oil marketing companies and distributors.
+  - **GSTIN Verification**: Instant 15-character GST validation with entity resolution during customer/fleet onboarding.
 - **FastAPI** with async endpoints and OpenAPI auto-documentation (`/docs`).
 - **PostgreSQL Integration**: Asynchronous database interaction using `SQLAlchemy 2.0` and `asyncpg`.
 - **Railway Ready**: Pre-configured `Dockerfile`, `railway.json`, and dynamic `$PORT` handling.
