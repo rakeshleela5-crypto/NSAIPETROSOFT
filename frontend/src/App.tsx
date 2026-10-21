@@ -2374,6 +2374,7 @@ export default function App() {
         dipCloseStock={dipCloseStock}
         setDipCloseStock={setDipCloseStock}
         dipsList={dipsList}
+        salesReadings={salesReadings}
         onSaveDip={handleSaveDip}
       />
 

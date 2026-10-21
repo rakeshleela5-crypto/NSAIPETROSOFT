@@ -1,7 +1,8 @@
 /**
- * NSAIPETROSOFT Forecourt Cloud-Direct Engine
- * Pure in-memory session resilience: ZERO localStorage memory footprint.
- * All state and operations persist directly in Railway Cloud PostgreSQL via FastAPI.
+ * NSAIPETROSOFT Forecourt Cloud-Direct Engine with Native IndexedDB Offline Durability
+ * Pure IndexedDB persistence: ZERO localStorage memory footprint.
+ * Survives highway power cuts, F5 reloads, and offline network router drops.
+ * All state and operations persist directly in Railway Cloud PostgreSQL via FastAPI when connected.
  */
 
 export interface QueuedOfflineRecord {
@@ -12,7 +13,11 @@ export interface QueuedOfflineRecord {
   retry_count: number;
 }
 
-// In-memory runtime buffer only (ZERO localStorage usage)
+const DB_NAME = 'nsaipetrosoft_offline_vault';
+const STORE_NAME = 'offline_queue';
+const DB_VERSION = 1;
+
+// In-memory runtime mirror (backed by IndexedDB, ZERO localStorage usage)
 let inMemoryQueue: QueuedOfflineRecord[] = [];
 
 // Clean up any stale legacy offline storage keys from earlier versions
@@ -22,6 +27,73 @@ try {
     localStorage.removeItem('nsai_offline_queue');
   }
 } catch {}
+
+function getIDB(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (e: any) => {
+        const db = e.target.result as IDBDatabase;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+// Hydrate in-memory queue from IndexedDB on startup
+if (typeof window !== 'undefined') {
+  getIDB().then((db) => {
+    if (!db) return;
+    try {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        if (Array.isArray(req.result) && req.result.length > 0) {
+          const existingIds = new Set(inMemoryQueue.map((r) => r.id));
+          req.result.forEach((rec: QueuedOfflineRecord) => {
+            if (!existingIds.has(rec.id)) {
+              inMemoryQueue.push(rec);
+            }
+          });
+        }
+      };
+    } catch (err) {
+      console.warn('[OfflineVault] Error loading persisted offline transactions:', err);
+    }
+  });
+}
+
+async function persistRecordToIDB(record: QueuedOfflineRecord): Promise<void> {
+  const db = await getIDB();
+  if (!db) return;
+  try {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(record);
+  } catch (err) {
+    console.warn('[OfflineVault] Failed to persist record:', err);
+  }
+}
+
+async function deleteRecordFromIDB(id: string): Promise<void> {
+  const db = await getIDB();
+  if (!db) return;
+  try {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+  } catch (err) {
+    console.warn('[OfflineVault] Failed to delete record:', err);
+  }
+}
 
 export function getOfflineQueue(): QueuedOfflineRecord[] {
   return inMemoryQueue;
@@ -36,18 +108,20 @@ export function enqueueOfflineRecord(
   payload: any
 ): QueuedOfflineRecord {
   const record: QueuedOfflineRecord = {
-    id: `mem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     type,
     payload,
     created_at: new Date().toISOString(),
     retry_count: 0,
   };
   inMemoryQueue.push(record);
+  persistRecordToIDB(record);
   return record;
 }
 
 export function removeOfflineRecord(id: string): void {
   inMemoryQueue = inMemoryQueue.filter((r) => r.id !== id);
+  deleteRecordFromIDB(id);
 }
 
 /**
@@ -91,6 +165,7 @@ export async function syncOfflineQueue(
     } catch (err) {
       failed++;
       record.retry_count = (record.retry_count || 0) + 1;
+      persistRecordToIDB(record);
       if (onError) onError(record, err);
     }
   }

@@ -437,6 +437,8 @@ class LubeProduct(Base):
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     category: Mapped[str] = mapped_column(String(50), default="LUBE_OIL")  # LUBE_OIL, 2T_OIL, DEF_ADBLUE, GREASE, COOLANT
     package_size: Mapped[str] = mapped_column(String(50), default="1 Ltr")
+    hsn_code: Mapped[str] = mapped_column(String(20), default="2710")
+    gst_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=18.0)
     barcode: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     mrp: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     sale_price: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
@@ -457,6 +459,11 @@ class LubeSaleEntry(Base):
     qty_units: Mapped[int] = mapped_column(Integer, default=1)
     rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     total_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    hsn_code: Mapped[str] = mapped_column(String(20), default="2710")
+    gst_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=18.0)
+    taxable_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    cgst_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    sgst_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
     payment_mode: Mapped[str] = mapped_column(String(50), default="CASH")
 

@@ -1351,6 +1351,8 @@ class ErpStore {
       current_stock_units: product.current_stock_units || 0,
       reorder_level: product.reorder_level || 5,
       is_low_stock: (product.current_stock_units || 0) <= (product.reorder_level || 5),
+      hsn_code: product.hsn_code || '2710',
+      gst_percent: product.gst_percent !== undefined ? product.gst_percent : 18.0,
     };
 
     this.state.products.push(newProd);

@@ -49,6 +49,8 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
   const [lubeSale, setLubeSale] = useState<number>(330);
   const [lubeStock, setLubeStock] = useState<number>(24);
   const [lubeReorder, setLubeReorder] = useState<number>(8);
+  const [lubeHsn, setLubeHsn] = useState<string>('2710');
+  const [lubeGst, setLubeGst] = useState<number>(18);
 
   if (!isOpen) return null;
 
@@ -113,11 +115,15 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
         sale_price: lubeSale,
         current_stock_units: lubeStock,
         reorder_level: lubeReorder,
+        hsn_code: lubeHsn.trim() || '2710',
+        gst_percent: lubeGst,
       });
 
       if (showToast) showToast(`✔ Lube product "${lubeName}" added!`);
       setLubeName('');
       setLubeCode('');
+      setLubeHsn('2710');
+      setLubeGst(18);
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
       if (showToast) showToast(`❌ Error: ${err.message}`);
@@ -319,6 +325,8 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                       <tr>
                         <th>Code</th>
                         <th>Product Description</th>
+                        <th>HSN</th>
+                        <th>GST%</th>
                         <th>Pack</th>
                         <th className="text-right">Sale ₹</th>
                         <th className="text-right">Stock</th>
@@ -330,6 +338,8 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                         <tr key={p.id}>
                           <td style={{ fontWeight: 600 }}>{p.code}</td>
                           <td style={{ fontWeight: 600, color: '#0a246a' }}>{p.name}</td>
+                          <td><span style={{ fontSize: '10px', color: '#555' }}>{p.hsn_code || '2710'}</span></td>
+                          <td><span style={{ fontSize: '10px', color: '#166534', fontWeight: 600 }}>{p.gst_percent ?? 18}%</span></td>
                           <td>{p.package_size}</td>
                           <td className="text-right">₹{p.sale_price}</td>
                           <td className="text-right" style={{ fontWeight: 700, color: p.is_low_stock ? '#c0392b' : '#27ae60' }}>
@@ -349,7 +359,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
 
               <div style={{ background: '#f5f5f5', border: '1px solid #7f9db9', padding: '12px', borderRadius: '4px' }}>
                 <div style={{ fontWeight: 700, fontSize: '12.5px', marginBottom: '8px', color: '#0a246a' }}>
-                  ➕ Add Lubricant / Non-Fuel Product
+                  ➕ Add Lubricant / Non-Fuel Product (GST & HSN)
                 </div>
                 <form onSubmit={handleSaveLube}>
                   <div className="win-form-row">
@@ -365,6 +375,18 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                       <option value="Coolant">Coolant</option>
                       <option value="Distilled Water">Battery Distilled Water</option>
                       <option value="Grease">Grease / Additive</option>
+                    </select>
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ width: '90px' }}>HSN Code</span>
+                    <input type="text" className="win-input" placeholder="2710 (Lubes) / 3102 (DEF)" value={lubeHsn} onChange={(e) => setLubeHsn(e.target.value)} style={{ width: '100px' }} />
+                    <span className="win-label" style={{ minWidth: '40px', marginLeft: '6px' }}>GST %</span>
+                    <select className="win-select" value={lubeGst} onChange={(e) => setLubeGst(parseFloat(e.target.value) || 18)} style={{ flex: 1, fontWeight: 700 }}>
+                      <option value={18}>18% GST (Lubes / Grease)</option>
+                      <option value={12}>12% GST (Specific Oils)</option>
+                      <option value={28}>28% GST (Specialty Chemicals)</option>
+                      <option value={5}>5% GST</option>
+                      <option value={0}>0% (Exempt)</option>
                     </select>
                   </div>
                   <div className="win-form-row">

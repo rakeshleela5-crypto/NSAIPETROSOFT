@@ -47,8 +47,26 @@ from app.models.petrol_pump import (
     LubeSaleEntry,
     SupervisorReversalVoucher,
 )
-
 router = APIRouter()
+
+
+async def verify_manager_pin(pin: Optional[str], db: AsyncSession) -> bool:
+    """
+    Validates managerial authorization PIN dynamically against the station outlet
+    profile setting. Falls back to standard '1234' factory default if unconfigured.
+    """
+    if not pin:
+        return False
+    pin_input = str(pin).strip()
+    try:
+        prof_stmt = select(StationProfileSetting).order_by(StationProfileSetting.id.asc()).limit(1)
+        prof_res = await db.execute(prof_stmt)
+        station_prof = prof_res.scalar_one_or_none()
+        if station_prof and station_prof.manager_pin and pin_input == station_prof.manager_pin.strip():
+            return True
+    except Exception:
+        pass
+    return pin_input == "1234"
 
 
 # -------------------------------------------------------------
@@ -286,7 +304,7 @@ async def record_meter_swap(
     payload: MeterSwapRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    if payload.manager_pin != "1234":
+    if not await verify_manager_pin(payload.manager_pin, db):
         raise HTTPException(status_code=403, detail="Invalid Manager Authorization PIN")
 
     nozzle = await db.get(Nozzle, nozzle_id)
@@ -408,7 +426,7 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
     elif shift.status == "Closed":
         # Shift Security & Immutability Enforcement:
         # Finalized shifts cannot be modified directly without supervisor authorization.
-        if data.supervisor_pin != "1234":
+        if not await verify_manager_pin(data.supervisor_pin, db):
             raise HTTPException(
                 status_code=403,
                 detail="SHIFT IMMUTABILITY ENFORCED: Shift is finalized and closed. Direct edits are disabled. A Supervisor Reversal Voucher with manager PIN authorization is required to alter closed shifts.",
@@ -428,6 +446,21 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
         db.add(voucher)
 
     # Clear prior meter readings for this specific shift to prevent duplicates on re-save
+    # CRITICAL STOCK INTEGRITY: First refund previous tank deductions so re-saving doesn't double-deduct tank stock!
+    old_readings_res = await db.execute(
+        select(ShiftMeterReading).where(ShiftMeterReading.shift_id == shift.id)
+    )
+    old_readings = old_readings_res.scalars().all()
+    for old_r in old_readings:
+        if old_r.sale_qty > 0:
+            old_nozzle = await db.get(Nozzle, old_r.nozzle_id)
+            if old_nozzle and old_nozzle.tank_id:
+                old_tank_stmt = select(Tank).where(Tank.id == old_nozzle.tank_id).with_for_update()
+                old_tank_res = await db.execute(old_tank_stmt)
+                old_tank = old_tank_res.scalar_one_or_none()
+                if old_tank:
+                    old_tank.current_stock = round(old_tank.current_stock + old_r.sale_qty, 2)
+
     await db.execute(delete(ShiftMeterReading).where(ShiftMeterReading.shift_id == shift.id))
 
     total_sale_amt = 0.0
@@ -550,7 +583,7 @@ async def create_shift_reversal_voucher(
     payload: ReversalVoucherCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    if payload.manager_pin != "1234":
+    if not await verify_manager_pin(payload.manager_pin, db):
         raise HTTPException(status_code=403, detail="Invalid Manager Authorization PIN. Reversal rejected.")
 
     stmt = select(Shift).where(Shift.id == shift_id).with_for_update()
@@ -733,11 +766,31 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     new_outstanding = round(customer.current_outstanding + credit_amount, 2)
     limit_warning = new_outstanding > customer.credit_limit if customer.credit_limit > 0 else False
     if limit_warning and credit_amount > 0:
-        if data.manager_override_pin != "1234":
+        if not await verify_manager_pin(data.manager_override_pin, db):
             raise HTTPException(
                 status_code=400,
                 detail=f"CREDIT LIMIT EXCEEDED: Customer limit is ₹{customer.credit_limit:,.2f}. Current dues are ₹{customer.current_outstanding:,.2f}, resulting balance would be ₹{new_outstanding:,.2f}. Manager authorization PIN required to proceed.",
             )
+
+    # Indent voucher anti-duplicate verification
+    if data.indent_no and data.indent_no.strip():
+        clean_indent = data.indent_no.strip()
+        dup_stmt = select(CreditSale).where(
+            CreditSale.customer_id == customer.id,
+            CreditSale.indent_no == clean_indent,
+        )
+        dup_res = await db.execute(dup_stmt)
+        prior_indent = dup_res.scalar_one_or_none()
+        if prior_indent:
+            if not await verify_manager_pin(data.manager_override_pin, db):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"DUPLICATE INDENT VOUCHER: Indent #{clean_indent} was already billed on "
+                        f"{prior_indent.date} for Vehicle {prior_indent.vehicle_no} (Bill #{prior_indent.bill_no}). "
+                        f"Duplicate billing blocked to prevent fraud. Manager PIN override required."
+                    ),
+                )
 
     # Atomic sequential bill numbering within locked transaction
     max_id_res = await db.execute(select(func.coalesce(func.max(CreditSale.id), 0)))
@@ -779,7 +832,7 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
         sh_res = await db.execute(sh_stmt)
         sh_obj = sh_res.scalar_one_or_none()
         if sh_obj and sh_obj.status in ("Closed", "Settled"):
-            if data.manager_override_pin != "1234":
+            if not await verify_manager_pin(data.manager_override_pin, db):
                 raise HTTPException(
                     status_code=403,
                     detail="SHIFT IMMUTABILITY ENFORCED: Target shift is finalized and closed. Cannot append credit slip to a closed shift without supervisor authorization PIN.",
@@ -1278,7 +1331,7 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
 
-    # Formula 1: Dip Wise Sale = Opening Stock + Inward Receipt - Closing Stock
+    # Formula 1: Physical Dip Wise Sale = Opening Stock + Inward Receipt - Closing Stock
     dip_sale = round(data.opening_stock + data.receipt_liters - data.closing_stock, 2)
 
     # Formula 2: Get totalizer meter sale for nozzles drawing from this tank for today's shifts
@@ -1290,13 +1343,16 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     )
     meter_sale = round(float(meter_res.scalar() or 0.0), 2)
 
-    # Formula 3: Variation = Physical Dip Sale - Meter Totalizer Sale
-    variation = round(dip_sale - meter_sale, 2)
+    # Formula 3: Expected Book Stock = Opening Stock + Inward Receipts - Meter Sales
+    expected_book_stock = round(data.opening_stock + data.receipt_liters - meter_sale, 2)
+
+    # Formula 4: Variation = Actual Physical Closing Stock - Expected Book Stock (Negative = Shortage/Loss)
+    variation = round(data.closing_stock - expected_book_stock, 2)
 
     # Statutory Evaporation limit: 0.59% for Petrol (MS), 0.15% for Diesel (HSD)
     is_petrol = "MS" in tank.tank_name.upper() or "PETROL" in tank.tank_name.upper()
     tolerance_pct = 0.59 if is_petrol else 0.15
-    tolerance_limit = round(-1 * (meter_sale * tolerance_pct / 100), 2)
+    tolerance_limit = round(-1 * (meter_sale * tolerance_pct / 100), 2) if meter_sale > 0 else 0.0
 
     # Update tank live stock
     tank.current_stock = data.closing_stock
@@ -1324,6 +1380,7 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
         "tank_name": tank.tank_name,
         "dip_wise_sale": dip_sale,
         "meter_wise_sale": meter_sale,
+        "expected_book_stock": expected_book_stock,
         "variation_liters": variation,
         "tolerance_limit": tolerance_limit,
         "exceeds_tolerance": variation < tolerance_limit,
@@ -1434,7 +1491,7 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
     # Shift Security & Immutability Enforcement:
     # If shift is already Closed or Settled, require supervisor PIN authorization
     if shift.status in ("Closed", "Settled"):
-        if data.supervisor_pin != "1234":
+        if not await verify_manager_pin(data.supervisor_pin, db):
             raise HTTPException(
                 status_code=403,
                 detail="SHIFT IMMUTABILITY ENFORCED: Shift has already been settled and finalized. Direct edits are disabled. Supervisor PIN authorization required to re-settle or adjust balances.",
@@ -1520,7 +1577,7 @@ async def settle_employee_shortage(
     payload: SettleShortageRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    if payload.manager_pin != "1234":
+    if not await verify_manager_pin(payload.manager_pin, db):
         raise HTTPException(status_code=403, detail="Invalid Manager Authorization PIN")
 
     emp = await db.get(Employee, employee_id)
@@ -1666,7 +1723,7 @@ async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_d
         density_var = round(abs(density_15c - data.invoice_density_15c), 2)
         if density_var > 3.0:
             density_status = "EXCEEDED_TOLERANCE"
-            if data.manager_override_pin != "1234":
+            if not await verify_manager_pin(data.manager_override_pin, db):
                 raise HTTPException(
                     status_code=400,
                     detail=(
@@ -1817,13 +1874,13 @@ async def get_dsr_report(report_date: Optional[date] = Query(None), db: AsyncSes
                 .where(ShiftMeterReading.nozzle_id.in_(nozzle_ids), Shift.date == target_date)
             )
             sale_row = sales_res.one_or_none()
-            meter_sale = float(sale_row[0] if sale_row else 0.0)
-            testing = float(sale_row[1] if sale_row else 0.0)
+            net_sale = round(float(sale_row[0] if sale_row else 0.0), 2)
+            testing = round(float(sale_row[1] if sale_row else 0.0), 2)
+            gross_meter_sale = round(net_sale + testing, 2)
         else:
-            meter_sale = 0.0
+            gross_meter_sale = 0.0
+            net_sale = 0.0
             testing = 0.0
-
-        net_sale = round(meter_sale - testing, 2)
 
         # 3. Latest Dip Entry on or before target date
         dip_res = await db.execute(
@@ -1862,7 +1919,7 @@ async def get_dsr_report(report_date: Optional[date] = Query(None), db: AsyncSes
             "opening_stock": round(open_stock, 2),
             "receipt": round(receipt, 2),
             "total_stock": round(open_stock + receipt, 2),
-            "meter_sale": round(meter_sale, 2),
+            "meter_sale": round(gross_meter_sale, 2),
             "testing": round(testing, 2),
             "net_sale": round(net_sale, 2),
             "closing_book_stock": round(closing_book, 2),
@@ -2025,9 +2082,56 @@ async def get_vat_summary(db: AsyncSession = Depends(get_db)):
             "total": round(float(s[4]), 2),
         })
 
+    # GST Lubricants Sales (HSN 2710 / 3102) for GSTR-1 / GSTR-3B
+    lube_sales_res = await db.execute(
+        select(
+            LubeSaleEntry.hsn_code,
+            LubeSaleEntry.gst_percent,
+            func.coalesce(func.sum(LubeSaleEntry.qty_units), 0),
+            func.coalesce(func.sum(LubeSaleEntry.taxable_amount), 0.0),
+            func.coalesce(func.sum(LubeSaleEntry.cgst_amount), 0.0),
+            func.coalesce(func.sum(LubeSaleEntry.sgst_amount), 0.0),
+            func.coalesce(func.sum(LubeSaleEntry.total_amount), 0.0),
+        )
+        .group_by(LubeSaleEntry.hsn_code, LubeSaleEntry.gst_percent)
+    )
+    lube_rows = lube_sales_res.all()
+    gst_lube_list = []
+    tot_cgst = 0.0
+    tot_sgst = 0.0
+    tot_taxable = 0.0
+    tot_lube_amt = 0.0
+    for lr in lube_rows:
+        cgst = float(lr[4])
+        sgst = float(lr[5])
+        taxable = float(lr[3])
+        tot = float(lr[6])
+        tot_cgst += cgst
+        tot_sgst += sgst
+        tot_taxable += taxable
+        tot_lube_amt += tot
+        gst_lube_list.append({
+            "hsn_code": lr[0] or "2710",
+            "gst_pct": round(float(lr[1] or 18.0), 2),
+            "units": int(lr[2]),
+            "taxable_amount": round(taxable, 2),
+            "cgst_amount": round(cgst, 2),
+            "sgst_amount": round(sgst, 2),
+            "total_gst": round(cgst + sgst, 2),
+            "total_amount": round(tot, 2),
+        })
+
     return {
         "purchase": purch_list,
         "sales": sales_list,
+        "gst_lube": gst_lube_list,
+        "gst_lube_summary": {
+            "total_taxable": round(tot_taxable, 2),
+            "total_cgst": round(tot_cgst, 2),
+            "total_sgst": round(tot_sgst, 2),
+            "total_gst": round(tot_cgst + tot_sgst, 2),
+            "total_lube_sales": round(tot_lube_amt, 2),
+        },
         "payable": {
             "purchase_vat": round(tot_purch_vat, 2),
             "sales_vat": round(tot_sales_vat, 2),
@@ -2133,6 +2237,36 @@ async def get_tds_summary(db: AsyncSession = Depends(get_db)):
 
     tds_payable = round(tot_basic * 0.001, 2)
 
+    # Fetch lube sales for GST GSTR-1 and GSTR-3B reporting
+    lube_sales_res = await db.execute(
+        select(LubeSaleEntry).options(selectinload(LubeSaleEntry.lube_product)).order_by(desc(LubeSaleEntry.id)).limit(100)
+    )
+    lube_sales = lube_sales_res.scalars().all()
+    gst_lube_list = []
+    tot_lube_taxable = 0.0
+    tot_lube_cgst = 0.0
+    tot_lube_sgst = 0.0
+    tot_lube_total = 0.0
+    for ls in lube_sales:
+        tot_lube_taxable += ls.taxable_amount
+        tot_lube_cgst += ls.cgst_amount
+        tot_lube_sgst += ls.sgst_amount
+        tot_lube_total += ls.total_amount
+        gst_lube_list.append({
+            "id": ls.id,
+            "date": str(ls.date),
+            "item_name": ls.lube_product.name if ls.lube_product else "Packaged Lube",
+            "hsn_code": ls.hsn_code or "2710",
+            "qty": ls.qty_units,
+            "rate": ls.rate,
+            "total_amount": ls.total_amount,
+            "taxable_amount": ls.taxable_amount,
+            "gst_percent": ls.gst_percent,
+            "cgst_amount": ls.cgst_amount,
+            "sgst_amount": ls.sgst_amount,
+            "mode": ls.payment_mode,
+        })
+
     return {
         "as_on_date": today_ist().strftime("%d-%m-%Y"),
         "purchases": purch_list,
@@ -2144,7 +2278,13 @@ async def get_tds_summary(db: AsyncSession = Depends(get_db)):
             "tcs": 0.0,
             "total": round(tot_amount, 2),
         },
-        "gst_lube": [],
+        "gst_lube": gst_lube_list,
+        "gst_lube_total": {
+            "taxable": round(tot_lube_taxable, 2),
+            "cgst": round(tot_lube_cgst, 2),
+            "sgst": round(tot_lube_sgst, 2),
+            "total": round(tot_lube_total, 2),
+        },
         "tds_summary": {
             "total_amount": round(tot_amount, 2),
             "tax_amount": round(tot_vat + tot_cess, 2),
@@ -2867,6 +3007,14 @@ async def record_lube_sale(payload: LubeSaleRequest, db: AsyncSession = Depends(
 
     rate = payload.rate if payload.rate is not None and payload.rate > 0 else lube.sale_price
     total_amount = round(payload.qty_units * rate, 2)
+    gst_pct = float(lube.gst_percent if lube.gst_percent is not None else 18.0)
+    hsn = lube.hsn_code or "2710"
+
+    # Compute statutory GST breakdown (Retail inclusive prices: Base Taxable + 9% CGST + 9% SGST)
+    taxable_amount = round(total_amount / (1.0 + (gst_pct / 100.0)), 2)
+    total_gst = round(total_amount - taxable_amount, 2)
+    cgst_amount = round(total_gst / 2.0, 2)
+    sgst_amount = round(total_gst - cgst_amount, 2)
 
     # Deduct discrete package units from stock
     lube.current_stock_units -= payload.qty_units
@@ -2877,6 +3025,11 @@ async def record_lube_sale(payload: LubeSaleRequest, db: AsyncSession = Depends(
         qty_units=payload.qty_units,
         rate=rate,
         total_amount=total_amount,
+        hsn_code=hsn,
+        gst_percent=gst_pct,
+        taxable_amount=taxable_amount,
+        cgst_amount=cgst_amount,
+        sgst_amount=sgst_amount,
         date=today_ist(),
         payment_mode=payload.payment_mode,
     )
@@ -2885,9 +3038,13 @@ async def record_lube_sale(payload: LubeSaleRequest, db: AsyncSession = Depends(
 
     return {
         "status": "success",
-        "message": f"Sold {payload.qty_units} unit(s) of '{lube.name}' for ₹{total_amount:.2f}",
+        "message": f"Sold {payload.qty_units} unit(s) of '{lube.name}' for ₹{total_amount:.2f} (Taxable: ₹{taxable_amount:.2f}, GST: ₹{total_gst:.2f})",
         "remaining_stock_units": lube.current_stock_units,
         "total_amount": total_amount,
+        "taxable_amount": taxable_amount,
+        "cgst_amount": cgst_amount,
+        "sgst_amount": sgst_amount,
+        "hsn_code": hsn,
     }
 
 

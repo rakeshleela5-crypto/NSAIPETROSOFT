@@ -114,6 +114,47 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                 }}
               /> Import Entry From App
             </label>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="win-btn-classic"
+                style={{ fontSize: '11px', padding: '2px 8px', background: '#eff6ff', borderColor: '#93c5fd', color: '#1d4ed8', fontWeight: 700 }}
+                onClick={() => {
+                  const copy = salesReadings.map((row) => {
+                    const testVal = 5.0;
+                    const qty = calculateNetMeterQty(row.open, row.close, testVal);
+                    const amt = Math.round(qty * row.rate * 100) / 100;
+                    const vatPct = row.vat_percent || (row.item?.includes('Petrol') || row.item?.includes('MS') ? 13.7 : 20.2);
+                    const vat = ((amt * vatPct) / (100 + vatPct)).toFixed(2);
+                    return { ...row, test: testVal, qty, amount: amt, vat };
+                  });
+                  setSalesReadings(copy);
+                  showToast('✔ 5.0 L daily calibration test applied to all nozzles.');
+                }}
+                title="Apply standard 5-liter daily measure-can calibration testing on all active nozzles"
+              >
+                ⚡ Set 5L Test (All)
+              </button>
+              <button
+                type="button"
+                className="win-btn-classic"
+                style={{ fontSize: '11px', padding: '2px 6px' }}
+                onClick={() => {
+                  const copy = salesReadings.map((row) => {
+                    const qty = calculateNetMeterQty(row.open, row.close, 0.0);
+                    const amt = Math.round(qty * row.rate * 100) / 100;
+                    const vatPct = row.vat_percent || (row.item?.includes('Petrol') || row.item?.includes('MS') ? 13.7 : 20.2);
+                    const vat = ((amt * vatPct) / (100 + vatPct)).toFixed(2);
+                    return { ...row, test: 0.0, qty, amount: amt, vat };
+                  });
+                  setSalesReadings(copy);
+                  showToast('✔ Testing quantities reset to 0.');
+                }}
+                title="Reset testing quantities to 0"
+              >
+                Clear Test
+              </button>
+            </div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={{ fontWeight: 700 }}>SO NO.</span>
               <input
@@ -169,10 +210,21 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                       <td>{r.open.toFixed(3)}</td>
                       <td>
                         <input
+                          id={`closing_meter_${i}`}
                           type="number"
                           className="win-input"
                           style={{ width: '75px', fontWeight: 600 }}
                           value={r.close}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const nextInput = document.getElementById(`closing_meter_${i + 1}`);
+                              if (nextInput) {
+                                (nextInput as HTMLInputElement).focus();
+                                (nextInput as HTMLInputElement).select();
+                              }
+                            }
+                          }}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const copy = [...salesReadings];
@@ -185,7 +237,10 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                             } else {
                               copy[i].amount = copy[i].qty * copy[i].rate;
                             }
-                            copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
+                            const vatPct = copy[i].vat_percent != null && copy[i].vat_percent > 0
+                              ? copy[i].vat_percent
+                              : (copy[i].item?.includes('Petrol') || copy[i].item?.includes('MS') ? 13.7 : 20.2);
+                            copy[i].vat = ((copy[i].amount * vatPct) / (100 + vatPct)).toFixed(2);
                             setSalesReadings(copy);
                           }}
                         />
@@ -223,7 +278,10 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                             copy[i].test = val;
                             copy[i].qty = calculateNetMeterQty(copy[i].open, copy[i].close, val);
                             copy[i].amount = copy[i].qty * copy[i].rate;
-                            copy[i].vat = (copy[i].amount * 0.13).toFixed(2);
+                            const vatPct = copy[i].vat_percent != null && copy[i].vat_percent > 0
+                              ? copy[i].vat_percent
+                              : (copy[i].item?.includes('Petrol') || copy[i].item?.includes('MS') ? 13.7 : 20.2);
+                            copy[i].vat = ((copy[i].amount * vatPct) / (100 + vatPct)).toFixed(2);
                             setSalesReadings(copy);
                           }}
                         />

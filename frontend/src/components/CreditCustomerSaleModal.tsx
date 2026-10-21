@@ -100,6 +100,24 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
 
   const [managerOverridePin, setManagerOverridePin] = React.useState<string>('');
 
+  // Fleet Vehicle Index: Map vehicles across all accounts for fast vehicle-first entry
+  const allFleetVehicles = React.useMemo(() => {
+    const list: { vehicle: string; customerId: number; customerName: string }[] = [];
+    customers.forEach((c) => {
+      (c.vehicles || []).forEach((v) => {
+        list.push({ vehicle: v, customerId: c.id, customerName: c.name });
+      });
+    });
+    return list;
+  }, [customers]);
+
+  // Anti-fraud duplicate indent detection against recent bills
+  const duplicateIndentBill = React.useMemo(() => {
+    if (!creditIndentNo || !creditIndentNo.trim()) return null;
+    const clean = creditIndentNo.trim().toUpperCase();
+    return creditBillsList.find((b) => (b.slip && b.slip.toUpperCase() === clean) || (b.indent_no && b.indent_no.toUpperCase() === clean));
+  }, [creditIndentNo, creditBillsList]);
+
   const handlePrintSlip = () => {
     const cust = customers.find((c) => c.id === creditCustId);
     const prod = ratesList.find((r) => r.id === creditProductId);
@@ -233,12 +251,18 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                 <input
                   type="text"
                   className="win-input"
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, borderColor: duplicateIndentBill ? '#ef4444' : undefined }}
                   value={creditIndentNo || ''}
                   onChange={(e) => setCreditIndentNo?.(e.target.value)}
                   placeholder="Physical Coupon / Indent Voucher #"
                 />
               </div>
+              {duplicateIndentBill && (
+                <div style={{ background: '#fef2f2', border: '1px solid #f87171', color: '#b91c1c', padding: '4px 8px', borderRadius: '3px', fontSize: '10.5px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>⚠️</span>
+                  <span><b>DUPLICATE INDENT WARNING:</b> Indent #{creditIndentNo} was already billed in Bill #{duplicateIndentBill.bill} for Vehicle {duplicateIndentBill.vehicle} on {duplicateIndentBill.date}!</span>
+                </div>
+              )}
 
               <div className="win-form-row">
                 <span className="win-label">Customer</span>
@@ -305,12 +329,29 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                 <span className="win-label">Vehicle</span>
                 <input
                   type="text"
+                  list="fleet_vehicles_datalist"
                   className="win-input"
                   style={{ flex: 1 }}
                   value={creditVehicle}
-                  onChange={(e) => setCreditVehicle(e.target.value.toUpperCase())}
-                  placeholder="e.g. GJ19AS1454"
+                  onChange={(e) => {
+                    const val = e.target.value.toUpperCase();
+                    setCreditVehicle(val);
+                    // Vehicle-First Fleet Lookup: Auto-select customer if vehicle matches fleet registry
+                    const matched = allFleetVehicles.find((v) => v.vehicle.toUpperCase() === val.trim());
+                    if (matched && matched.customerId !== creditCustId) {
+                      setCreditCustId(matched.customerId);
+                      showToast(`🚚 Linked Vehicle ${val} to Fleet: ${matched.customerName}`);
+                    }
+                  }}
+                  placeholder="Type or select vehicle (e.g. GJ19AS1454)"
                 />
+                <datalist id="fleet_vehicles_datalist">
+                  {allFleetVehicles.map((item, idx) => (
+                    <option key={idx} value={item.vehicle}>
+                      {item.vehicle} ({item.customerName})
+                    </option>
+                  ))}
+                </datalist>
               </div>
 
               <div className="win-form-row">
@@ -456,6 +497,15 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
 
               <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                 <button type="submit" className="win-btn-classic win-btn-primary" style={{ flex: 1 }}>Save (F2)</button>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ background: '#e0f2fe', borderColor: '#0284c7', color: '#0369a1', fontWeight: 700 }}
+                  title="Save immediately without prompting print confirmation dialog (for high-speed fleet batch entry)"
+                  onClick={() => onExecuteCreditSaleSave(false)}
+                >
+                  ⚡ Quick Save (No Prompt)
+                </button>
                 <button
                   type="button"
                   className="win-btn-classic"

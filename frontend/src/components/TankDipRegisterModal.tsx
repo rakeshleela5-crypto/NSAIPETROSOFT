@@ -22,6 +22,7 @@ interface TankDipRegisterModalProps {
   dipCloseStock: number;
   setDipCloseStock: (stock: number) => void;
   dipsList: any[];
+  salesReadings?: any[];
   onSaveDip: (e: React.FormEvent) => void;
 }
 
@@ -42,6 +43,7 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
   dipCloseStock,
   setDipCloseStock,
   dipsList,
+  salesReadings,
   onSaveDip,
 }) => {
   const [calcNotice, setCalcNotice] = useState<string>('');
@@ -83,8 +85,24 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
     }
   };
 
-  // Live Variance Analysis: Book vs Dip
-  const expectedBookStock = dipOpenStock + dipReceipt;
+  // Sum nozzle meter sales drawn from this tank
+  const storeState = erpStore.getState();
+  const tankNozzles = storeState.nozzles.filter((n) => n.tank_id === dipTankId);
+  const tankNozzleIds = new Set(tankNozzles.map((n) => n.id));
+
+  const meterSalesFromReadings = (salesReadings || [])
+    .filter((r) => r.nozzle_id && tankNozzleIds.has(r.nozzle_id))
+    .reduce((acc, r) => acc + (r.qty || 0), 0);
+
+  const meterSalesFromStore = tankNozzles.reduce((acc, n) => {
+    const net = Math.max(0, n.closing_meter - n.opening_meter - (n.testing || 0));
+    return acc + net;
+  }, 0);
+
+  const effectiveMeterSales = roundVolume(meterSalesFromReadings > 0 ? meterSalesFromReadings : meterSalesFromStore, 2);
+
+  // Live Variance Analysis: Book vs Dip (Opening + Receipts - Meter Sales)
+  const expectedBookStock = Math.max(0, roundVolume(dipOpenStock + dipReceipt - effectiveMeterSales, 2));
   const varianceResult = calcDipVariance(dipCloseStock, expectedBookStock, tankCapacity);
   const isAbnormalShrinkage = varianceResult.status === 'CRITICAL_LOSS' || (varianceResult.diffLitres < -100);
 
@@ -229,10 +247,13 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
                 </span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', fontSize: '10.5px' }}>
+                <div>Open: <strong>{dipOpenStock.toLocaleString('en-IN')} L</strong></div>
+                <div>Receipts: <strong>+{dipReceipt.toLocaleString('en-IN')} L</strong></div>
+                <div>Meter Sales: <strong style={{ color: '#2563eb' }}>-{effectiveMeterSales.toLocaleString('en-IN')} L</strong></div>
                 <div>Book Stock: <strong>{expectedBookStock.toLocaleString('en-IN')} L</strong></div>
-                <div>Physical Dip Stock: <strong>{dipCloseStock.toLocaleString('en-IN')} L</strong></div>
-                <div>Variance: <strong style={{ color: varianceResult.diffLitres < 0 ? '#dc2626' : '#16a34a' }}>
-                  {varianceResult.diffLitres > 0 ? `+${varianceResult.diffLitres}` : varianceResult.diffLitres} Litres
+                <div>Physical Dip: <strong>{dipCloseStock.toLocaleString('en-IN')} L</strong></div>
+                <div>Variation: <strong style={{ color: varianceResult.diffLitres < 0 ? '#dc2626' : '#16a34a' }}>
+                  {varianceResult.diffLitres > 0 ? `+${varianceResult.diffLitres}` : varianceResult.diffLitres} L
                 </strong></div>
               </div>
               {isAbnormalShrinkage && (

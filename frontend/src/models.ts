@@ -235,6 +235,8 @@ export interface LubeProductItem {
   current_stock_units: number;
   reorder_level: number;
   is_low_stock: boolean;
+  hsn_code?: string;
+  gst_percent?: number;
 }
 
 export interface EmployeeShortageLedgerItem {

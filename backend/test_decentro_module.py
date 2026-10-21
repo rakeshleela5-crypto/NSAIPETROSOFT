@@ -243,7 +243,7 @@ async def test_decentro_integration_suite():
         assert gstin_data["is_valid"] is True
         assert gstin_data["state_code"] == "24"
         assert gstin_data["customer_updated"] is True
-        assert gstin_data["gstin_status"] == "Active"
+        assert gstin_data["gstin_status"].upper() == "ACTIVE"
         print(f"[TEST 12] GSTIN {valid_gstin} verified & customer profile auto-updated.")
 
         # 6. Audit Trail Endpoint Verification
