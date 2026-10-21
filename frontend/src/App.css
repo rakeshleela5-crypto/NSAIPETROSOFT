@@ -207,6 +207,7 @@ body {
   gap: 12px;
 }
 
+.btn-cloud-backup,
 .btn-stamp-reminder,
 .btn-help-desk {
   background: linear-gradient(180deg, #ff6b6b 0%, #ee5253 100%);

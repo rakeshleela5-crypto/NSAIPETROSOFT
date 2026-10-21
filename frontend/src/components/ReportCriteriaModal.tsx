@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { CustomerFull, StationProfile } from '../models';
+import { getCurrentMonthStartIsoDate, getTodayIsoDate } from '../utils/dateUtils';
 
 interface ReportCriteriaModalProps {
   isOpen: boolean;
@@ -28,13 +29,13 @@ export const ReportCriteriaModal: React.FC<ReportCriteriaModalProps> = ({
   openCrystalReport,
   showToast,
 }) => {
-  const [critFromDate, setCritFromDate] = useState<string>('01/10/2026');
-  const [critToDate, setCritToDate] = useState<string>('17/10/2026');
+  const [critFromDate, setCritFromDate] = useState<string>(() => getCurrentMonthStartIsoDate());
+  const [critToDate, setCritToDate] = useState<string>(() => getTodayIsoDate());
   const [critCustomer, setCritCustomer] = useState<string>('---Select Any---');
   const [critSupplier, setCritSupplier] = useState<string>('---Select Any---');
   const [critItem, setCritItem] = useState<string>('Diesel');
   const [critInvoiceNo, setCritInvoiceNo] = useState<string>('');
-  const [critDate, setCritDate] = useState<string>('17/10/2026');
+  const [critDate, setCritDate] = useState<string>(() => getTodayIsoDate());
   const [critShift, setCritShift] = useState<string>('First');
   const [critLedger, setCritLedger] = useState<string>('');
   const [critAccountGroup, setCritAccountGroup] = useState<string>('---Select Any---');
@@ -191,11 +192,11 @@ export const ReportCriteriaModal: React.FC<ReportCriteriaModalProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
               <div className="win-form-row">
                 <span className="win-label" style={{ minWidth: '70px' }}>From Date</span>
-                <input type="text" className="win-input" value={critFromDate} onChange={(e) => setCritFromDate(e.target.value)} style={{ flex: 1 }} />
+                <input type="date" className="win-input" value={critFromDate} onChange={(e) => setCritFromDate(e.target.value)} style={{ flex: 1 }} />
               </div>
               <div className="win-form-row">
                 <span className="win-label" style={{ minWidth: '70px' }}>To Date</span>
-                <input type="text" className="win-input" value={critToDate} onChange={(e) => setCritToDate(e.target.value)} style={{ flex: 1 }} />
+                <input type="date" className="win-input" value={critToDate} onChange={(e) => setCritToDate(e.target.value)} style={{ flex: 1 }} />
               </div>
               <div className="win-form-row">
                 <span className="win-label" style={{ minWidth: '70px' }}>Customer</span>
@@ -234,7 +235,7 @@ export const ReportCriteriaModal: React.FC<ReportCriteriaModalProps> = ({
               </div>
               <div className="win-form-row">
                 <span className="win-label" style={{ minWidth: '70px' }}>Date</span>
-                <input type="text" className="win-input" value={critDate} onChange={(e) => setCritDate(e.target.value)} style={{ flex: 1 }} />
+                <input type="date" className="win-input" value={critDate} onChange={(e) => setCritDate(e.target.value)} style={{ flex: 1 }} />
               </div>
               <div className="win-form-row">
                 <span className="win-label" style={{ minWidth: '70px' }}>Shift</span>

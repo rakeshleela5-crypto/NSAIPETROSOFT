@@ -56,8 +56,9 @@ import {
 } from './utils/offlineQueue';
 import {
   formatErpDate,
-  getCurrentMonthStartErpDate,
+  getCurrentMonthStartIsoDate,
   getTodayErpDate,
+  getTodayIsoDate,
 } from './utils/dateUtils';
 import type {
   BackupItem,
@@ -1866,9 +1867,28 @@ export default function App() {
         </div>
 
         <div className="win-ribbon-center">
-          <button className="btn-stamp-reminder" style={{ background: 'linear-gradient(180deg, #f39c12 0%, #d35400 100%)', color: '#fff', border: '1px solid #b94a00', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} onClick={openBackupDialog}>☁️ R2 Cloud Backups</button>
-          <button className="btn-stamp-reminder" onClick={openStampingCalendar}>Stamping Reminder</button>
-          <button className="btn-help-desk" onClick={() => setActiveDialog('help')}>Help Desk</button>
+          <button
+            id="btn-cloud-backup"
+            className="btn-cloud-backup"
+            style={{ background: 'linear-gradient(180deg, #f39c12 0%, #d35400 100%)', color: '#fff', border: '1px solid #b94a00', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
+            onClick={openBackupDialog}
+          >
+            ☁️ R2 Cloud Backups
+          </button>
+          <button
+            id="btn-stamp-reminder"
+            className="btn-stamp-reminder"
+            onClick={openStampingCalendar}
+          >
+            Stamping Reminder
+          </button>
+          <button
+            id="btn-help-desk"
+            className="btn-help-desk"
+            onClick={() => setActiveDialog('help')}
+          >
+            Help Desk
+          </button>
         </div>
 
         <div className="win-ribbon-right">
@@ -2429,8 +2449,8 @@ export default function App() {
         reportCriteriaRadio={reportCriteriaRadio}
         openCrystalReport={openCrystalReport}
         stationProfile={stationProfile}
-        critFromDate={getCurrentMonthStartErpDate()}
-        critToDate={getTodayErpDate()}
+        critFromDate={getCurrentMonthStartIsoDate()}
+        critToDate={getTodayIsoDate()}
         critShift="First"
         critItem="Diesel"
         salesReadings={salesReadings}

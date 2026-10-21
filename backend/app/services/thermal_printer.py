@@ -22,7 +22,15 @@ def generate_credit_slip_text(
     line_sep = "-" * 32
     double_sep = "=" * 32
 
-    date_str = sale.date.strftime("%d-%m-%Y") if hasattr(sale.date, "strftime") else str(sale.date)
+    if hasattr(sale.date, "strftime"):
+        date_str = sale.date.strftime("%d-%b-%Y")
+    else:
+        try:
+            from datetime import date as dt_date
+            parsed = dt_date.fromisoformat(str(sale.date)[:10])
+            date_str = parsed.strftime("%d-%b-%Y")
+        except Exception:
+            date_str = str(sale.date)
     time_str = datetime.now().strftime("%H:%M")
 
     slip_lines = [

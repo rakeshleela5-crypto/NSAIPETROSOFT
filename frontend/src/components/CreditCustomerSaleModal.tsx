@@ -3,6 +3,7 @@ import type { CustomerFull, FuelProductRate, StationProfile } from '../models';
 import { exportToCsv } from '../utils/exportCsv';
 import { formatCreditSaleWhatsApp, openWhatsAppChat } from '../utils/whatsapp';
 import { printThermalReceiptHtml } from '../utils/thermalPrinter';
+import { formatErpDate } from '../utils/dateUtils';
 
 interface CreditCustomerSaleModalProps {
   isOpen: boolean;
@@ -126,7 +127,7 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
           <span>Slip: ${creditSlipNo || '-'}</span>
         </div>
         <div style="display: flex; justify-content: space-between;">
-          <span>Date: ${creditDate}</span>
+          <span>Date: ${formatErpDate(creditDate)}</span>
           <span>Shift: ${creditShift}</span>
         </div>
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>

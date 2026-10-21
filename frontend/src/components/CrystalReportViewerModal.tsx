@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { CustomerFull, StationProfile } from '../models';
 import { erpStore } from '../store/erpStore';
-import { getTodayErpDate } from '../utils/dateUtils';
+import { toIsoDate, getTodayIsoDate, getCurrentMonthStartIsoDate, formatErpDate } from '../utils/dateUtils';
 import { exportToCsv } from '../utils/exportCsv';
 
 interface CrystalReportViewerModalProps {
@@ -53,11 +53,16 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
   customers = [],
   showToast,
 }) => {
-  const [fromDate, setFromDate] = useState<string>(initialFromDate || getTodayErpDate());
-  const [toDate, setToDate] = useState<string>(initialToDate || getTodayErpDate());
+  const [fromDate, setFromDate] = useState<string>(() => toIsoDate(initialFromDate) || getCurrentMonthStartIsoDate());
+  const [toDate, setToDate] = useState<string>(() => toIsoDate(initialToDate) || getTodayIsoDate());
   const [dateFilterMode, setDateFilterMode] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'>('TODAY');
   const [reportZoom, setReportZoom] = useState<string>('100%');
   const [selectedCustomerId, setSelectedCustomerId] = useState<number>(customers[0]?.id || 1);
+
+  useEffect(() => {
+    if (initialFromDate) setFromDate(toIsoDate(initialFromDate));
+    if (initialToDate) setToDate(toIsoDate(initialToDate));
+  }, [initialFromDate, initialToDate]);
 
   if (!isOpen) return null;
 
@@ -122,8 +127,8 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
         filename,
         ['Metric / Item', 'Reference', 'Period From', 'Period To', 'Recorded Figures'],
         [
-          ['Station', stationProfile.stationName, fromDate, toDate, 'ACTIVE'],
-          ['Report Title', activeReportTitle, fromDate, toDate, 'AUDITED'],
+          ['Station', stationProfile.stationName, formatErpDate(fromDate), formatErpDate(toDate), 'ACTIVE'],
+          ['Report Title', activeReportTitle, formatErpDate(fromDate), formatErpDate(toDate), 'AUDITED'],
         ]
       );
     }
@@ -301,7 +306,7 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
                 {activeReportTitle}
               </div>
               <div style={{ fontSize: '11px', fontWeight: 600, color: '#666' }}>
-                Statement Period: {fromDate} To {toDate} | Shift: {critShift || 'ALL'}
+                Statement Period: {formatErpDate(fromDate)} To {formatErpDate(toDate)} | Shift: {critShift || 'ALL'}
               </div>
             </div>
 

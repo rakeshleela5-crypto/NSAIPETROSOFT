@@ -5,6 +5,7 @@ import { exportToCsv } from '../utils/exportCsv';
 import { formatPaymentReceiptWhatsApp, openWhatsAppChat } from '../utils/whatsapp';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 import { erpStore } from '../store/erpStore';
+import { getTodayErpDate, formatErpDate } from '../utils/dateUtils';
 
 interface PaymentReceiptModalProps {
   isOpen: boolean;
@@ -41,7 +42,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   const [payShift, setPayShift] = useState<string>('First');
   const [payReceiptNo, setPayReceiptNo] = useState<string>('00142');
   const [payCustName, setPayCustName] = useState<string>('');
-  const [payDate, setPayDate] = useState<string>(new Date().toLocaleDateString('en-GB'));
+  const [payDate, setPayDate] = useState<string>(() => getTodayErpDate());
   const [payTotalPurch, setPayTotalPurch] = useState<number>(0);
   const [payTotalPaid, setPayTotalPaid] = useState<number>(0);
   const [payTotalUnpaid, setPayTotalUnpaid] = useState<number>(0);
@@ -78,7 +79,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
         </div>
         <div style="display: flex; justify-content: space-between;">
           <span>Receipt: ${payReceiptNo || 'RCP-001'}</span>
-          <span>${payDate}</span>
+          <span>${formatErpDate(payDate)}</span>
         </div>
         <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
         <div><b>Customer:</b> ${payCustName || 'Customer'}</div>
@@ -285,7 +286,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                     stationName: stationProfile.stationName,
                     stationCity: stationProfile.city,
                     receiptNo: payReceiptNo || 'RCP-RECENT',
-                    date: payDate,
+                    date: formatErpDate(payDate),
                     customerName: payCustName || 'Customer',
                     amount: payAmount || 0,
                     paymentMode: payMode,

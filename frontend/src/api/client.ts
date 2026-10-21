@@ -910,52 +910,65 @@ export async function toggleCustomerBlockApi(customerId: number): Promise<Toggle
 // ---------------------------------------------------------------------------
 // Store / Station Profile Settings API (Cloud Database Sync)
 // ---------------------------------------------------------------------------
-export async function fetchStationProfileApi(): Promise<StationProfile> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`);
-  if (!res.ok) throw new Error(`Fetch station profile failed: ${res.status}`);
-  const data = await res.json();
-  return {
-    stationName: data.station_name || 'NSAIPETROSOFT RETAIL OUTLET',
-    oilCompany: data.oil_company || 'BHARAT PETROLEUM CORPORATION LTD',
-    dealerCode: data.dealer_code || '',
-    address: data.address || '',
-    city: data.city || '',
-    state: data.state || '',
-    stateCode: data.state_code || '',
-    pincode: data.pincode || '',
-    gstin: data.gstin || '',
-    panNo: data.pan_no || '',
-    phone: data.phone || '',
-    upiVpa: data.upi_vpa || '',
-    printerPaperWidth: data.printer_paper_width === '58mm' ? '58mm' : '80mm',
-    managerPin: data.manager_pin || '1234',
-  };
+export async function fetchStationProfileApi(): Promise<StationProfile | null> {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`, {}, 3000);
+    if (!res.ok) {
+      // Endpoint not deployed or 404: gracefully return null so local state is retained
+      return null;
+    }
+    const data = await res.json();
+    if (!data || !data.station_name) return null;
+    return {
+      stationName: data.station_name || 'NSAIPETROSOFT RETAIL OUTLET',
+      oilCompany: data.oil_company || 'BHARAT PETROLEUM CORPORATION LTD',
+      dealerCode: data.dealer_code || '',
+      address: data.address || '',
+      city: data.city || '',
+      state: data.state || '',
+      stateCode: data.state_code || '',
+      pincode: data.pincode || '',
+      gstin: data.gstin || '',
+      panNo: data.pan_no || '',
+      phone: data.phone || '',
+      upiVpa: data.upi_vpa || '',
+      printerPaperWidth: data.printer_paper_width === '58mm' ? '58mm' : '80mm',
+      managerPin: data.manager_pin || '1234',
+    };
+  } catch (_err) {
+    // Suppress network/offline errors; fallback transparently to localStorage
+    return null;
+  }
 }
 
 export async function saveStationProfileApi(profile: StationProfile): Promise<any> {
-  const payload = {
-    station_name: profile.stationName,
-    oil_company: profile.oilCompany,
-    dealer_code: profile.dealerCode || '',
-    address: profile.address || '',
-    city: profile.city || '',
-    state: profile.state || '',
-    state_code: profile.stateCode || '',
-    pincode: profile.pincode || '',
-    gstin: profile.gstin || '',
-    pan_no: profile.panNo || '',
-    phone: profile.phone || '',
-    upi_vpa: profile.upiVpa || '',
-    printer_paper_width: profile.printerPaperWidth || '80mm',
-    manager_pin: profile.managerPin || '1234',
-  };
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`Save station profile failed: ${res.status}`);
-  return res.json();
+  try {
+    const payload = {
+      station_name: profile.stationName,
+      oil_company: profile.oilCompany,
+      dealer_code: profile.dealerCode || '',
+      address: profile.address || '',
+      city: profile.city || '',
+      state: profile.state || '',
+      state_code: profile.stateCode || '',
+      pincode: profile.pincode || '',
+      gstin: profile.gstin || '',
+      pan_no: profile.panNo || '',
+      phone: profile.phone || '',
+      upi_vpa: profile.upiVpa || '',
+      printer_paper_width: profile.printerPaperWidth || '80mm',
+      manager_pin: profile.managerPin || '1234',
+    };
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return null;
+    return await res.json().catch(() => null);
+  } catch (_err) {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
