@@ -9,22 +9,9 @@ interface HelpDeskModalProps {
 
 export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<'shortcuts' | 'auditGuide' | 'diagnostics'>('shortcuts');
-  const [storageUsageBytes, setStorageUsageBytes] = useState<number>(0);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   useEffect(() => {
-    if (typeof localStorage !== 'undefined') {
-      try {
-        let total = 0;
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key) {
-            total += (localStorage.getItem(key) || '').length * 2; // UTF-16 bytes approx
-          }
-        }
-        setStorageUsageBytes(total);
-      } catch {}
-    }
     const updateOnline = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', updateOnline);
     window.addEventListener('offline', updateOnline);
@@ -232,7 +219,7 @@ export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose })
                   <div style={{ border: '1px solid #e0e0e0', padding: '8px', background: '#fafafa' }}>
                     <div><strong>Network Status:</strong> {isOnline ? '🟢 Online (Cloud Connected)' : '🟠 Forecourt Offline (Buffering)'}</div>
                     <div><strong>Offline Queue Depth:</strong> {queueCount} transactions queued</div>
-                    <div><strong>LocalStorage Usage:</strong> ~{(storageUsageBytes / 1024).toFixed(1)} KB (Safe limit: 5120 KB)</div>
+                    <div><strong>Persistence Architecture:</strong> Cloud-Direct PostgreSQL (Zero LocalStorage)</div>
                     <div><strong>Database Schema Version:</strong> v2.0 (ACID Multi-ledger)</div>
                   </div>
                   <div style={{ border: '1px solid #e0e0e0', padding: '8px', background: '#fafafa' }}>

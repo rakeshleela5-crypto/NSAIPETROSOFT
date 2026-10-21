@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 import time
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
 
 from app.core.security import (
     create_access_token,
@@ -76,7 +78,11 @@ class CreateUserRequest(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 @router.post("/login", response_model=TokenResponse, summary="Station User Login")
-async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    credentials: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     stmt = select(User).where(User.username == credentials.username.strip())
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -97,6 +103,16 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
         data={"sub": user.username, "role": user.role, "user_id": user.id}
     )
 
+    # Set httpOnly secure cookie for zero-storage browser session authentication
+    response.set_cookie(
+        key="nsai_access_token",
+        value=token,
+        httponly=True,
+        secure=settings.ENVIRONMENT == "production",
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -114,6 +130,7 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def verify_manager_pin(
     payload: VerifyPinRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     client_ip = _get_client_ip(request)
@@ -177,6 +194,14 @@ async def verify_manager_pin(
         _PIN_ATTEMPTS.pop(client_ip, None)
         temp_token = create_access_token(
             data={"sub": authorized_by, "role": role, "scope": "manager_override"}
+        )
+        response.set_cookie(
+            key="nsai_manager_token",
+            value=temp_token,
+            httponly=True,
+            secure=settings.ENVIRONMENT == "production",
+            samesite="lax",
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
         return {
             "authorized": True,
@@ -269,3 +294,10 @@ async def create_user(
         "role": new_user.role,
         "is_active": new_user.is_active,
     }
+
+
+@router.post("/logout", summary="User Logout & Cookie Invalidation")
+async def logout(response: Response):
+    response.delete_cookie(key="nsai_access_token")
+    response.delete_cookie(key="nsai_manager_token")
+    return {"message": "Session invalidated successfully"}

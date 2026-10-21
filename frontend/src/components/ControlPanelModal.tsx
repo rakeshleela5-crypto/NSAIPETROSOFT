@@ -107,12 +107,11 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
   // 3. Rollback Restore
   const handleRollbackSnapshot = async () => {
     try {
-      const snapshot = localStorage.getItem('nsaipetrosoft_erp_state_v2_pre_restore_snapshot');
-      if (!snapshot) {
-        showToast('ℹ No previous rollback snapshot found.');
+      const rolledBack = erpStore.rollbackSnapshot();
+      if (!rolledBack) {
+        showToast('ℹ No previous in-memory rollback snapshot found.');
         return;
       }
-      erpStore.restoreBackupJson(snapshot);
       showToast('✔ Rollback successful: Reverted to state prior to last restore.');
       await loadAllErpData();
     } catch (err: any) {

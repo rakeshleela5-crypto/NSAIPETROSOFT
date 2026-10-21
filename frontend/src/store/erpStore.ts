@@ -7,7 +7,7 @@
  * - Strict 2500ms AbortController timeout for remote bootstrap
  * - Atomic multi-ledger updates (Nozzle Sale -> Tank Stock -> Cashier Tally -> DSR)
  * - Exact paise & millilitres decimal math
- * - Full offline queue & persistence to localStorage
+ * - Cloud-direct sync to Railway FastAPI & PostgreSQL (Zero LocalStorage)
  */
 
 import {
@@ -186,24 +186,16 @@ export interface ErpStoreState {
   quotations: QuotationItem[];
 }
 
-const STORAGE_KEY = 'nsaipetrosoft_master_state_v2';
-const BACKUP_QUARANTINE_KEY = 'nsaipetrosoft_corrupted_backup';
-
-function getSafeStorage(): {
-  getItem: (key: string) => string | null;
-  setItem: (key: string, value: string) => void;
-  removeItem: (key: string) => void;
-} | null {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      return window.localStorage;
-    }
-    if (typeof localStorage !== 'undefined') {
-      return localStorage;
-    }
-  } catch {}
-  return null;
-}
+// Purge any residual legacy localStorage cache from previous software iterations
+try {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('nsaipetrosoft_master_state_v2');
+    localStorage.removeItem('nsaipetrosoft_corrupted_backup');
+    localStorage.removeItem('nsaipetrosoft_erp_state_v2_pre_restore_snapshot');
+    localStorage.removeItem('nsaipetrosoft_erp_state_v2_pre_clean_snapshot');
+    localStorage.removeItem('nsaipetrosoft_station_profile');
+  }
+} catch {}
 
 export const DEFAULT_INITIAL_STATE: ErpStoreState = {
   version: 2,
@@ -610,71 +602,11 @@ class ErpStore {
   private state: ErpStoreState;
   private listeners: Set<(state: ErpStoreState) => void> = new Set();
   public quarantineWarning: string | null = null;
+  private preRestoreSnapshot: ErpStoreState | null = null;
+  private preCleanSnapshot: ErpStoreState | null = null;
 
   constructor() {
-    this.state = this.hydrateState();
-  }
-
-  /**
-   * Safe hydration: validates JSON, quarantines corrupted data, falls back to clean schema
-   */
-  private hydrateState(): ErpStoreState {
-    const storage = getSafeStorage();
-    if (!storage) {
-      return { ...DEFAULT_INITIAL_STATE };
-    }
-
-    try {
-      const raw = storage.getItem(STORAGE_KEY);
-      if (!raw) {
-        this.saveStateToStorage(DEFAULT_INITIAL_STATE);
-        return { ...DEFAULT_INITIAL_STATE };
-      }
-
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.tanks) || !Array.isArray(parsed.customers)) {
-        throw new Error('Malformed or incomplete ERP state schema');
-      }
-
-      return {
-        ...DEFAULT_INITIAL_STATE,
-        ...parsed,
-        tanks: parsed.tanks && parsed.tanks.length > 0 ? parsed.tanks : DEFAULT_INITIAL_STATE.tanks,
-        nozzles: parsed.nozzles && parsed.nozzles.length > 0 ? parsed.nozzles : DEFAULT_INITIAL_STATE.nozzles,
-        customers: parsed.customers && parsed.customers.length > 0 ? parsed.customers : DEFAULT_INITIAL_STATE.customers,
-        bankAccounts: parsed.bankAccounts && parsed.bankAccounts.length > 0 ? parsed.bankAccounts : DEFAULT_INITIAL_STATE.bankAccounts,
-        products: parsed.products && parsed.products.length > 0 ? parsed.products : DEFAULT_INITIAL_STATE.products,
-        rates: parsed.rates && parsed.rates.length > 0 ? parsed.rates : DEFAULT_INITIAL_STATE.rates,
-      };
-    } catch (err: any) {
-      console.error('[NSAIPETROSOFT] LocalStorage state parse failure:', err);
-      // Quarantine corrupted payload
-      try {
-        const corrupted = storage.getItem(STORAGE_KEY);
-        if (corrupted) {
-          storage.setItem(
-            `${BACKUP_QUARANTINE_KEY}_${Date.now()}`,
-            JSON.stringify({ timestamp: new Date().toISOString(), raw: corrupted, error: err?.message })
-          );
-        }
-      } catch (e) {
-        console.warn('Could not write quarantine backup:', e);
-      }
-
-      this.quarantineWarning = 'Corrupted local database was safely quarantined. Valid default forecourt schema initialized.';
-      this.saveStateToStorage(DEFAULT_INITIAL_STATE);
-      return { ...DEFAULT_INITIAL_STATE };
-    }
-  }
-
-  private saveStateToStorage(state: ErpStoreState): void {
-    const storage = getSafeStorage();
-    if (!storage) return;
-    try {
-      storage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {
-      console.warn('Failed to persist to localStorage:', e);
-    }
+    this.state = { ...DEFAULT_INITIAL_STATE };
   }
 
   public subscribe(listener: (state: ErpStoreState) => void): () => void {
@@ -684,12 +616,33 @@ class ErpStore {
 
   private notify(): void {
     this.state.lastUpdated = new Date().toISOString();
-    this.saveStateToStorage(this.state);
     this.listeners.forEach((fn) => fn(this.state));
   }
 
   public getState(): ErpStoreState {
     return this.state;
+  }
+
+  public getPreRestoreSnapshot(): ErpStoreState | null {
+    return this.preRestoreSnapshot;
+  }
+
+  public rollbackSnapshot(): boolean {
+    if (!this.preRestoreSnapshot) return false;
+    this.state = JSON.parse(JSON.stringify(this.preRestoreSnapshot));
+    this.notify();
+    return true;
+  }
+
+  public getPreCleanSnapshot(): ErpStoreState | null {
+    return this.preCleanSnapshot;
+  }
+
+  public rollbackCleanSnapshot(): boolean {
+    if (!this.preCleanSnapshot) return false;
+    this.state = JSON.parse(JSON.stringify(this.preCleanSnapshot));
+    this.notify();
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -1515,13 +1468,8 @@ class ErpStore {
       throw new Error('Invalid backup file schema: Missing essential tables');
     }
 
-    // Save rollback snapshot
-    const storage = getSafeStorage();
-    if (storage) {
-      try {
-        storage.setItem(`${STORAGE_KEY}_pre_restore_snapshot`, JSON.stringify(this.state));
-      } catch {}
-    }
+    // Save in-memory rollback snapshot
+    this.preRestoreSnapshot = JSON.parse(JSON.stringify(this.state));
 
     this.state = {
       ...DEFAULT_INITIAL_STATE,
@@ -1536,13 +1484,8 @@ class ErpStore {
   }
 
   public cleanSlateDatabase(keepMasters: boolean = true): void {
-    // Save safety rollback snapshot before wipe
-    const storage = getSafeStorage();
-    if (storage) {
-      try {
-        storage.setItem(`${STORAGE_KEY}_pre_clean_snapshot`, JSON.stringify(this.state));
-      } catch {}
-    }
+    // Save in-memory safety rollback snapshot before wipe
+    this.preCleanSnapshot = JSON.parse(JSON.stringify(this.state));
 
     if (keepMasters) {
       this.state.creditBills = [];

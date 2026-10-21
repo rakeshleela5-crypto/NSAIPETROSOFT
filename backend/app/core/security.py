@@ -4,7 +4,7 @@ import hmac
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 from sqlalchemy import select
@@ -81,12 +81,14 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
 # FastAPI Authentication Dependencies
 # ---------------------------------------------------------------------------
 async def get_current_user_optional(
+    request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
-    if not token:
+    actual_token = token or request.cookies.get("nsai_access_token") or request.cookies.get("nsai_manager_token")
+    if not actual_token:
         return None
-    payload = decode_access_token(token)
+    payload = decode_access_token(actual_token)
     if not payload:
         return None
     username: Optional[str] = payload.get("sub")
@@ -99,6 +101,7 @@ async def get_current_user_optional(
 
 
 async def get_current_user(
+    request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -107,10 +110,11 @@ async def get_current_user(
         detail="Could not validate credentials or session expired",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if not token:
+    actual_token = token or request.cookies.get("nsai_access_token") or request.cookies.get("nsai_manager_token")
+    if not actual_token:
         raise credentials_exception
 
-    payload = decode_access_token(token)
+    payload = decode_access_token(actual_token)
     if payload is None:
         raise credentials_exception
 

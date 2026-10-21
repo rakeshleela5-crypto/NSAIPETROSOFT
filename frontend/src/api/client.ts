@@ -22,6 +22,7 @@ export async function fetchWithTimeout(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
+      credentials: 'include',
       ...options,
       signal: controller.signal,
     });
@@ -39,9 +40,23 @@ export async function fetchWithTimeout(
 export type * from '../models';
 import type { StationProfile } from '../models';
 
+// In-memory runtime session token (ZERO localStorage storage)
+let inMemoryManagerToken: string | null = null;
+
+// Purge any legacy browser storage tokens
+try {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('nsai_manager_token');
+    localStorage.removeItem('nsai_auth_token');
+  }
+} catch {}
+
+export function setManagerToken(token: string | null): void {
+  inMemoryManagerToken = token;
+}
+
 export function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('nsai_manager_token') || localStorage.getItem('nsai_auth_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return inMemoryManagerToken ? { Authorization: `Bearer ${inMemoryManagerToken}` } : {};
 }
 
 export interface VerifyPinResponse {
@@ -64,7 +79,7 @@ export async function verifyManagerPinApi(pin: string, actionTitle?: string): Pr
   }
   const data = await res.json();
   if (data.token) {
-    localStorage.setItem('nsai_manager_token', data.token);
+    setManagerToken(data.token);
   }
   return data;
 }
@@ -936,7 +951,7 @@ export async function fetchStationProfileApi(): Promise<StationProfile | null> {
       managerPin: data.manager_pin || '1234',
     };
   } catch (_err) {
-    // Suppress network/offline errors; fallback transparently to localStorage
+    // Suppress network/offline errors; fallback transparently to memory profile
     return null;
   }
 }

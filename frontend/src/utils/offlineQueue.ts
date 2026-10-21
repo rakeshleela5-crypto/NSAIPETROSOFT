@@ -1,10 +1,8 @@
 /**
- * NSAIPETROSOFT Forecourt Offline Resilience Engine
- * Buffers credit slips, shift readings, and sales when cellular/WiFi connectivity drops.
- * Automatically synchronizes with Railway PostgreSQL backend upon network restoration.
+ * NSAIPETROSOFT Forecourt Cloud-Direct Engine
+ * Pure in-memory session resilience: ZERO localStorage memory footprint.
+ * All state and operations persist directly in Railway Cloud PostgreSQL via FastAPI.
  */
-
-const OFFLINE_QUEUE_KEY = 'nsai_forecourt_offline_queue_v1';
 
 export interface QueuedOfflineRecord {
   id: string;
@@ -14,51 +12,46 @@ export interface QueuedOfflineRecord {
   retry_count: number;
 }
 
-export function getOfflineQueue(): QueuedOfflineRecord[] {
-  try {
-    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+// In-memory runtime buffer only (ZERO localStorage usage)
+let inMemoryQueue: QueuedOfflineRecord[] = [];
+
+// Clean up any stale legacy offline storage keys from earlier versions
+try {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('nsai_forecourt_offline_queue_v1');
+    localStorage.removeItem('nsai_offline_queue');
   }
+} catch {}
+
+export function getOfflineQueue(): QueuedOfflineRecord[] {
+  return inMemoryQueue;
 }
 
 export function getOfflineQueueCount(): number {
-  return getOfflineQueue().length;
+  return inMemoryQueue.length;
 }
 
 export function enqueueOfflineRecord(
   type: 'CREDIT_SALE' | 'SHIFT_METERS' | 'DIP_ENTRY' | 'LUBE_SALE',
   payload: any
 ): QueuedOfflineRecord {
-  const queue = getOfflineQueue();
   const record: QueuedOfflineRecord = {
-    id: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: `mem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     type,
     payload,
     created_at: new Date().toISOString(),
     retry_count: 0,
   };
-  queue.push(record);
-  try {
-    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-  } catch (err) {
-    console.error('Failed to buffer offline record to localStorage:', err);
-  }
+  inMemoryQueue.push(record);
   return record;
 }
 
 export function removeOfflineRecord(id: string): void {
-  const queue = getOfflineQueue().filter((r) => r.id !== id);
-  try {
-    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-  } catch (err) {
-    console.error('Failed to update offline queue:', err);
-  }
+  inMemoryQueue = inMemoryQueue.filter((r) => r.id !== id);
 }
 
 /**
- * Replays all queued transactions to Railway backend when online.
+ * Replays queued transactions directly to Railway PostgreSQL backend when online.
  */
 export async function syncOfflineQueue(
   onSynced?: (item: QueuedOfflineRecord, res: any) => void,
@@ -68,11 +61,11 @@ export async function syncOfflineQueue(
     return { total: 0, synced: 0, failed: 0 };
   }
 
-  const queue = getOfflineQueue();
-  if (queue.length === 0) {
+  if (inMemoryQueue.length === 0) {
     return { total: 0, synced: 0, failed: 0 };
   }
 
+  const queue = [...inMemoryQueue];
   let synced = 0;
   let failed = 0;
 
@@ -99,7 +92,6 @@ export async function syncOfflineQueue(
       failed++;
       record.retry_count = (record.retry_count || 0) + 1;
       if (onError) onError(record, err);
-      // If we encounter a critical error on one, proceed or stop
     }
   }
 
@@ -114,11 +106,11 @@ export function initOfflineNetworkListener(
 ): () => void {
   const handleOnline = () => {
     syncOfflineQueue(
-      (item) => {
-        console.log(`[Offline Sync] Replayed ${item.type} (${item.id}) to Railway backend.`);
+      (_item) => {
+        // Silently replayed to cloud PostgreSQL
       },
       (item, err) => {
-        console.error(`[Offline Sync Error] Failed to replay ${item.type}:`, err);
+        console.error(`[Cloud Sync Error] Failed to replay ${item.type}:`, err);
       }
     ).then(() => {
       if (onStatusChange) onStatusChange(true, getOfflineQueueCount());

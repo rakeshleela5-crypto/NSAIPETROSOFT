@@ -34,13 +34,12 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   private handleResetState = () => {
-    if (window.confirm('Resetting local state will clear un-synced cache and reload the application. Proceed?')) {
+    if (window.confirm('Resetting runtime session cache will reload the application from the cloud database. Proceed?')) {
       try {
-        localStorage.removeItem('nsai_offline_queue');
-        localStorage.removeItem('nsai_auth_token');
         sessionStorage.clear();
+        if (typeof localStorage !== 'undefined') localStorage.clear();
       } catch (e) {
-        console.warn('Cache clear error:', e);
+        console.warn('Session clear error:', e);
       }
       window.location.reload();
     }
@@ -48,34 +47,29 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleSafeModeResetAndExport = () => {
     try {
-      // Export all raw localStorage to emergency file
-      const dump: Record<string, string | null> = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key) dump[key] = localStorage.getItem(key);
-      }
-      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      // Export diagnostic crash report
+      const incidentDump = {
+        error: this.state.error?.message,
+        stack: this.state.error?.stack,
+        componentStack: this.state.errorInfo?.componentStack,
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+      };
+      const blob = new Blob([JSON.stringify(incidentDump, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `NSaiPetroSoft_Emergency_Raw_State_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `NSaiPetroSoft_Incident_Crash_Log_${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      // Quarantine corrupted payload
-      const current = localStorage.getItem('nsaipetrosoft_master_state_v2');
-      if (current) {
-        localStorage.setItem(`nsaipetrosoft_corrupted_backup_${Date.now()}`, current);
-      }
-
-      // Clear faulty keys
-      localStorage.removeItem('nsaipetrosoft_master_state_v2');
-      localStorage.removeItem('nsai_offline_queue');
       sessionStorage.clear();
+      if (typeof localStorage !== 'undefined') localStorage.clear();
     } catch (e) {
-      console.error('Emergency dump failed:', e);
+      console.error('Incident export failed:', e);
     }
     window.location.reload();
   };

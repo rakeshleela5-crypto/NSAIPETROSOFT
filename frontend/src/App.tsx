@@ -183,14 +183,8 @@ export default function App() {
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
   const [selectedAccount, setSelectedAccount] = useState<string>('CASH ON HAND');
 
-  // Station Outlet Profile State (Persistent in Browser LocalStorage)
+  // Station Outlet Profile State (Direct Cloud PostgreSQL via FastAPI)
   const [stationProfile, setStationProfile] = useState<StationProfile>(() => {
-    const saved = localStorage.getItem('nsaipetrosoft_station_profile');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {}
-    }
     return {
       stationName: 'NSAIPETROSOFT RETAIL OUTLET',
       oilCompany: 'BHARAT PETROLEUM CORPORATION LTD',
@@ -208,15 +202,15 @@ export default function App() {
     };
   });
 
-  const saveStationProfile = (updated: StationProfile) => {
+  const saveStationProfile = async (updated: StationProfile) => {
     setStationProfile(updated);
     try {
-      localStorage.setItem('nsaipetrosoft_station_profile', JSON.stringify(updated));
-    } catch {}
-    saveStationProfileApi(updated).catch((err) => {
+      await saveStationProfileApi(updated);
+      showToast('✔ Station Outlet Profile Updated & Saved to Cloud Database!');
+    } catch (err: any) {
       console.warn('Backend station profile sync deferred:', err);
-    });
-    showToast('✔ Station Outlet Profile Updated & Synced to Cloud!');
+      showToast('✔ Station Profile updated in session (Cloud sync pending)');
+    }
   };
 
   // Employees List State
@@ -631,12 +625,9 @@ export default function App() {
             ...prev,
             ...cloudProfile,
           }));
-          try {
-            localStorage.setItem('nsaipetrosoft_station_profile', JSON.stringify(cloudProfile));
-          } catch {}
         }
       } catch (profErr) {
-        // Fallback to local profile silently if endpoint not ready
+        // Fallback silently if endpoint not ready
       }
     } catch (err: any) {
       console.warn('Live ERP synchronization error:', err);
