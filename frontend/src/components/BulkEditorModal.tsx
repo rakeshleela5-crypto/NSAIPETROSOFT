@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { LubeProductItem } from '../models';
 import { erpStore } from '../store/erpStore';
+import { saveLubeProductApi } from '../api/client';
 
 interface BulkEditorModalProps {
   isOpen: boolean;
@@ -58,6 +59,20 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
   const handleCommitAll = async () => {
     try {
       erpStore.bulkUpdateProducts(gridData);
+      for (const item of gridData) {
+        try {
+          await saveLubeProductApi({
+            product_code: item.code,
+            product_name: item.name,
+            cost_price: item.cost_price,
+            sale_price: item.sale_price,
+            stock_qty: item.current_stock_units,
+            reorder_level: item.reorder_level,
+          });
+        } catch {
+          // Continue bulk loop
+        }
+      }
       if (showToast) showToast(`✔ Committed updates across ${gridData.length} products to master inventory!`);
       setHasChanges(false);
       if (loadAllErpData) await loadAllErpData();

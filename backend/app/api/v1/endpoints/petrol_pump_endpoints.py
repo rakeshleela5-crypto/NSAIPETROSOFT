@@ -48,6 +48,7 @@ from app.models.petrol_pump import (
     LubeProduct,
     LubeSaleEntry,
     SupervisorReversalVoucher,
+    CardSettlement,
 )
 router = APIRouter()
 
@@ -1340,6 +1341,16 @@ class CardSettlementCreate(BaseModel):
 
 @router.post("/card-settlements", summary="Record EDC POS Terminal Settlement")
 async def create_card_settlement(data: CardSettlementCreate, db: AsyncSession = Depends(get_db)):
+    card_entry = CardSettlement(
+        date=today_ist(),
+        machine_name=data.machine_name.strip(),
+        batch_no=data.batch_no.strip(),
+        slip_count=data.slip_count,
+        amount=data.amount,
+        status="SETTLED",
+    )
+    db.add(card_entry)
+
     bank_query = select(BankAccount).where(
         func.upper(BankAccount.account_name).like(f"%{data.machine_name.upper().strip()}%")
     )
@@ -1347,16 +1358,46 @@ async def create_card_settlement(data: CardSettlementCreate, db: AsyncSession = 
     bank_acc = bank_res.scalar_one_or_none()
     if bank_acc:
         bank_acc.balance += data.amount
-        await db.commit()
-        return {
-            "status": "success",
-            "message": f"Batch #{data.batch_no} recorded. ₹{data.amount} credited to {bank_acc.account_name}",
-            "new_balance": bank_acc.balance,
-        }
+
+    await db.commit()
+    await db.refresh(card_entry)
+
     return {
         "status": "success",
-        "message": f"Batch #{data.batch_no} recorded for {data.machine_name}",
+        "id": card_entry.id,
+        "date": card_entry.date.isoformat(),
+        "machine_name": card_entry.machine_name,
+        "batch_no": card_entry.batch_no,
+        "slip_count": card_entry.slip_count,
+        "amount": float(card_entry.amount),
+        "machine": card_entry.machine_name,
+        "batch": card_entry.batch_no,
+        "slips": card_entry.slip_count,
+        "message": f"Batch #{data.batch_no} recorded. ₹{data.amount} credited to {bank_acc.account_name if bank_acc else data.machine_name}",
+        "new_balance": bank_acc.balance if bank_acc else None,
     }
+
+
+@router.get("/card-settlements", summary="List EDC POS Terminal Settlements")
+async def list_card_settlements(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(CardSettlement).order_by(desc(CardSettlement.id)))
+    settlements = res.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "date": s.date.isoformat(),
+            "machine_name": s.machine_name,
+            "batch_no": s.batch_no,
+            "slip_count": s.slip_count,
+            "amount": float(s.amount),
+            "status": s.status,
+            "machine": s.machine_name,
+            "batch": s.batch_no,
+            "slips": s.slip_count,
+        }
+        for s in settlements
+    ]
+
 
 
 # -------------------------------------------------------------
@@ -1440,6 +1481,62 @@ async def add_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db)):
     db.add(veh)
     await db.commit()
     return {"message": "Vehicle added successfully", "vehicle_no": veh.vehicle_no}
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    mobile: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    address: Optional[str] = None
+    gst_no: Optional[str] = None
+    pan_no: Optional[str] = None
+    credit_limit: Optional[float] = None
+    bill_period: Optional[str] = None
+
+
+@router.put("/customers/{customer_id}", summary="Update Customer")
+async def update_customer(customer_id: int, data: CustomerUpdate, db: AsyncSession = Depends(get_db)):
+    cust = await db.get(Customer, customer_id)
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    if data.name is not None:
+        cust.name = data.name.strip()
+    if data.mobile is not None:
+        cust.mobile = data.mobile.strip()
+    if data.city is not None:
+        cust.city = data.city.strip()
+    if data.state is not None:
+        cust.state = data.state.strip()
+    if data.address is not None:
+        cust.address = data.address.strip()
+    if data.gst_no is not None:
+        cust.gst_no = data.gst_no.strip()
+    if data.pan_no is not None:
+        cust.pan_no = data.pan_no.strip()
+    if data.credit_limit is not None:
+        cust.credit_limit = data.credit_limit
+    if data.bill_period is not None:
+        cust.bill_period = data.bill_period
+    await db.commit()
+    return {"message": "Customer updated successfully", "id": cust.id, "name": cust.name}
+
+
+@router.delete("/customers/{customer_id}", summary="Delete Customer")
+async def delete_customer(customer_id: int, db: AsyncSession = Depends(get_db)):
+    cust = await db.get(Customer, customer_id)
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    if cust.current_outstanding and abs(cust.current_outstanding) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete customer '{cust.name}' with active outstanding balance of ₹{cust.current_outstanding:.2f}"
+        )
+    await db.execute(delete(Vehicle).where(Vehicle.customer_id == customer_id))
+    await db.delete(cust)
+    await db.commit()
+    return {"message": f"Customer '{cust.name}' deleted successfully", "id": customer_id}
+
 
 
 # -------------------------------------------------------------

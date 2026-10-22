@@ -284,6 +284,12 @@ export interface CreditSaleItem {
   driver_name?: string;
   indent_no?: string;
   shift?: string;
+  cust?: string;
+  vehicle?: string;
+  product_name?: string;
+  bill?: string;
+  slip?: string;
+  total?: number;
 }
 
 export interface CustomerFull {

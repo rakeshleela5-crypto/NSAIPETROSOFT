@@ -2,11 +2,14 @@ import React from 'react';
 import { exportToCsv } from '../utils/exportCsv';
 
 interface CardSettlementRow {
-  machine: string;
-  batch: string;
-  slips: number;
+  machine?: string;
+  batch?: string;
+  slips?: number;
   amount: number;
-  status: string;
+  status?: string;
+  machine_name?: string;
+  batch_no?: string;
+  slip_count?: number;
 }
 
 interface CardEntryModalProps {
@@ -125,11 +128,11 @@ export const CardEntryModal: React.FC<CardEntryModalProps> = ({
                 <tbody>
                   {cardSettlements.map((c, i) => (
                     <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{c.machine}</td>
-                      <td>{c.batch}</td>
-                      <td>{c.slips}</td>
+                      <td style={{ fontWeight: 600 }}>{c.machine || c.machine_name || 'EDC POS'}</td>
+                      <td>{c.batch || c.batch_no || '001'}</td>
+                      <td>{c.slips ?? c.slip_count ?? 1}</td>
                       <td className="text-right" style={{ fontWeight: 700 }}>₹ {c.amount.toFixed(2)}</td>
-                      <td><span style={{ color: '#27ae60', fontWeight: 700 }}>{c.status}</span></td>
+                      <td><span style={{ color: '#27ae60', fontWeight: 700 }}>{c.status || 'SETTLED'}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -147,7 +150,13 @@ export const CardEntryModal: React.FC<CardEntryModalProps> = ({
               onClick={() => exportToCsv(
                 `NSAIPETROSOFT_CardBatches_${new Date().toISOString().split('T')[0]}`,
                 ['EDC Machine', 'Batch No', 'Slips Count', 'Amount (INR)', 'Status'],
-                cardSettlements.map(c => [c.machine, c.batch, c.slips, c.amount, c.status])
+                cardSettlements.map(c => [
+                  c.machine || c.machine_name || 'EDC POS',
+                  c.batch || c.batch_no || '001',
+                  c.slips ?? c.slip_count ?? 1,
+                  c.amount,
+                  c.status || 'SETTLED'
+                ])
               )}
               title="Export POS EDC card settlements to Microsoft Excel or CSV"
             >

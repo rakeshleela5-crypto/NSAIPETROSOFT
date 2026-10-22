@@ -587,11 +587,11 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                   {creditBillsList.map((b, i) => (
                     <tr key={i}>
                       <td>{b.date}</td>
-                      <td>{b.bill}</td>
-                      <td>{b.cust}</td>
-                      <td>{b.vehicle}</td>
-                      <td className="text-right">{b.qty.toFixed(2)}</td>
-                      <td className="text-right" style={{ fontWeight: 700 }}>{b.total.toFixed(2)}</td>
+                      <td>{b.bill || b.bill_no || '-'}</td>
+                      <td>{b.cust || b.customer_name || 'Credit Customer'}</td>
+                      <td>{b.vehicle || b.vehicle_no || '-'}</td>
+                      <td className="text-right">{(b.qty || 0).toFixed(2)}</td>
+                      <td className="text-right" style={{ fontWeight: 700 }}>{Number(b.total ?? b.amount ?? 0).toFixed(2)}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '3px' }}>
                           <button
@@ -607,24 +607,25 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                             style={{ height: '18px', padding: '0 3px', fontSize: '10px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
                             title={`Send this slip to customer (${b.mobile || 'Registered Mobile'}) via WhatsApp`}
                             onClick={() => {
-                              const cust = customers.find((c) => c.name === b.cust);
+                              const custName = b.cust || b.customer_name;
+                              const cust = customers.find((c) => c.name === custName);
                               const phone = b.mobile || cust?.mobile || '';
                               const text = formatCreditSaleWhatsApp({
                                 stationName: stationProfile.stationName,
                                 stationCity: stationProfile.city,
-                                billNo: b.bill,
-                                slipNo: b.slip,
+                                billNo: b.bill || b.bill_no || 'CR-BILL',
+                                slipNo: b.slip || b.slip_no || '',
                                 date: b.date,
-                                customerName: b.cust,
-                                vehicleNo: b.vehicle,
-                                productName: 'High Speed Diesel (HSD)',
-                                qty: b.qty,
-                                rate: ratesList[0]?.rate || 94.25,
-                                amount: b.total,
-                                balanceAfter: cust?.current_outstanding || b.total,
+                                customerName: custName || 'Credit Customer',
+                                vehicleNo: b.vehicle || b.vehicle_no || '-',
+                                productName: b.product || 'High Speed Diesel (HSD)',
+                                qty: b.qty || 0,
+                                rate: b.rate || ratesList[0]?.rate || 94.25,
+                                amount: Number(b.total ?? b.amount ?? 0),
+                                balanceAfter: cust?.current_outstanding || Number(b.total ?? b.amount ?? 0),
                               });
                               openWhatsAppChat(phone, text);
-                              showToast(`📲 Opening WhatsApp delivery slip for ${b.cust}...`);
+                              showToast(`📲 Opening WhatsApp delivery slip for ${custName}...`);
                             }}
                           >
                             📲
@@ -638,7 +639,7 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
             </div>
 
             <div style={{ background: '#ece9d8', borderTop: '1px solid #7f9db9', padding: '4px 8px', display: 'flex', justifyContent: 'flex-end', fontWeight: 700 }}>
-              Total Credit Amount: ₹ {creditBillsList.reduce((acc, curr) => acc + curr.total, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              Total Credit Amount: ₹ {creditBillsList.reduce((acc, curr) => acc + Number(curr.total ?? curr.amount ?? 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
           </div>
         </div>
@@ -653,7 +654,14 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
               onClick={() => exportToCsv(
                 `NSAIPETROSOFT_CreditBills_${new Date().toISOString().split('T')[0]}`,
                 ['Bill No', 'Date', 'Customer Name', 'Vehicle No', 'Quantity (Ltrs)', 'Total Amount (INR)'],
-                creditBillsList.map(b => [b.bill, b.date, b.cust, b.vehicle, b.qty, b.total])
+                creditBillsList.map(b => [
+                  b.bill || b.bill_no || '-',
+                  b.date,
+                  b.cust || b.customer_name || 'Credit Customer',
+                  b.vehicle || b.vehicle_no || '-',
+                  b.qty || 0,
+                  Number(b.total ?? b.amount ?? 0)
+                ])
               )}
               title="Export credit sales register to Microsoft Excel or CSV"
             >

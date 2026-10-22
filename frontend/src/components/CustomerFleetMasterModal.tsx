@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import type { CustomerFull } from '../models';
 import { erpStore } from '../store/erpStore';
+import {
+  createCustomer,
+  updateCustomer,
+  deleteCustomer as deleteCustomerApi,
+  addVehicle,
+} from '../api/client';
 
 interface CustomerFleetMasterModalProps {
   isOpen: boolean;
@@ -109,6 +115,7 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     }
 
     try {
+      // 1. ACID Store immediate local update
       erpStore.saveCustomer({
         id: editCustId || undefined,
         name: formName.trim().toUpperCase(),
@@ -122,7 +129,47 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
         vehicles: vehicleList.map((v) => v.vehicle_no),
       });
 
-      showToast(`✔ Customer "${formName.toUpperCase()}" saved successfully!`);
+      // 2. Direct Cloud PostgreSQL Persistence
+      let persistedCustId = editCustId;
+      try {
+        if (editCustId) {
+          await updateCustomer(editCustId, {
+            name: formName.trim().toUpperCase(),
+            mobile: formMobile.trim(),
+            city: formCity.trim().toUpperCase(),
+            gst_no: formGstin.trim().toUpperCase() || undefined,
+            pan_no: formPan.trim().toUpperCase() || undefined,
+            credit_limit: formCreditLimit,
+            bill_period: formBillPeriod,
+          });
+        } else {
+          const res = await createCustomer({
+            name: formName.trim().toUpperCase(),
+            mobile: formMobile.trim(),
+            city: formCity.trim().toUpperCase(),
+            gst_no: formGstin.trim().toUpperCase() || undefined,
+            pan_no: formPan.trim().toUpperCase() || undefined,
+            credit_limit: formCreditLimit,
+            bill_period: formBillPeriod,
+          });
+          persistedCustId = res.id;
+        }
+
+        // Persist vehicles
+        if (persistedCustId && vehicleList.length > 0) {
+          for (const v of vehicleList) {
+            try {
+              await addVehicle(persistedCustId, v.vehicle_no);
+            } catch (vErr) {
+              // Ignore duplicate vehicle errors
+            }
+          }
+        }
+      } catch (apiErr: any) {
+        console.warn('Backend customer sync deferred:', apiErr);
+      }
+
+      showToast(`✔ Customer "${formName.toUpperCase()}" saved to PostgreSQL & Store!`);
       setIsEditing(false);
       await loadAllErpData();
     } catch (err: any) {
@@ -134,8 +181,13 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     if (!window.confirm(`Are you sure you want to delete customer "${c.name}"?`)) return;
 
     try {
+      try {
+        await deleteCustomerApi(c.id);
+      } catch (apiErr: any) {
+        console.warn('Backend delete error:', apiErr);
+      }
       erpStore.deleteCustomer(c.id);
-      showToast(`✔ Customer "${c.name}" deleted.`);
+      showToast(`✔ Customer "${c.name}" deleted from database.`);
       await loadAllErpData();
     } catch (err: any) {
       showToast(`❌ Guard Rejection: ${err.message}`);

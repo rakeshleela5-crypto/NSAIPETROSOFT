@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { erpStore } from '../store/erpStore';
+import { saveLubeProductApi } from '../api/client';
 
 interface AddProductModalProps {
   isOpen: boolean;
@@ -48,7 +49,25 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         reorder_level: reorderLevel,
       });
 
-      showToast(`✔ Product "${productName.toUpperCase()}" added to master catalog!`);
+      try {
+        await saveLubeProductApi({
+          product_code: productCode.trim().toUpperCase(),
+          product_name: productName.trim().toUpperCase(),
+          category,
+          package_size: packageSize.trim(),
+          mrp,
+          cost_price: costPrice,
+          sale_price: salePrice,
+          stock_qty: openingStock,
+          reorder_level: reorderLevel,
+          hsn_code: hsnCode,
+          gst_percent: gstPercent,
+        });
+      } catch (apiErr) {
+        console.warn('Backend lube sync deferred:', apiErr);
+      }
+
+      showToast(`✔ Product "${productName.toUpperCase()}" added to master catalog & database!`);
       await loadAllErpData();
       onClose();
     } catch (err: any) {

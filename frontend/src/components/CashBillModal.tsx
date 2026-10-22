@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { CustomerFull, FuelProductRate, StationProfile } from '../models';
 import { erpStore } from '../store/erpStore';
+import { createCreditSale, createCardSettlement } from '../api/client';
 import { getTodayErpDate } from '../utils/dateUtils';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 import { calcSaleAmount, calcTaxSplit } from '../utils/mathEngine';
@@ -113,25 +114,51 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
             slip_count: 1,
             amount: splitUpi,
           });
+          try {
+            await createCardSettlement({
+              machine_name: 'PHONEPE / PAYTM QR',
+              batch_no: `UPI-${cashMemoBillNo}`,
+              slip_count: 1,
+              amount: splitUpi,
+            });
+          } catch (e) {
+            console.warn('Card settlement sync deferred:', e);
+          }
         }
 
         // 3. Post Credit portion if > 0
         if (splitCredit > 0) {
+          const splitCreditQty = Math.round(((splitCredit / cashMemoRate) + Number.EPSILON) * 100) / 100;
           erpStore.recordCreditBill({
             customer_id: selectedCustomerId,
             vehicle_no: cashMemoVehicle.toUpperCase(),
             product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
-            qty: Math.round(((splitCredit / cashMemoRate) + Number.EPSILON) * 100) / 100,
+            qty: splitCreditQty,
             rate: cashMemoRate,
             slip_no: `SPLIT-${cashMemoBillNo}`,
             driver_name: driverName || 'Driver',
           });
+          try {
+            await createCreditSale({
+              customer_id: selectedCustomerId,
+              vehicle_no: cashMemoVehicle.toUpperCase(),
+              product_id: cashMemoProduct === 'MS' ? 1 : 2,
+              slip_no: `SPLIT-${cashMemoBillNo}`,
+              qty: splitCreditQty,
+              rate: cashMemoRate,
+              driver_name: driverName || 'Driver',
+            });
+          } catch (e) {
+            console.warn('Credit sale sync deferred:', e);
+          }
         }
 
         // 4. Atomically deduct total fuel volume from tank stock
         const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
-        tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
-        tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        if (tank) {
+          tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+          tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        }
 
         showToast(`✔ Multi-Mode Split Bill #${cashMemoBillNo} Saved (Cash: ₹${splitCash}, UPI: ₹${splitUpi}, Credit: ₹${splitCredit})!`);
       } else if (billMode === 'CREDIT') {
@@ -144,22 +171,47 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
           slip_no: `POS-${cashMemoBillNo}`,
           driver_name: driverName || 'Driver',
         });
+        try {
+          await createCreditSale({
+            customer_id: selectedCustomerId,
+            vehicle_no: cashMemoVehicle.toUpperCase(),
+            product_id: cashMemoProduct === 'MS' ? 1 : 2,
+            slip_no: `POS-${cashMemoBillNo}`,
+            qty: cashMemoLiters,
+            rate: cashMemoRate,
+            driver_name: driverName || 'Driver',
+          });
+        } catch (e) {
+          console.warn('Credit sale sync deferred:', e);
+        }
         showToast(`✔ Credit Fleet Bill #${cashMemoBillNo} Saved for ${customers.find(c => c.id === selectedCustomerId)?.name || 'Fleet'}!`);
       } else {
         if (billMode === 'UPI') {
           erpStore.recordCardSettlement({
             machine_name: 'PHONEPE / PAYTM QR',
-            batch_no: 'UPI-RETAIL',
+            batch_no: `UPI-${cashMemoBillNo}`,
             slip_count: 1,
             amount: totalAmount,
           });
+          try {
+            await createCardSettlement({
+              machine_name: 'PHONEPE / PAYTM QR',
+              batch_no: `UPI-${cashMemoBillNo}`,
+              slip_count: 1,
+              amount: totalAmount,
+            });
+          } catch (e) {
+            console.warn('Card settlement sync deferred:', e);
+          }
         } else if (state.bankAccounts.length > 0) {
           state.bankAccounts[0].balance = Math.round((state.bankAccounts[0].balance + totalAmount + Number.EPSILON) * 100) / 100;
         }
 
         const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
-        tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
-        tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        if (tank) {
+          tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+          tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        }
         showToast(`✔ Retail Bill #${cashMemoBillNo} Saved (Mode: ${billMode})! Printing 80mm slip...`);
       }
 

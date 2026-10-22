@@ -290,7 +290,7 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
                 <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
                   {creditBillsList.length > 0 ? (
                     creditBillsList.slice(0, 6).map((c, i) => (
-                      <div key={i}>• {c.cust} ({c.vehicle}) - ₹ {Number(c.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                      <div key={i}>• {c.cust || c.customer_name} ({c.vehicle || c.vehicle_no || '-'}) - ₹ {Number(c.total || c.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                     ))
                   ) : (
                     <div style={{ color: '#888', fontStyle: 'italic' }}>No credit sales in this shift</div>
@@ -304,7 +304,7 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
                 <div style={{ fontSize: '10px', lineHeight: '1.4', marginBottom: '6px', borderBottom: '1px solid #ddd', paddingBottom: '4px' }}>
                   {cardSettlements.length > 0 ? (
                     cardSettlements.map((cs, i) => (
-                      <div key={i}>• {cs.machine} ({cs.batch || 'POS'}): ₹ {Number(cs.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                      <div key={i}>• {cs.machine || cs.machine_name} ({cs.batch || cs.batch_no || 'POS'}): ₹ {Number(cs.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                     ))
                   ) : empCardSwipes.filter(c => c.amount > 0).length > 0 ? (
                     empCardSwipes.filter(c => c.amount > 0).map((cs, i) => (

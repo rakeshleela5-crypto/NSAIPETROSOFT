@@ -494,3 +494,19 @@ class SupervisorReversalVoucher(Base):
     shift = relationship("Shift")
 
 
+class CardSettlement(Base):
+    __tablename__ = "card_settlements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    machine_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    batch_no: Mapped[str] = mapped_column(String(50), nullable=False)
+    slip_count: Mapped[int] = mapped_column(Integer, default=1)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="SETTLED")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+

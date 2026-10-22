@@ -18,9 +18,12 @@ interface PaymentReceiptModalProps {
     receipt_no?: string;
     shift: string;
     date: string;
-    cust: string;
-    mode: string;
-    amt: number;
+    cust?: string;
+    customer_name?: string;
+    mode?: string;
+    payment_mode?: string;
+    amt?: number;
+    amount?: number;
     mobile?: string;
   }>;
   showToast: (msg: string) => void;
@@ -315,68 +318,74 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {payReceiptsHistory.map((h, i) => (
-                  <tr key={i}>
-                    <td>{h.shift}</td>
-                    <td>{h.date}</td>
-                    <td>{h.cust}</td>
-                    <td>{h.mode}</td>
-                    <td className="text-right" style={{ fontWeight: 700 }}>{h.amt.toFixed(2)}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '3px' }}>
-                        <button
-                          className="win-btn-classic"
-                          style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
-                          onClick={() => {
-                            requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${h.cust} - ₹${Number(h.amt || 0).toFixed(2)})`, async () => {
-                              try {
-                                if (h.id) {
-                                  await deletePaymentReceipt(h.id);
-                                } else {
-                                  const latest = await fetchPayments();
-                                  const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === h.cust && x.amount === h.amt));
-                                  if (found && found.id) {
-                                    await deletePaymentReceipt(found.id);
+                {payReceiptsHistory.map((h, i) => {
+                  const custName = h.cust || h.customer_name || 'Customer';
+                  const payModeStr = h.mode || h.payment_mode || 'CASH';
+                  const amountVal = Number(h.amt ?? h.amount ?? 0);
+
+                  return (
+                    <tr key={i}>
+                      <td>{h.shift}</td>
+                      <td>{h.date}</td>
+                      <td>{custName}</td>
+                      <td>{payModeStr}</td>
+                      <td className="text-right" style={{ fontWeight: 700 }}>{amountVal.toFixed(2)}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '3px' }}>
+                          <button
+                            className="win-btn-classic"
+                            style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
+                            onClick={() => {
+                              requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${custName} - ₹${amountVal.toFixed(2)})`, async () => {
+                                try {
+                                  if (h.id) {
+                                    await deletePaymentReceipt(h.id);
+                                  } else {
+                                    const latest = await fetchPayments();
+                                    const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === custName && x.amount === amountVal));
+                                    if (found && found.id) {
+                                      await deletePaymentReceipt(found.id);
+                                    }
                                   }
+                                  showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
+                                  await loadAllErpData();
+                                } catch (err: any) {
+                                  showToast(`⚠ Error deleting payment receipt: ${err.message || 'Database error'}`);
                                 }
-                                showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
-                                await loadAllErpData();
-                              } catch (err: any) {
-                                showToast(`⚠ Error deleting payment receipt: ${err.message || 'Database error'}`);
-                              }
-                            });
-                          }}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          type="button"
-                          className="win-btn-classic"
-                          style={{ height: '18px', padding: '0 3px', fontSize: '10px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
-                          title={`Send payment receipt to ${h.cust} via WhatsApp`}
-                          onClick={() => {
-                            const cust = customers.find((c) => c.name === h.cust);
-                            const phone = h.mobile || cust?.mobile || '';
-                            const msg = formatPaymentReceiptWhatsApp({
-                              stationName: stationProfile.stationName,
-                              stationCity: stationProfile.city,
-                              receiptNo: h.receipt_no || `RCP-${h.id || (i + 1)}`,
-                              date: h.date,
-                              customerName: h.cust,
-                              amount: h.amt,
-                              paymentMode: h.mode,
-                              newBalance: cust?.current_outstanding || 0,
-                            });
-                            openWhatsAppChat(phone, msg);
-                            showToast(`📲 Opening WhatsApp payment acknowledgment for ${h.cust}...`);
-                          }}
-                        >
-                          📲
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                              });
+                            }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            className="win-btn-classic"
+                            style={{ height: '18px', padding: '0 3px', fontSize: '10px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                            title={`Send payment receipt to ${custName} via WhatsApp`}
+                            onClick={() => {
+                              const cust = customers.find((c) => c.name === custName);
+                              const phone = h.mobile || cust?.mobile || '';
+                              const msg = formatPaymentReceiptWhatsApp({
+                                stationName: stationProfile.stationName,
+                                stationCity: stationProfile.city,
+                                receiptNo: h.receipt_no || `RCP-${h.id || (i + 1)}`,
+                                date: h.date,
+                                customerName: custName,
+                                amount: amountVal,
+                                paymentMode: payModeStr,
+                                newBalance: cust?.current_outstanding || 0,
+                              });
+                              openWhatsAppChat(phone, msg);
+                              showToast(`📲 Opening WhatsApp payment acknowledgment for ${custName}...`);
+                            }}
+                          >
+                            📲
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -392,7 +401,14 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               onClick={() => exportToCsv(
                 `NSAIPETROSOFT_PaymentReceipts_${new Date().toISOString().split('T')[0]}`,
                 ['Receipt No', 'Shift', 'Receipt Date', 'Customer Name', 'Payment Mode', 'Amount (INR)'],
-                payReceiptsHistory.map(h => [h.receipt_no || `RCP-${h.id}`, h.shift, h.date, h.cust, h.mode, h.amt])
+                payReceiptsHistory.map(h => [
+                  h.receipt_no || `RCP-${h.id}`,
+                  h.shift,
+                  h.date,
+                  h.cust || h.customer_name || 'Customer',
+                  h.mode || h.payment_mode || 'CASH',
+                  Number(h.amt ?? h.amount ?? 0)
+                ])
               )}
               title="Export customer receipts to Microsoft Excel or CSV"
             >

@@ -82,6 +82,9 @@ export interface CardSettlementEntry {
   amount: number;
   shift?: string;
   attendant?: string;
+  machine?: string;
+  batch?: string;
+  slips?: number;
 }
 
 export interface TransferEntryRecord {
@@ -644,6 +647,239 @@ class ErpStore {
     this.notify();
     return true;
   }
+
+  /**
+   * Hydrates ACID store from Live PostgreSQL backend API responses.
+   * Completely bridges the state gap between remote database and forecourt UI.
+   */
+  public hydrateFromBackend(payload: {
+    stationProfile?: Partial<StationProfile>;
+    activeShift?: any;
+    tanks?: any[];
+    nozzles?: any[];
+    employees?: any[];
+    customers?: any[];
+    bankAccounts?: any[];
+    products?: any[];
+    rates?: any[];
+    rateHistory?: any[];
+    creditBills?: any[];
+    cardSettlements?: any[];
+    paymentReceipts?: any[];
+    expenses?: any[];
+    purchases?: any[];
+    dips?: any[];
+  }): void {
+    if (payload.stationProfile) {
+      this.state.stationProfile = { ...this.state.stationProfile, ...payload.stationProfile };
+    }
+    if (payload.activeShift) {
+      this.state.activeShift = {
+        so_number: payload.activeShift.so_number || this.state.activeShift.so_number,
+        date: payload.activeShift.date || this.state.activeShift.date,
+        shift_name: payload.activeShift.shift_name || this.state.activeShift.shift_name,
+        status: (payload.activeShift.status || this.state.activeShift.status).toUpperCase() === 'CLOSED' ? 'CLOSED' : 'OPEN',
+        dispenser_locked: payload.activeShift.dispenser_locked ?? this.state.activeShift.dispenser_locked,
+      };
+    }
+    if (payload.tanks && payload.tanks.length > 0) {
+      this.state.tanks = payload.tanks.map((t: any) => ({
+        id: Number(t.id),
+        name: t.name || t.tank_name || `Tank ${t.id}`,
+        product: t.product || t.product_name || (t.code === 'MS' ? 'Petrol (MS)' : 'Diesel (HSD)'),
+        code: t.code || (t.product && t.product.includes('MS') ? 'MS' : 'HSD'),
+        capacity: Number(t.capacity || t.capacity_liters || 20000),
+        dead_stock: Number(t.dead_stock || 500),
+        current_stock: Number(t.current_stock || 0),
+        book_stock: Number(t.book_stock || t.current_stock || 0),
+        dip_stock: Number(t.dip_stock || t.current_stock || 0),
+        dip_cm: Number(t.dip_cm || t.current_dip_cm || 0),
+        water_dip_cm: Number(t.water_dip_cm || 0),
+        is_low: Boolean(t.is_low),
+        connected_nozzles: t.connected_nozzles || (t.code === 'MS' ? ['N1 (MS-1)', 'N2 (MS-2)'] : ['N3 (HSD-1)', 'N4 (HSD-2)']),
+      }));
+    }
+    if (payload.nozzles && payload.nozzles.length > 0) {
+      this.state.nozzles = payload.nozzles.map((n: any, idx: number) => ({
+        id: Number(n.nozzle_id || n.id || idx + 1),
+        name: n.nozzle_name || n.name || `Nozzle ${idx + 1}`,
+        machine_name: n.machine_name || 'MPD',
+        product_name: n.product_name || 'Fuel',
+        product_code: n.product_code || (n.product_name && n.product_name.includes('MS') ? 'MS' : 'HSD'),
+        tank_id: Number(n.tank_id || (n.product_code === 'MS' ? 1 : 2)),
+        opening_meter: Number(n.opening_meter || 0),
+        closing_meter: Number(n.closing_meter || 0),
+        testing: Number(n.testing || 0),
+        rate: Number(n.rate || 0),
+        vat_percent: Number(n.vat_percent || 13.7),
+      }));
+    }
+    if (payload.employees && payload.employees.length > 0) {
+      this.state.employees = payload.employees.map((e: any) => ({
+        id: Number(e.id),
+        name: e.name,
+        code: e.code || `EMP${e.id}`,
+        mobile: e.mobile,
+      }));
+    }
+    if (payload.customers && payload.customers.length > 0) {
+      this.state.customers = payload.customers.map((c: any) => ({
+        id: Number(c.id),
+        code: c.code || `CUST-${c.id}`,
+        name: c.name,
+        mobile: c.mobile || '',
+        city: c.city || 'SURAT',
+        state: c.state || 'GUJARAT',
+        gst_no: c.gst_no,
+        pan_no: c.pan_no,
+        credit_limit: Number(c.credit_limit || 50000),
+        current_outstanding: Number(c.current_outstanding ?? c.outstanding ?? 0),
+        bill_period: c.bill_period || 'FORTNIGHTLY',
+        is_blocked: Boolean(c.is_blocked),
+        vehicles: c.vehicles || [],
+      }));
+    }
+    if (payload.bankAccounts && payload.bankAccounts.length > 0) {
+      this.state.bankAccounts = payload.bankAccounts.map((a: any) => ({
+        id: Number(a.id),
+        name: a.name || a.account_name,
+        type: a.type || a.account_type || 'CURRENT',
+        balance: Number(a.balance || 0),
+      }));
+    }
+    if (payload.products && payload.products.length > 0) {
+      this.state.products = payload.products.map((p: any) => ({
+        id: Number(p.id),
+        code: p.code || p.product_code || `LUB-${p.id}`,
+        name: p.name || p.product_name,
+        category: p.category || '4T Engine Oil',
+        package_size: p.package_size || '1 Litre',
+        barcode: p.barcode || '',
+        mrp: Number(p.mrp || p.sale_price || 0),
+        cost_price: Number(p.cost_price || 0),
+        sale_price: Number(p.sale_price || 0),
+        current_stock_units: Number(p.current_stock_units ?? p.stock_qty ?? 0),
+        reorder_level: Number(p.reorder_level || 5),
+        is_low_stock: Boolean(p.is_low_stock ?? ((p.current_stock_units ?? p.stock_qty ?? 0) <= (p.reorder_level || 5))),
+        hsn_code: p.hsn_code || '2710',
+        gst_percent: Number(p.gst_percent ?? 18.0),
+      }));
+    }
+    if (payload.rates && payload.rates.length > 0) {
+      this.state.rates = payload.rates.map((r: any) => ({
+        id: Number(r.id),
+        code: r.code || (r.name && r.name.includes('MS') ? 'MS' : 'HSD'),
+        name: r.name,
+        rate: Number(r.rate),
+        vat_percent: Number(r.vat_percent || 13.7),
+        cess_percent: Number(r.cess_percent || 0),
+      }));
+    }
+    if (payload.rateHistory && payload.rateHistory.length > 0) {
+      this.state.rateHistory = payload.rateHistory;
+    }
+    if (payload.creditBills && payload.creditBills.length > 0) {
+      this.state.creditBills = payload.creditBills.map((b: any) => ({
+        id: Number(b.id),
+        bill_no: b.bill_no || b.bill || `CR-${b.id}`,
+        slip_no: b.slip_no || b.slip || `SL-${b.id}`,
+        date: b.date || this.state.activeShift.date,
+        customer_name: b.customer_name || b.cust || 'Fleet Customer',
+        customer_mobile: b.customer_mobile || b.mobile || '',
+        vehicle_no: b.vehicle_no || b.vehicle || '',
+        product: b.product || b.product_name || 'Fuel',
+        qty: Number(b.qty || 0),
+        rate: Number(b.rate || 0),
+        amount: Number(b.amount ?? b.total ?? 0),
+        cash_paid: Number(b.cash_paid || 0),
+        credit_amount: Number(b.credit_amount ?? b.amount ?? b.total ?? 0),
+        balance_after: Number(b.balance_after ?? b.customer_balance_after ?? 0),
+      }));
+    }
+    if (payload.cardSettlements && payload.cardSettlements.length > 0) {
+      this.state.cardSettlements = payload.cardSettlements.map((s: any) => ({
+        id: Number(s.id || Date.now()),
+        date: s.date || this.state.activeShift.date,
+        machine_name: s.machine_name || s.machine || 'EDC POS',
+        batch_no: s.batch_no || s.batch || '001',
+        slip_count: Number(s.slip_count ?? s.slips ?? 1),
+        amount: Number(s.amount || 0),
+        shift: s.shift || this.state.activeShift.shift_name,
+        attendant: s.attendant,
+      }));
+    }
+    if (payload.paymentReceipts && payload.paymentReceipts.length > 0) {
+      this.state.paymentReceipts = payload.paymentReceipts.map((p: any) => ({
+        id: Number(p.id),
+        receipt_no: p.receipt_no || `REC-${p.id}`,
+        customer_id: Number(p.customer_id || 0),
+        customer_name: p.customer_name || p.customer || p.cust || 'Customer',
+        date: p.date || this.state.activeShift.date,
+        amount: Number(p.amount ?? p.amt ?? 0),
+        payment_mode: p.payment_mode || p.mode || 'Cash',
+        mode: (p.mode || p.payment_mode || 'CASH').toUpperCase() as any,
+        cheque_no: p.cheque_no,
+        bank_name: p.bank_name,
+        receiving_account_id: Number(p.receiving_account_id || 1),
+        remarks: p.remarks || p.narration || '',
+        narration: p.narration || p.remarks || '',
+      }));
+    }
+    if (payload.expenses && payload.expenses.length > 0) {
+      this.state.expenses = payload.expenses.map((e: any) => ({
+        id: Number(e.id),
+        date: e.date || this.state.activeShift.date,
+        category: e.category || 'General',
+        amount: Number(e.amount || 0),
+        narration: e.narration || '',
+        paid_to: e.paid_to || '',
+      }));
+    }
+    if (payload.purchases && payload.purchases.length > 0) {
+      this.state.purchases = payload.purchases.map((p: any) => ({
+        id: Number(p.id),
+        invoice_no: p.invoice_no || p.inv || p.po || `INV-${p.id}`,
+        date: p.date || this.state.activeShift.date,
+        dealer_name: p.dealer_name || p.dealer || 'BPCL',
+        tanker_vehicle_no: p.tanker_vehicle_no || '',
+        product_id: Number(p.product_id || 1),
+        product_name: p.product_name || 'Fuel',
+        tank_id: Number(p.tank_id || 1),
+        qty_kl: Number(p.qty_kl || (p.qty_liters ? p.qty_liters / 1000 : 0)),
+        qty_liters: Number(p.qty_liters || (p.qty_kl ? p.qty_kl * 1000 : 0)),
+        rate_per_kl: Number(p.rate_per_kl || 0),
+        freight: Number(p.freight || 0),
+        gross_amount: Number(p.gross_amount ?? p.amount ?? 0),
+        vat_amount: Number(p.vat_amount || 0),
+        final_amount: Number(p.final_amount ?? p.amount ?? 0),
+        sample_density: Number(p.sample_density || 0),
+        observed_density: Number(p.observed_density || 0),
+        observed_temp: Number(p.observed_temp || 15),
+        invoice_density_15c: Number(p.invoice_density_15c || 0),
+        lfr_amount: Number(p.lfr_amount || 0),
+        tds_amount: Number(p.tds_amount || 0),
+      }));
+    }
+    if (payload.dips && payload.dips.length > 0) {
+      this.state.dips = payload.dips.map((d: any) => ({
+        id: Number(d.id),
+        date: d.date || this.state.activeShift.date,
+        tank_id: Number(d.tank_id || 1),
+        tank_name: d.tank_name || 'Tank 1',
+        product_name: d.product_name || 'Fuel',
+        dip_cm: Number(d.closing_dip ?? d.dip_cm ?? 0),
+        water_dip_mm: Number(d.water_dip_mm || 0),
+        physical_litres: Number(d.closing_stock ?? d.physical_litres ?? 0),
+        book_litres: Number(d.opening_stock ?? d.book_litres ?? 0),
+        variance_litres: Number(d.variation ?? d.variance_litres ?? 0),
+        variance_percent: Number(d.variance_percent || 0),
+        is_within_tolerance: d.is_within_tolerance ?? (Math.abs(Number(d.variation || 0)) <= Number(d.tolerance_limit || 50)),
+        status: (d.status || (Math.abs(Number(d.variation || 0)) <= Number(d.tolerance_limit || 50) ? 'NORMAL' : 'VARIATION')) as any,
+      }));
+    }
+    this.notify();
+  }
+
 
   // -------------------------------------------------------------------------
   // KPI & Dashboard Computed Aggregates

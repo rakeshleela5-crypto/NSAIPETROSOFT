@@ -41,6 +41,8 @@ import {
   fetchCreditSaleThermalSlip,
   fetchStationProfileApi,
   saveStationProfileApi,
+  fetchCardSettlements,
+  fetchLubesApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
@@ -204,6 +206,7 @@ export default function App() {
 
   const saveStationProfile = async (updated: StationProfile) => {
     setStationProfile(updated);
+    erpStore.hydrateFromBackend({ stationProfile: updated });
     try {
       await saveStationProfileApi(updated);
       showToast('✔ Station Outlet Profile Updated & Saved to Cloud Database!');
@@ -212,6 +215,9 @@ export default function App() {
       showToast('✔ Station Profile updated in session (Cloud sync pending)');
     }
   };
+
+  // Store Re-render Tick
+  const [, setStoreTick] = useState<number>(0);
 
   // Employees List State
   const [employeesList, setEmployeesList] = useState<any[]>(() => erpStore.getState().employees);
@@ -458,6 +464,8 @@ export default function App() {
         plData,
         dsrData,
         settlementsData,
+        cardSettlementsData,
+        lubesData,
       ] = await Promise.all([
         fetchDashboard().catch(() => null),
         fetchCurrentShift().catch(() => null),
@@ -477,6 +485,8 @@ export default function App() {
         fetchProfitLossSummary().catch(() => null),
         fetchDsrReport().catch(() => []),
         fetchShiftSettlements().catch(() => []),
+        fetchCardSettlements().catch(() => []),
+        fetchLubesApi().catch(() => []),
       ]);
 
       if (dashData) {
@@ -547,36 +557,81 @@ export default function App() {
           );
         }
       }
+      // 1. Process Card Settlements
+      let normalizedCardSettlements: any[] = [];
+      if (cardSettlementsData && cardSettlementsData.length > 0) {
+        normalizedCardSettlements = cardSettlementsData.map((s: any) => ({
+          id: s.id,
+          date: s.date,
+          machine: s.machine_name || s.machine || 'EDC POS',
+          machine_name: s.machine_name || s.machine || 'EDC POS',
+          batch: s.batch_no || s.batch || '001',
+          batch_no: s.batch_no || s.batch || '001',
+          slips: Number(s.slip_count || s.slips || 1),
+          slip_count: Number(s.slip_count || s.slips || 1),
+          amount: Number(s.amount || 0),
+          status: s.status || 'SETTLED',
+        }));
+        setCardSettlements(normalizedCardSettlements);
+        setEmpCardSwipes(
+          normalizedCardSettlements.map((cs) => ({
+            name: cs.machine_name,
+            amount: cs.amount,
+            slips: cs.slip_count,
+          }))
+        );
+      }
+
+      // 2. Process Credit Sales with dual-field compatibility
+      let normalizedCreditBills: any[] = [];
       if (creditSalesData && creditSalesData.length > 0) {
-        setCreditBillsList(
-          creditSalesData.map((s: any) => ({
-            id: s.id,
-            date: s.date,
-            shift: s.shift || 'First',
-            slip: s.slip_no,
-            bill: s.bill_no,
-            cust: s.customer_name,
-            mobile: s.customer_mobile || '',
-            vehicle: s.vehicle_no,
-            qty: s.qty,
-            total: s.amount,
-          }))
-        );
+        normalizedCreditBills = creditSalesData.map((s: any) => ({
+          id: s.id,
+          date: s.date,
+          shift: s.shift || 'First',
+          slip: s.slip_no,
+          slip_no: s.slip_no,
+          bill: s.bill_no,
+          bill_no: s.bill_no,
+          cust: s.customer_name,
+          customer_name: s.customer_name,
+          mobile: s.customer_mobile || '',
+          customer_mobile: s.customer_mobile || '',
+          vehicle: s.vehicle_no,
+          vehicle_no: s.vehicle_no,
+          product: s.product || s.product_name || 'Fuel',
+          qty: Number(s.qty || 0),
+          rate: Number(s.rate || 0),
+          amount: Number(s.amount || s.credit_amount || 0),
+          total: Number(s.amount || s.credit_amount || 0),
+        }));
+        setCreditBillsList(normalizedCreditBills);
+        const totalShiftCredit = normalizedCreditBills.reduce((acc: number, c: any) => acc + (c.total || 0), 0);
+        setEmpCreditSaleAmount(totalShiftCredit);
       }
+
+      // 3. Process Payment Receipts with dual-field compatibility
+      let normalizedPayments: any[] = [];
       if (paymentsData && paymentsData.length > 0) {
-        setPayReceiptsHistory(
-          paymentsData.map((p: any) => ({
-            id: p.id,
-            receipt_no: p.receipt_no,
-            shift: p.shift || 'First',
-            date: p.date,
-            cust: p.customer,
-            mobile: p.customer_mobile || '',
-            mode: p.mode,
-            amt: p.amount,
-          }))
-        );
+        normalizedPayments = paymentsData.map((p: any) => ({
+          id: p.id,
+          receipt_no: p.receipt_no,
+          shift: p.shift || 'First',
+          date: p.date,
+          cust: p.customer || p.customer_name,
+          customer_name: p.customer || p.customer_name,
+          mobile: p.customer_mobile || '',
+          mode: p.mode || p.payment_mode || 'CASH',
+          amt: Number(p.amount || 0),
+          amount: Number(p.amount || 0),
+        }));
+        setPayReceiptsHistory(normalizedPayments);
+        const cashReceivedFromDues = normalizedPayments
+          .filter((p: any) => (p.mode || '').toUpperCase() === 'CASH')
+          .reduce((sum: number, p: any) => sum + p.amount, 0);
+        setEmpCreditReceived(cashReceivedFromDues);
       }
+
       const activeExpenses = (expensesData && expensesData.length > 0) ? expensesData : erpStore.getState().expenses;
       setExpensesList(activeExpenses);
       setEmpExpensesList(
@@ -618,8 +673,9 @@ export default function App() {
       if (dsrData && dsrData.length > 0) setDsrReport(dsrData);
 
       // Cloud Dealership / Station Profile Sync
+      let cloudProfile: any = null;
       try {
-        const cloudProfile = await fetchStationProfileApi();
+        cloudProfile = await fetchStationProfileApi();
         if (cloudProfile && cloudProfile.stationName) {
           setStationProfile((prev) => ({
             ...prev,
@@ -629,6 +685,31 @@ export default function App() {
       } catch (profErr) {
         // Fallback silently if endpoint not ready
       }
+
+      // ACID Centralized State Store Hydration: Eliminates all remaining data silos across 38 modals
+      erpStore.hydrateFromBackend({
+        stationProfile: cloudProfile || stationProfile,
+        activeShift: shiftData ? {
+          so_number: shiftData.so_number,
+          date: shiftData.date,
+          shift_name: shiftData.shift_name,
+          status: shiftData.status,
+        } : undefined,
+        tanks: dashData?.tanks,
+        nozzles: shiftData?.nozzles,
+        employees: shiftData?.employees || employeesList,
+        customers: custsData,
+        rates: ratesData?.products,
+        rateHistory: ratesData?.history,
+        creditBills: normalizedCreditBills.length > 0 ? normalizedCreditBills : undefined,
+        cardSettlements: normalizedCardSettlements.length > 0 ? normalizedCardSettlements : undefined,
+        paymentReceipts: normalizedPayments.length > 0 ? normalizedPayments : undefined,
+        expenses: activeExpenses,
+        purchases: purchasesData,
+        dips: dipsData,
+        bankAccounts: dashData?.accounts,
+        products: (lubesData && lubesData.length > 0) ? lubesData : undefined,
+      });
     } catch (err: any) {
       console.warn('Live ERP synchronization error:', err);
       setBackendOnline(false);
@@ -679,6 +760,7 @@ export default function App() {
       setShiftNumber(s.activeShift.so_number.replace(/^SO-/, ''));
       setShiftName(s.activeShift.shift_name);
       setShiftStatus(s.activeShift.status.toUpperCase());
+      setStoreTick((t) => t + 1);
     });
 
     const unsubscribeOffline = initOfflineNetworkListener((online, count) => {
@@ -1510,7 +1592,7 @@ export default function App() {
     const digitalCards = cardSettlements.length > 0 
       ? cardSettlements.reduce((acc, c) => acc + Number(c.amount || 0), 0)
       : empCardSwipes.reduce((acc, c) => acc + Number(c.amount || 0), 0);
-    const creditSales = creditBillsList.reduce((acc, c) => acc + Number(c.total || 0), 0);
+    const creditSales = creditBillsList.reduce((acc, c) => acc + Number(c.total ?? c.amount ?? 0), 0);
     const shiftExpenses = expensesList.length > 0
       ? expensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0)
       : empExpensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0);
@@ -1608,6 +1690,14 @@ export default function App() {
     requestManagerAuthorization(`Close Shift ${shiftName} & Lock Dispensers`, async () => {
       setShiftStatus('CLOSED');
       setDispenserLocked(true);
+      erpStore.hydrateFromBackend({
+        activeShift: {
+          so_number: `SO-${shiftNumber}`,
+          shift_name: shiftName,
+          status: 'CLOSED',
+          dispenser_locked: true,
+        },
+      });
       showToast(`✔ Shift ${shiftName} CLOSED. Dispenser meters locked!`);
       try {
         const res = await triggerCreateBackup();
@@ -1620,11 +1710,20 @@ export default function App() {
 
   const handleOpenNextShift = () => {
     const nextSO = (parseInt(shiftNumber) + 1).toString().padStart(5, '0');
+    const nextShiftName = shiftName === 'First' ? 'Second' : 'First';
     setShiftNumber(nextSO);
-    setShiftName(shiftName === 'First' ? 'Second' : 'First');
+    setShiftName(nextShiftName);
     setShiftStatus('OPEN');
     setDispenserLocked(false);
-    showToast(`✔ Started Shift ${shiftName === 'First' ? 'Second' : 'First'} (SO #${nextSO})`);
+    erpStore.hydrateFromBackend({
+      activeShift: {
+        so_number: `SO-${nextSO}`,
+        shift_name: nextShiftName,
+        status: 'OPEN',
+        dispenser_locked: false,
+      },
+    });
+    showToast(`✔ Started Shift ${nextShiftName} (SO #${nextSO})`);
   };
 
   const handleToggleMaximize = () => {
@@ -1647,8 +1746,8 @@ export default function App() {
     }, 0),
   };
   const breakdown = dashboard?.breakdown || {
-    cash: Math.max(0, salesReadings.reduce((sum, r) => sum + (r.amount || 0), 0) - creditBillsList.reduce((sum, b) => sum + (b.total || 0), 0) - cardSettlements.reduce((sum, c) => sum + (c.amount || 0), 0)),
-    credit: creditBillsList.reduce((sum, b) => sum + (b.total || 0), 0),
+    cash: Math.max(0, salesReadings.reduce((sum, r) => sum + (r.amount || 0), 0) - creditBillsList.reduce((sum, b) => sum + Number(b.total ?? b.amount ?? 0), 0) - cardSettlements.reduce((sum, c) => sum + (c.amount || 0), 0)),
+    credit: creditBillsList.reduce((sum, b) => sum + Number(b.total ?? b.amount ?? 0), 0),
     digital: cardSettlements.reduce((sum, c) => sum + (c.amount || 0), 0),
     total: salesReadings.reduce((sum, r) => sum + (r.amount || 0), 0),
   };

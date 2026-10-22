@@ -194,4 +194,59 @@ describe('erpStore - Centralized ACID Forecourt Engine', () => {
     expect(restoreRes.success).toBe(true);
     expect(restoreRes.recordsRestored).toBeGreaterThan(0);
   });
+
+  it('hydrates state from backend API responses without data loss or disconnection', () => {
+    erpStore.hydrateFromBackend({
+      customers: [
+        {
+          id: 99,
+          code: 'CUST-099',
+          name: 'LIVE FLEET LOGISTICS',
+          mobile: '9876543210',
+          credit_limit: 100000,
+          current_outstanding: 25000,
+          bill_period: 'WEEKLY',
+          vehicles: ['GJ05ZZ9999'],
+        },
+      ],
+      cardSettlements: [
+        {
+          id: 1,
+          date: '2026-10-22',
+          machine: 'PAYTM QR',
+          batch: 'B-101',
+          slips: 5,
+          amount: 12500,
+        },
+      ],
+      products: [
+        {
+          id: 5,
+          product_code: 'LUB-DEF-20L',
+          product_name: 'MAK DEF ADBLUE (20L)',
+          category: 'Diesel Exhaust Fluid',
+          package_size: '20L',
+          sale_price: 950,
+          cost_price: 750,
+          stock_qty: 30,
+          reorder_level: 5,
+        },
+      ],
+    });
+
+    const state = erpStore.getState();
+    const cust = state.customers.find((c) => c.id === 99);
+    expect(cust).toBeDefined();
+    expect(cust?.name).toBe('LIVE FLEET LOGISTICS');
+    expect(cust?.current_outstanding).toBe(25000);
+
+    const card = state.cardSettlements.find((s) => s.batch_no === 'B-101');
+    expect(card).toBeDefined();
+    expect(card?.amount).toBe(12500);
+
+    const prod = state.products.find((p) => p.code === 'LUB-DEF-20L');
+    expect(prod).toBeDefined();
+    expect(prod?.current_stock_units).toBe(30);
+  });
 });
+

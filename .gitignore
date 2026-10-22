@@ -49,3 +49,4 @@ downloads/
 *.mkv
 *.webm
 scratch/
+.agents/

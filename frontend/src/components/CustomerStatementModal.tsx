@@ -69,12 +69,12 @@ export const CustomerStatementModal: React.FC<CustomerStatementModalProps> = ({
                 {selectedStatement.bills.map((b: any, idx: number) => (
                   <tr key={idx}>
                     <td>{b.date}</td>
-                    <td>{b.bill_no}</td>
-                    <td>{b.vehicle_no}</td>
-                    <td>{b.slip_no}</td>
-                    <td className="text-right">{b.qty.toFixed(2)}</td>
-                    <td className="text-right">{b.rate}</td>
-                    <td className="text-right" style={{ fontWeight: 600 }}>{b.amount.toFixed(2)}</td>
+                    <td>{b.bill_no || b.bill || '-'}</td>
+                    <td>{b.vehicle_no || b.vehicle || '-'}</td>
+                    <td>{b.slip_no || b.slip || '-'}</td>
+                    <td className="text-right">{Number(b.qty || 0).toFixed(2)}</td>
+                    <td className="text-right">{Number(b.rate || 0).toFixed(2)}</td>
+                    <td className="text-right" style={{ fontWeight: 600 }}>{Number(b.amount ?? b.total ?? 0).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -129,12 +129,12 @@ export const CustomerStatementModal: React.FC<CustomerStatementModalProps> = ({
                 ['Date', 'Bill No', 'Vehicle No', 'Slip No', 'Qty (Ltr)', 'Rate (Rs)', 'Amount (Rs)'],
                 (selectedStatement?.bills || []).map((b: any) => [
                   b.date,
-                  b.bill_no,
-                  b.vehicle_no,
-                  b.slip_no,
-                  b.qty,
-                  b.rate,
-                  b.amount,
+                  b.bill_no || b.bill || '-',
+                  b.vehicle_no || b.vehicle || '-',
+                  b.slip_no || b.slip || '-',
+                  b.qty || 0,
+                  b.rate || 0,
+                  Number(b.amount ?? b.total ?? 0),
                 ])
               )}
               title="Export this customer statement directly to Microsoft Excel or CSV"

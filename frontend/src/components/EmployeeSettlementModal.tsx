@@ -621,7 +621,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                           digital_total: empCardSwipes.reduce((acc, c) => acc + c.amount, 0),
                           credit_total: empCreditSaleAmount,
                           expense_total: empExpensesList.reduce((acc, e) => acc + e.amount, 0),
-                          expected_cash: liveMeterTotal - empCreditSaleAmount - empCardSwipes.reduce((acc, c) => acc + c.amount, 0) - empExpensesList.reduce((acc, e) => acc + e.amount, 0),
+                          expected_cash: liveMeterTotal - empCreditSaleAmount - empCardSwipes.reduce((acc, c) => acc + c.amount, 0) - empExpensesList.reduce((acc, e) => acc + e.amount, 0) + empCreditReceived,
                           actual_cash: empCashAmount,
                           gap_amount: gap,
                         });

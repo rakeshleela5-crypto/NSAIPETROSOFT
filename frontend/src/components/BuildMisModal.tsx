@@ -33,8 +33,8 @@ export const BuildMisModal: React.FC<BuildMisModalProps> = ({
 
   // Analytical calculations
   const totalFuelLitres = tanks.reduce((sum, t) => sum + (t.current_stock || 0), 0);
-  const totalCreditIssued = creditBills.reduce((sum, b) => sum + (b.amount || 0), 0);
-  const totalCreditRecovered = payReceipts.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const totalCreditIssued = creditBills.reduce((sum, b) => sum + (b.amount || b.total || 0), 0);
+  const totalCreditRecovered = payReceipts.reduce((sum, r) => sum + (r.amount || r.amt || 0), 0);
   const creditRecoveryRatio = totalCreditIssued > 0 ? Math.round((totalCreditRecovered / totalCreditIssued) * 100) : 85;
 
   const totalExpenses = expensesList.reduce((sum, e) => sum + (e.amount || 0), 0);

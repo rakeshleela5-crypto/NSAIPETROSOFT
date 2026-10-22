@@ -405,6 +405,44 @@ export async function addVehicle(customerId: number, vehicleNo: string): Promise
   return res.json();
 }
 
+export async function updateCustomer(
+  customerId: number,
+  data: {
+    name?: string;
+    mobile?: string;
+    city?: string;
+    state?: string;
+    address?: string;
+    gst_no?: string;
+    pan_no?: string;
+    credit_limit?: number;
+    bill_period?: string;
+  }
+): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Update customer failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteCustomer(customerId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete customer failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+
 // ---------------------------------------------------------------------------
 // Tank Dip Register
 // ---------------------------------------------------------------------------
@@ -769,6 +807,13 @@ export async function createCardSettlement(data: {
   if (!res.ok) throw new Error(`Card settlement failed: ${res.status}`);
   return res.json();
 }
+
+export async function fetchCardSettlements(): Promise<any[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/card-settlements`);
+  if (!res.ok) throw new Error(`Fetch card settlements failed: ${res.status}`);
+  return res.json();
+}
+
 
 // ---------------------------------------------------------------------------
 // Cloudflare R2 Disaster Recovery & Database Backups

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { NozzleMasterItem, TankMasterItem } from '../store/erpStore';
 import type { LubeProductItem } from '../models';
 import { erpStore } from '../store/erpStore';
+import { saveLubeProductApi } from '../api/client';
 
 interface NozzleStaffMasterModalProps {
   isOpen: boolean;
@@ -105,7 +106,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     if (!lubeName.trim()) return;
 
     try {
-      erpStore.saveLubeProduct({
+      const payload = {
         code: lubeCode.trim().toUpperCase() || `LUB-${Date.now().toString().slice(-4)}`,
         name: lubeName.trim().toUpperCase(),
         category: lubeCategory,
@@ -117,7 +118,27 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
         reorder_level: lubeReorder,
         hsn_code: lubeHsn.trim() || '2710',
         gst_percent: lubeGst,
-      });
+      };
+
+      erpStore.saveLubeProduct(payload);
+
+      try {
+        await saveLubeProductApi({
+          item_code: payload.code,
+          item_name: payload.name,
+          category: payload.category,
+          pack_size: payload.package_size,
+          mrp: payload.mrp,
+          cost_price: payload.cost_price,
+          sale_price: payload.sale_price,
+          stock_qty: payload.current_stock_units,
+          reorder_level: payload.reorder_level,
+          hsn_code: payload.hsn_code,
+          tax_rate: payload.gst_percent,
+        });
+      } catch (apiErr) {
+        console.warn('Backend lube sync warning:', apiErr);
+      }
 
       if (showToast) showToast(`✔ Lube product "${lubeName}" added!`);
       setLubeName('');
