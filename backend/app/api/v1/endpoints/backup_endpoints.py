@@ -1,10 +1,13 @@
 import io
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import get_current_user_optional, require_roles
 from app.db.session import get_db
+from app.models.petrol_pump import User
 from app.services.backup_service import (
     LOCAL_BACKUP_DIR,
     create_and_store_backup,
@@ -16,8 +19,45 @@ from app.services.backup_service import (
 router = APIRouter()
 
 
+async def verify_backup_authorized(
+    request: Request,
+    pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+) -> bool:
+    """
+    Enforces that backup administration requires Manager or Admin privileges.
+    Accepts:
+    1. Active session with admin or manager role
+    2. Manager PIN override token or query parameter
+    """
+    if current_user and current_user.role in ("admin", "manager"):
+        return True
+    
+    # Check manager token from cookie
+    from app.core.security import decode_access_token
+    manager_cookie = request.cookies.get("nsai_manager_token")
+    if manager_cookie:
+        payload = decode_access_token(manager_cookie)
+        if payload and payload.get("role") in ("admin", "manager"):
+            return True
+
+    # Check query PIN
+    if pin:
+        from app.api.v1.endpoints.petrol_pump_endpoints import verify_manager_pin
+        if await verify_manager_pin(pin, db):
+            return True
+
+    raise HTTPException(
+        status_code=403,
+        detail="Access Denied: Station Manager or Administrator credentials required to access database snapshots.",
+    )
+
+
 @router.get("/status", summary="Check Cloudflare R2 Connection & Setup Status")
-async def get_backup_status():
+async def get_backup_status(
+    authorized: bool = Depends(verify_backup_authorized),
+):
     """Returns Cloudflare R2 connectivity and configuration status."""
     conn = r2_service.test_connection()
     all_backups = list_all_backups()
@@ -39,7 +79,10 @@ async def get_backup_status():
 
 
 @router.post("/create", summary="Trigger Immediate Database Snapshot & Cloudflare R2 Archive")
-async def create_backup(db: AsyncSession = Depends(get_db)):
+async def create_backup(
+    db: AsyncSession = Depends(get_db),
+    authorized: bool = Depends(verify_backup_authorized),
+):
     """
     Extracts all database tables from PostgreSQL, compresses with gzip,
     and uploads to Cloudflare R2 (or saves locally if R2 not yet linked).
@@ -52,54 +95,76 @@ async def create_backup(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("", summary="List All Cloudflare R2 & Local Database Backups")
-async def get_backups_list():
+async def get_backups_list(
+    authorized: bool = Depends(verify_backup_authorized),
+):
     """Lists all available disaster recovery backups."""
     backups = list_all_backups()
     return backups
 
 
 @router.get("/download/{filename}", summary="Download Database Backup Archive")
-async def download_backup(filename: str):
-    """Downloads the .json.gz database archive."""
+async def download_backup(
+    filename: str,
+    authorized: bool = Depends(verify_backup_authorized),
+):
+    """
+    Downloads the .json.gz database archive.
+    Strictly sanitizes the filename to prevent directory traversal attacks.
+    """
+    safe_filename = Path(filename).name
+    if not safe_filename or safe_filename != filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid backup filename format")
+
+    if not safe_filename.endswith(".json.gz") and not safe_filename.endswith(".gz"):
+        raise HTTPException(status_code=400, detail="Invalid archive file extension")
+
     # 1. Check Cloudflare R2
     if r2_service.is_configured():
-        # Look for the file in R2
         client = r2_service.get_client()
         try:
-            # First try prefix search
             resp = client.list_objects_v2(Bucket=r2_service.bucket_name, Prefix="backups/")
             for obj in resp.get("Contents", []):
-                if Path(obj["Key"]).name == filename:
+                if Path(obj["Key"]).name == safe_filename:
                     data = r2_service.get_object_bytes(obj["Key"])
                     if data:
                         return Response(
                             content=data,
                             media_type="application/gzip",
-                            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+                            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
                         )
         except Exception:
             pass
 
-    # 2. Check local disk
-    local_file = LOCAL_BACKUP_DIR / filename
-    if local_file.exists():
+    # 2. Check local disk safely
+    local_file = (LOCAL_BACKUP_DIR / safe_filename).resolve()
+    base_resolved = LOCAL_BACKUP_DIR.resolve()
+    try:
+        is_safe = local_file.is_relative_to(base_resolved)
+    except AttributeError:
+        is_safe = base_resolved in local_file.parents
+
+    if is_safe and local_file.is_file() and local_file.exists():
         with open(local_file, "rb") as f:
             data = f.read()
         return Response(
             content=data,
             media_type="application/gzip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
         )
 
-    raise HTTPException(status_code=404, detail=f"Backup file '{filename}' not found.")
+    raise HTTPException(status_code=404, detail=f"Backup file '{safe_filename}' not found.")
 
 
 @router.get("/export-excel", summary="Export Multi-Tab Master Excel (.xlsx) Workbook for Accountants & CAs")
-async def export_master_excel(db: AsyncSession = Depends(get_db)):
+async def export_master_excel(
+    db: AsyncSession = Depends(get_db),
+    authorized: bool = Depends(verify_backup_authorized),
+):
     """
     Generates a live, fully-styled multi-sheet Microsoft Excel (.xlsx) file
-    containing all 10+ station ledgers, cash books, credit sales, meter readings,
-    and tank dips with formatted currency columns, auto-width headers, and clean gridlines.
+    containing all station ledgers, cash books, credit sales, meter readings,
+    and tank dips.
     """
     try:
         filename, excel_bytes = await generate_excel_workbook(db)

@@ -1,7 +1,9 @@
 from datetime import date, datetime, timedelta, timezone
+import hmac
 import json
+import time
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,24 +51,121 @@ from app.models.petrol_pump import (
 )
 router = APIRouter()
 
+# Shared in-memory rate-limiting for PIN brute-force defense
+_LOCAL_PIN_ATTEMPTS: Dict[str, Dict[str, Any]] = {}
+MAX_FAILED_PIN_ATTEMPTS = 5
+PIN_LOCKOUT_SECONDS = 300  # 5 minutes lockout
+PIN_WINDOW_SECONDS = 60
 
-async def verify_manager_pin(pin: Optional[str], db: AsyncSession) -> bool:
+
+async def verify_manager_pin(
+    pin: Optional[str],
+    db: AsyncSession,
+    request: Optional[Request] = None,
+) -> bool:
     """
-    Validates managerial authorization PIN dynamically against the station outlet
-    profile setting. Falls back to standard '1234' factory default if unconfigured.
+    Validates managerial authorization PIN dynamically:
+    1. Brute-force throttling to prevent PIN cracking.
+    2. Constant-time comparison against StationProfileSetting.manager_pin.
+    3. Verification against active Manager and Admin accounts in User table.
+    4. Factory default fallback '1234' only if neither is configured.
     """
     if not pin:
         return False
     pin_input = str(pin).strip()
+    if not pin_input:
+        return False
+
+    client_ip = "127.0.0.1"
+    now = time.time()
+    if request:
+        try:
+            from app.api.v1.endpoints.auth import _get_client_ip
+            client_ip = _get_client_ip(request)
+        except Exception:
+            client_ip = request.client.host if request.client else "127.0.0.1"
+
+    record = _LOCAL_PIN_ATTEMPTS.get(client_ip)
+    if record and record.get("locked_until", 0) > now:
+        return False
+
+    is_valid = False
+    station_prof = None
     try:
         prof_stmt = select(StationProfileSetting).order_by(StationProfileSetting.id.asc()).limit(1)
         prof_res = await db.execute(prof_stmt)
         station_prof = prof_res.scalar_one_or_none()
-        if station_prof and station_prof.manager_pin and pin_input == station_prof.manager_pin.strip():
-            return True
+        if station_prof and station_prof.manager_pin:
+            configured_pin = station_prof.manager_pin.strip()
+            if hmac.compare_digest(pin_input, configured_pin):
+                is_valid = True
     except Exception:
-        pass
-    return pin_input == "1234"
+        station_prof = None
+
+    if not is_valid:
+        try:
+            from app.core.security import verify_pin
+            user_stmt = select(User).where(
+                User.role.in_(["admin", "manager"]),
+                User.is_active.is_(True),
+            )
+            users_res = await db.execute(user_stmt)
+            for u in users_res.scalars().all():
+                if u.pin_code_hash and verify_pin(pin_input, u.pin_code_hash):
+                    is_valid = True
+                    break
+        except Exception:
+            pass
+
+    # Fallback to factory default ONLY if neither station_prof PIN nor user PINs are configured
+    if not is_valid and (not station_prof or not station_prof.manager_pin):
+        if hmac.compare_digest(pin_input, "1234"):
+            is_valid = True
+
+    # Record failed attempts for rate limiting
+    if not is_valid:
+        if client_ip not in _LOCAL_PIN_ATTEMPTS:
+            _LOCAL_PIN_ATTEMPTS[client_ip] = {"count": 1, "first_ts": now, "locked_until": 0}
+        else:
+            rec = _LOCAL_PIN_ATTEMPTS[client_ip]
+            if now - rec.get("first_ts", 0) > PIN_WINDOW_SECONDS:
+                rec["count"] = 1
+                rec["first_ts"] = now
+            else:
+                rec["count"] += 1
+            if rec["count"] >= MAX_FAILED_PIN_ATTEMPTS:
+                rec["locked_until"] = now + PIN_LOCKOUT_SECONDS
+    else:
+        _LOCAL_PIN_ATTEMPTS.pop(client_ip, None)
+
+    return is_valid
+
+
+async def check_manager_authorized(
+    manager_pin: Optional[str],
+    db: AsyncSession,
+    current_user: Optional[User] = None,
+    request: Optional[Request] = None,
+) -> bool:
+    """
+    Validates whether an action is authorized by a Manager or Administrator.
+    Checks:
+    1. Active session user with admin or manager role
+    2. Manager JWT cookie
+    3. Valid manager PIN
+    """
+    if current_user and current_user.role in ("admin", "manager"):
+        return True
+    if request:
+        from app.core.security import decode_access_token
+        manager_cookie = request.cookies.get("nsai_manager_token")
+        if manager_cookie:
+            payload = decode_access_token(manager_cookie)
+            if payload and payload.get("role") in ("admin", "manager"):
+                return True
+    if manager_pin and await verify_manager_pin(manager_pin, db, request):
+        return True
+    return False
 
 
 # -------------------------------------------------------------
@@ -208,6 +307,7 @@ class RateUpdateRequest(BaseModel):
     product_id: int
     rate: float
     effective_date: Optional[date] = None
+    manager_pin: Optional[str] = None
 
 
 @router.get("/rates", summary="List Fuel Products and Rates")
@@ -250,9 +350,22 @@ async def get_rates(db: AsyncSession = Depends(get_db)):
 @router.post("/rates", summary="Update Product Rate")
 async def update_rate(
     data: RateUpdateRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    if data.rate <= 0 or data.rate > 500:
+        raise HTTPException(
+            status_code=400,
+            detail="Fuel rate must be positive and within realistic limits (₹1.00 - ₹500.00/Ltr)",
+        )
+
+    if not await check_manager_authorized(data.manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to update fuel price rates.",
+        )
+
     product = await db.get(FuelProduct, data.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -558,9 +671,17 @@ class ReversalVoucherCreate(BaseModel):
 @router.post("/shifts/{shift_id}/close", summary="Finalize & Close Shift (Enforce Immutability)")
 async def close_shift_endpoint(
     shift_id: int,
+    request: Request,
     payload: ShiftCloseRequest = ShiftCloseRequest(),
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    if not await check_manager_authorized(payload.manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or valid Manager PIN required to close and finalize shift.",
+        )
+
     stmt = select(Shift).where(Shift.id == shift_id).with_for_update()
     res = await db.execute(stmt)
     shift = res.scalar_one_or_none()
@@ -732,12 +853,14 @@ async def list_credit_sales(db: AsyncSession = Depends(get_db)):
 
 @router.post("/credit-sales", summary="Create Credit Slip Sale & WhatsApp Delivery")
 async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(get_db)):
-    if data.qty <= 0:
-        raise HTTPException(status_code=400, detail="Fuel quantity must be greater than zero")
+    if data.qty <= 0 or data.qty > 50000:
+        raise HTTPException(status_code=400, detail="Fuel quantity must be greater than zero and within physical delivery limits (max 50,000 Liters)")
     if data.cash_paid < 0:
         raise HTTPException(status_code=400, detail="Cash paid cannot be negative")
     if data.discount_percent < 0 or data.discount_percent > 100:
         raise HTTPException(status_code=400, detail="Discount percentage must be between 0 and 100")
+    if data.odometer_km is not None and data.odometer_km < 0:
+        raise HTTPException(status_code=400, detail="Odometer reading cannot be negative")
 
     # Concurrency Lock: Lock customer row to guarantee atomic balance update
     customer_stmt = select(Customer).where(Customer.id == data.customer_id).with_for_update()
@@ -755,6 +878,16 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     product = await db.get(FuelProduct, data.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    if data.rate is not None:
+        if data.rate <= 0 or data.rate > 500:
+            raise HTTPException(status_code=400, detail="Fuel rate must be positive and within realistic limits (₹1.00 - ₹500.00/Ltr)")
+        if abs(data.rate - product.current_rate) > 0.01:
+            if not await verify_manager_pin(data.manager_override_pin, db):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"PRICE OVERRIDE RESTRICTION: Billed rate ₹{data.rate:.2f} differs from official rate ₹{product.current_rate:.2f}. Manager PIN override required.",
+                )
 
     rate = data.rate if data.rate is not None else product.current_rate
     gross_amount = round(data.qty * rate, 2)
@@ -910,7 +1043,18 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
 
 
 @router.delete("/credit-sales/{sale_id}", summary="Delete Credit Sale & Revert Customer Outstanding")
-async def delete_credit_sale(sale_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_credit_sale(
+    sale_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete credit sales and adjust ledger balances.",
+        )
     sale = await db.get(CreditSale, sale_id)
     if not sale:
         raise HTTPException(status_code=404, detail=f"Credit sale #{sale_id} not found in database")
@@ -1096,7 +1240,18 @@ async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = 
 
 
 @router.delete("/payments/{payment_id}", summary="Delete Payment Receipt & Restore Customer Outstanding")
-async def delete_payment_receipt(payment_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_payment_receipt(
+    payment_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete payment receipts and restore balances.",
+        )
     rec_stmt = select(PaymentReceipt).where(PaymentReceipt.id == payment_id).with_for_update()
     receipt = (await db.execute(rec_stmt)).scalar_one_or_none()
     if not receipt:
@@ -1327,6 +1482,11 @@ async def list_dips(db: AsyncSession = Depends(get_db)):
 
 @router.post("/dips", summary="Record Daily Tank Dip and Calculate Variation")
 async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db)):
+    if data.opening_dip < 0 or data.closing_dip < 0:
+        raise HTTPException(status_code=400, detail="Dip rod measurements (cm) cannot be negative")
+    if data.opening_stock < 0 or data.closing_stock < 0 or data.receipt_liters < 0:
+        raise HTTPException(status_code=400, detail="Stock quantities and inward receipts cannot be negative")
+
     tank = await db.get(Tank, data.tank_id)
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
@@ -1464,6 +1624,12 @@ class SettlementSaveRequest(BaseModel):
 
 @router.post("/settlements/save", summary="Persist Cashier Shift Settlement to Database")
 async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depends(get_db)):
+    if data.actual_cash < 0 or data.cash_total < 0 or data.digital_total < 0 or data.credit_total < 0 or data.expense_total < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Cashier settlement breakdown amounts and cash physical counts cannot be negative",
+        )
+
     # 1. Resolve or create shift with row-level lock
     shift = None
     if data.shift_id:
@@ -1698,6 +1864,13 @@ class PurchaseCreate(BaseModel):
 
 @router.post("/purchases", summary="Record Inward Tanker Decanting")
 async def create_purchase(data: PurchaseCreate, db: AsyncSession = Depends(get_db)):
+    if data.qty_kl <= 0 or data.qty_kl > 100:
+        raise HTTPException(status_code=400, detail="Tanker purchase quantity must be positive and within tanker capacity (max 100 KL)")
+    if data.rate_per_kl <= 0:
+        raise HTTPException(status_code=400, detail="Purchase rate per KL must be greater than zero")
+    if data.freight < 0 or data.tcs_amount < 0:
+        raise HTTPException(status_code=400, detail="Freight and TCS charges cannot be negative")
+
     product = await db.get(FuelProduct, data.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -1817,7 +1990,18 @@ async def list_purchases(db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/purchases/{purchase_id}", summary="Delete Purchase Decanting & Rollback Tank Stock")
-async def delete_purchase(purchase_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_purchase(
+    purchase_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete purchase invoices and adjust stock.",
+        )
     pur_stmt = select(PurchaseEntry).where(PurchaseEntry.id == purchase_id).with_for_update()
     purchase = (await db.execute(pur_stmt)).scalar_one_or_none()
     if not purchase:
@@ -3080,7 +3264,8 @@ class StationProfilePayload(BaseModel):
     phone: Optional[str] = None
     upi_vpa: Optional[str] = None
     printer_paper_width: Optional[str] = "80mm"
-    manager_pin: Optional[str] = "1234"
+    manager_pin: Optional[str] = None
+    current_manager_pin: Optional[str] = None
 
 
 @router.get("/station-profile", summary="Get Dealership / Station Profile Settings")
@@ -3120,12 +3305,25 @@ async def get_station_profile_endpoint(db: AsyncSession = Depends(get_db)):
         "phone": prof.phone or "",
         "upi_vpa": prof.upi_vpa or "",
         "printer_paper_width": prof.printer_paper_width or "80mm",
-        "manager_pin": prof.manager_pin or "1234",
+        # Never leak manager PIN in public API responses
+        "has_manager_pin": bool(prof.manager_pin),
     }
 
 
 @router.post("/station-profile", summary="Save Dealership / Station Profile Settings")
-async def save_station_profile_endpoint(payload: StationProfilePayload, db: AsyncSession = Depends(get_db)):
+async def save_station_profile_endpoint(
+    payload: StationProfilePayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    pin_to_check = payload.current_manager_pin or payload.manager_pin
+    if not await check_manager_authorized(pin_to_check, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to update outlet settings.",
+        )
+
     stmt = select(StationProfileSetting).order_by(StationProfileSetting.id.asc()).limit(1)
     res = await db.execute(stmt)
     prof = res.scalar_one_or_none()
@@ -3146,7 +3344,7 @@ async def save_station_profile_endpoint(payload: StationProfilePayload, db: Asyn
     prof.phone = (payload.phone or "").strip()
     prof.upi_vpa = (payload.upi_vpa or "").strip()
     prof.printer_paper_width = payload.printer_paper_width or "80mm"
-    if payload.manager_pin:
+    if payload.manager_pin and payload.manager_pin.strip():
         prof.manager_pin = payload.manager_pin.strip()
 
     await db.commit()
@@ -3166,7 +3364,7 @@ async def save_station_profile_endpoint(payload: StationProfilePayload, db: Asyn
         "phone": prof.phone,
         "upi_vpa": prof.upi_vpa,
         "printer_paper_width": prof.printer_paper_width,
-        "manager_pin": prof.manager_pin,
+        "has_manager_pin": bool(prof.manager_pin),
     }
 
 

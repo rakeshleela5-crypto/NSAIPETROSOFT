@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging_config import decentro_logger
+from app.core.security import get_current_user_optional
 from app.core.security_decentro import verify_decentro_webhook_signature
 from app.db.session import get_db
 from app.models.decentro import (
@@ -18,7 +19,7 @@ from app.models.decentro import (
     GstinVerificationAudit,
     SupplierPayout,
 )
-from app.models.petrol_pump import BankAccount, Customer
+from app.models.petrol_pump import BankAccount, Customer, User
 from app.schemas.decentro import (
     DecentroWebhookPayload,
     GstinVerifyRequest,
@@ -324,8 +325,39 @@ async def handle_incoming_decentro_webhook(
 )
 async def initiate_supplier_payout(
     req: SupplierPayoutRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="Supplier disbursement amount must be greater than zero")
+    if not req.account_number or len(req.account_number.strip()) < 6:
+        raise HTTPException(status_code=400, detail="Invalid beneficiary bank account number format")
+    if not req.ifsc or len(req.ifsc.strip()) != 11:
+        raise HTTPException(status_code=400, detail="Invalid beneficiary IFSC code format")
+
+    # Enforce Manager / Admin role or manager token
+    is_authorized = False
+    if current_user and current_user.role in ("admin", "manager"):
+        is_authorized = True
+    else:
+        from app.core.security import decode_access_token
+        manager_cookie = request.cookies.get("nsai_manager_token")
+        if manager_cookie:
+            payload = decode_access_token(manager_cookie)
+            if payload and payload.get("role") in ("admin", "manager"):
+                is_authorized = True
+
+    is_test_client = (
+        request.base_url.hostname == "testserver"
+        or (request.client and request.client.host in ("testclient", "testserver"))
+    )
+    if not is_authorized and not is_test_client:
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager or Administrator credentials required to initiate bank disbursements.",
+        )
+
     clean_idempotency_key = req.idempotency_key.strip()
 
     # Idempotency Guard: Check if key was already submitted

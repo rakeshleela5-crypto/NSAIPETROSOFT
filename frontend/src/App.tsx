@@ -2709,7 +2709,6 @@ export default function App() {
       <ManagerAuthModal
         modalState={managerPinModal}
         onClose={() => setManagerPinModal(null)}
-        correctPin={stationProfile.managerPin || '1234'}
       />
 
       <DecentroBankingModal

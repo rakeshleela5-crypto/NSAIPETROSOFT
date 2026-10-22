@@ -948,7 +948,7 @@ export async function fetchStationProfileApi(): Promise<StationProfile | null> {
       phone: data.phone || '',
       upiVpa: data.upi_vpa || '',
       printerPaperWidth: data.printer_paper_width === '58mm' ? '58mm' : '80mm',
-      managerPin: data.manager_pin || '1234',
+      managerPin: data.manager_pin || '',
     };
   } catch (_err) {
     // Suppress network/offline errors; fallback transparently to memory profile
@@ -972,7 +972,7 @@ export async function saveStationProfileApi(profile: StationProfile): Promise<an
       phone: profile.phone || '',
       upi_vpa: profile.upiVpa || '',
       printer_paper_width: profile.printerPaperWidth || '80mm',
-      manager_pin: profile.managerPin || '1234',
+      manager_pin: profile.managerPin || undefined,
     };
     const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`, {
       method: 'POST',

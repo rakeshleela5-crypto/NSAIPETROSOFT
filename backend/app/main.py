@@ -59,7 +59,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:5173",
     ],
-    allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*pages\.dev$",
+    allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*nsaipetrosoft\.pages\.dev$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,9 +86,10 @@ async def global_exception_handler(request, exc: Exception):
     err_tb = traceback.format_exc()
     print(f"ERROR on {request.method} {request.url.path}: {exc}\n{err_tb}")
     from fastapi.responses import JSONResponse
+    detail_msg = "An internal server error occurred." if settings.ENVIRONMENT == "production" else str(exc)
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc), "path": request.url.path},
+        content={"detail": detail_msg, "path": request.url.path},
     )
 
 

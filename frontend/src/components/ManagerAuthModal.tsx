@@ -10,13 +10,12 @@ export interface ManagerPinModalState {
 interface ManagerAuthModalProps {
   modalState: ManagerPinModalState | null;
   onClose: () => void;
-  correctPin: string;
+  correctPin?: string;
 }
 
 export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
   modalState,
   onClose,
-  correctPin,
 }) => {
   const [managerPinInput, setManagerPinInput] = useState<string>('');
   const [managerPinError, setManagerPinError] = useState<string>('');
@@ -35,7 +34,7 @@ export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
     setManagerPinError('');
 
     try {
-      // 1. Primary: Verify cryptographically against PostgreSQL backend
+      // Primary: Verify cryptographically against PostgreSQL backend
       await verifyManagerPinApi(managerPinInput.trim(), modalState.actionTitle);
       const cb = modalState.onAuthorized;
       setManagerPinInput('');
@@ -44,19 +43,8 @@ export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
       onClose();
       cb();
     } catch (err: any) {
-      // 2. Offline fallback: If server unreachable or offline, allow matching against local pin
-      const fallbackTarget = (correctPin || '1234').trim();
-      if (managerPinInput.trim() === fallbackTarget) {
-        const cb = modalState.onAuthorized;
-        setManagerPinInput('');
-        setManagerPinError('');
-        setIsVerifying(false);
-        onClose();
-        cb();
-      } else {
-        setIsVerifying(false);
-        setManagerPinError(err.message || 'Access Denied: Incorrect Manager PIN.');
-      }
+      setIsVerifying(false);
+      setManagerPinError(err.message || 'Access Denied: Incorrect Manager PIN.');
     }
   };
 

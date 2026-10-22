@@ -832,8 +832,12 @@ async def create_supplier_payout(
     req: SupplierPayoutCreateRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="Supplier payout amount must be greater than zero")
     supplier_name = req.supplier_name or req.vendor_name or "Supplier"
     beneficiary_account = req.beneficiary_account or req.account_number or ""
+    if not beneficiary_account or len(beneficiary_account.strip()) < 6:
+        raise HTTPException(status_code=400, detail="Invalid beneficiary bank account number format")
     beneficiary_ifsc = (req.beneficiary_ifsc or req.ifsc or "YESB0CMSNOC").upper()
     invoice_number = req.invoice_number or f"INV-{int(time.time())}"
     clean_idemp = (req.idempotency_key or f"IDEMP-{uuid.uuid4().hex[:10].upper()}").strip()

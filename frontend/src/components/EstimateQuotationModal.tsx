@@ -88,28 +88,38 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
     }
   };
 
+  const escapeHtml = (str: any): string => {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
   const handlePrintQuote = (q: QuotationItem) => {
     const html = `
       <div style="font-family: Arial, sans-serif; padding: 20px; color: #111;">
         <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #0a246a; padding-bottom: 10px;">
           <div>
-            <h2 style="margin: 0; color: #0a246a;">${stationProfile.stationName}</h2>
-            <div style="font-size: 13px;">${stationProfile.oilCompany} AUTHORIZED FORECOURT</div>
-            <div style="font-size: 12px;">${stationProfile.address}, ${stationProfile.city}</div>
-            <div style="font-size: 12px;">GSTIN: ${stationProfile.gstin || '-'} | Phone: ${stationProfile.phone || '-'}</div>
+            <h2 style="margin: 0; color: #0a246a;">${escapeHtml(stationProfile.stationName)}</h2>
+            <div style="font-size: 13px;">${escapeHtml(stationProfile.oilCompany)} AUTHORIZED FORECOURT</div>
+            <div style="font-size: 12px;">${escapeHtml(stationProfile.address)}, ${escapeHtml(stationProfile.city)}</div>
+            <div style="font-size: 12px;">GSTIN: ${escapeHtml(stationProfile.gstin) || '-'} | Phone: ${escapeHtml(stationProfile.phone) || '-'}</div>
           </div>
           <div style="text-align: right;">
             <h3 style="margin: 0; color: #d35400;">B2B FUEL & LUBE ESTIMATE</h3>
-            <div style="font-size: 13px; font-weight: bold;">Quote #: ${q.quotation_no}</div>
-            <div style="font-size: 12px;">Date: ${q.date}</div>
-            <div style="font-size: 12px;">Valid Until: ${q.valid_until}</div>
+            <div style="font-size: 13px; font-weight: bold;">Quote #: ${escapeHtml(q.quotation_no)}</div>
+            <div style="font-size: 12px;">Date: ${escapeHtml(q.date)}</div>
+            <div style="font-size: 12px;">Valid Until: ${escapeHtml(q.valid_until)}</div>
           </div>
         </div>
 
         <div style="margin: 15px 0; background: #f8f9fa; padding: 10px; border-radius: 4px;">
           <strong>Quote Prepared For:</strong><br/>
-          <span style="font-size: 14px; font-weight: bold; color: #0a246a;">${q.customer_name}</span><br/>
-          <span>Phone / Contact: ${q.customer_mobile || '-'}</span>
+          <span style="font-size: 14px; font-weight: bold; color: #0a246a;">${escapeHtml(q.customer_name)}</span><br/>
+          <span>Phone / Contact: ${escapeHtml(q.customer_mobile) || '-'}</span>
         </div>
 
         <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12.5px;">
@@ -126,7 +136,7 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
             ${q.items.map((it, idx) => `
               <tr style="border-bottom: 1px solid #ddd;">
                 <td style="padding: 8px;">${idx + 1}</td>
-                <td style="padding: 8px;"><strong>${it.product_name}</strong></td>
+                <td style="padding: 8px;"><strong>${escapeHtml(it.product_name)}</strong></td>
                 <td style="padding: 8px; text-align: right;">${it.qty.toLocaleString('en-IN')}</td>
                 <td style="padding: 8px; text-align: right;">₹ ${it.rate.toFixed(2)}</td>
                 <td style="padding: 8px; text-align: right; font-weight: bold;">₹ ${it.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -143,7 +153,7 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
 
         <div style="margin-top: 25px; font-size: 11.5px; border-left: 3px solid #0a246a; padding-left: 10px;">
           <strong>Commercial Terms & Conditions:</strong><br/>
-          ${q.terms}
+          ${escapeHtml(q.terms)}
         </div>
 
         <div style="margin-top: 40px; display: flex; justify-content: space-between; font-size: 12px;">
