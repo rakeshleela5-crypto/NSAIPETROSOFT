@@ -394,6 +394,8 @@ export interface ExpenseEntry {
   amount: number;
   narration?: string;
   paid_to?: string;
+  paid_from_account?: string;
+  paid_from_account_id?: number;
 }
 
 export interface PaymentReceiptItem {

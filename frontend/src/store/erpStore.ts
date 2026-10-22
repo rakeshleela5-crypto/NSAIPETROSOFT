@@ -1146,7 +1146,7 @@ class ErpStore {
     }
 
     // Increment destination bank/cash account
-    const isCash = receipt.payment_mode === 'Cash';
+    const isCash = (receipt.payment_mode || '').toUpperCase() === 'CASH';
     const accIndex = this.state.bankAccounts.findIndex((a) => isCash ? a.type === 'CASH' : a.name === receipt.bank_name || a.type === 'CURRENT');
     if (accIndex !== -1) {
       this.state.bankAccounts[accIndex] = {
@@ -1285,6 +1285,8 @@ class ErpStore {
       amount: amt,
       narration: expense.narration,
       paid_to: expense.paid_to,
+      paid_from_account: expense.paid_from_account,
+      paid_from_account_id: expense.paid_from_account_id,
     };
 
     this.state.expenses.unshift(newExpense);
@@ -1504,6 +1506,123 @@ class ErpStore {
 
     this.state.customers = this.state.customers.filter((c) => c.id !== customerId);
     this.notify();
+  }
+
+  public deleteExpense(id: number): boolean {
+    const exp = this.state.expenses.find((e) => e.id === id);
+    if (!exp) return false;
+
+    // Restore Cash On Hand (or the bank account it was paid from)
+    const accIndex = this.state.bankAccounts.findIndex((a) =>
+      exp.paid_from_account_id
+        ? a.id === exp.paid_from_account_id
+        : exp.paid_from_account
+        ? a.name === exp.paid_from_account
+        : a.type === 'CASH'
+    );
+    if (accIndex !== -1) {
+      this.state.bankAccounts[accIndex] = {
+        ...this.state.bankAccounts[accIndex],
+        balance: addCurrency(this.state.bankAccounts[accIndex].balance, exp.amount),
+      };
+    }
+
+    this.state.expenses = this.state.expenses.filter((e) => e.id !== id);
+    this.notify();
+    return true;
+  }
+
+  public deletePaymentReceipt(idOrReceiptNo: number | string): boolean {
+    const receipt = this.state.paymentReceipts.find(
+      (p) => p.id === idOrReceiptNo || p.receipt_no === idOrReceiptNo
+    );
+    if (!receipt) return false;
+
+    // Restore customer outstanding balance
+    const custIndex = this.state.customers.findIndex((c) => c.name === receipt.customer_name);
+    if (custIndex !== -1) {
+      this.state.customers[custIndex] = {
+        ...this.state.customers[custIndex],
+        current_outstanding: addCurrency(this.state.customers[custIndex].current_outstanding || 0, receipt.amount),
+      };
+    }
+
+    // Reverse receiving cash/bank balance
+    const isCash = (receipt.payment_mode || '').toUpperCase() === 'CASH';
+    const accIndex = this.state.bankAccounts.findIndex((a) =>
+      isCash ? a.type === 'CASH' : a.name === receipt.bank_name || a.type === 'CURRENT'
+    );
+    if (accIndex !== -1) {
+      this.state.bankAccounts[accIndex] = {
+        ...this.state.bankAccounts[accIndex],
+        balance: Math.max(0, subCurrency(this.state.bankAccounts[accIndex].balance, receipt.amount)),
+      };
+    }
+
+    this.state.paymentReceipts = this.state.paymentReceipts.filter(
+      (p) => p.id !== idOrReceiptNo && p.receipt_no !== idOrReceiptNo
+    );
+    this.notify();
+    return true;
+  }
+
+  public deleteCreditBill(idOrSlipOrBill: number | string): boolean {
+    const bill = this.state.creditBills.find(
+      (b) =>
+        b.id === idOrSlipOrBill ||
+        b.bill === idOrSlipOrBill ||
+        b.bill_no === idOrSlipOrBill ||
+        b.slip === idOrSlipOrBill ||
+        b.slip_no === idOrSlipOrBill
+    );
+    if (!bill) return false;
+
+    // Revert customer outstanding balance
+    const custName = bill.customer_name || bill.cust;
+    const custIndex = this.state.customers.findIndex((c) => c.name === custName);
+    const amount = Number(bill.amount ?? bill.total ?? 0);
+    if (custIndex !== -1 && amount > 0) {
+      this.state.customers[custIndex] = {
+        ...this.state.customers[custIndex],
+        current_outstanding: Math.max(0, subCurrency(this.state.customers[custIndex].current_outstanding || 0, amount)),
+      };
+    }
+
+    this.state.creditBills = this.state.creditBills.filter(
+      (b) =>
+        b.id !== idOrSlipOrBill &&
+        b.bill !== idOrSlipOrBill &&
+        b.bill_no !== idOrSlipOrBill &&
+        b.slip !== idOrSlipOrBill &&
+        b.slip_no !== idOrSlipOrBill
+    );
+    this.notify();
+    return true;
+  }
+
+  public deletePurchase(idOrInvoice: number | string): boolean {
+    const purchase = this.state.purchases.find(
+      (p) => p.id === idOrInvoice || p.invoice_no === idOrInvoice
+    );
+    if (!purchase) return false;
+
+    // Rollback added volume from tank
+    const tankIndex = this.state.tanks.findIndex((t) => t.id === purchase.tank_id);
+    if (tankIndex !== -1) {
+      const rolledBackStock = Math.max(0, roundVolume(this.state.tanks[tankIndex].current_stock - purchase.qty_liters, 2));
+      this.state.tanks[tankIndex] = {
+        ...this.state.tanks[tankIndex],
+        current_stock: rolledBackStock,
+        book_stock: rolledBackStock,
+        dip_stock: rolledBackStock,
+      };
+    }
+
+    this.state.purchases = this.state.purchases.filter(
+      (p) => p.id !== idOrInvoice && p.invoice_no !== idOrInvoice
+    );
+    this.notify();
+    return true;
   }
 
   public saveTank(tank: Partial<TankMasterItem>): TankMasterItem {

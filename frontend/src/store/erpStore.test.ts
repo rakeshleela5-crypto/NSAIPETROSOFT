@@ -303,6 +303,99 @@ describe('erpStore - Centralized ACID Forecourt Engine', () => {
       expect(msTank.current_stock).toBeCloseTo(prevStock - 19.48, 2);
     }
   });
+
+  it('atomically deletes expense and restores cash account balance in store', () => {
+    const getCashBal = () => erpStore.getState().bankAccounts.find((a) => a.type === 'CASH')?.balance || 0;
+    const initialBal = getCashBal();
+
+    const exp = erpStore.recordExpense({
+      category: 'Cleaning Supplies',
+      amount: 450.0,
+      narration: 'Forecourt sweeping mop',
+    });
+
+    expect(getCashBal()).toBeCloseTo(initialBal - 450.0, 2);
+    expect(erpStore.getState().expenses.some((e) => e.id === exp.id)).toBe(true);
+
+    const deleted = erpStore.deleteExpense(exp.id);
+    expect(deleted).toBe(true);
+    expect(getCashBal()).toBeCloseTo(initialBal, 2);
+    expect(erpStore.getState().expenses.some((e) => e.id === exp.id)).toBe(false);
+  });
+
+  it('atomically deletes payment receipt and reverts customer and cash balances in store', () => {
+    const custId = erpStore.getState().customers[0].id;
+    const custName = erpStore.getState().customers[0].name;
+    const getCustBal = () => erpStore.getState().customers.find((c) => c.id === custId)?.current_outstanding || 0;
+    const getCashBal = () => erpStore.getState().bankAccounts.find((a) => a.type === 'CASH')?.balance || 0;
+
+    const initialOutstanding = getCustBal();
+    const initialCash = getCashBal();
+
+    const rcp = erpStore.recordPaymentReceipt({
+      customer_name: custName,
+      amount: 5000.0,
+      payment_mode: 'CASH',
+    });
+
+    expect(getCustBal()).toBeCloseTo(initialOutstanding - 5000.0, 2);
+    expect(getCashBal()).toBeCloseTo(initialCash + 5000.0, 2);
+
+    const deleted = erpStore.deletePaymentReceipt(rcp.id);
+    expect(deleted).toBe(true);
+    expect(getCustBal()).toBeCloseTo(initialOutstanding, 2);
+    expect(getCashBal()).toBeCloseTo(initialCash, 2);
+  });
+
+  it('atomically deletes credit bill and reverts customer outstanding balance in store', () => {
+    const cust = erpStore.getState().customers[0];
+    const getCustBal = () => erpStore.getState().customers.find((c) => c.id === cust.id)?.current_outstanding || 0;
+    const initialOutstanding = getCustBal();
+
+    const bill = erpStore.recordCreditBill({
+      customer_id: cust.id,
+      vehicle_no: 'GJ05AB1234',
+      product_name: 'High Speed Diesel',
+      qty: 100,
+      rate: 94.5,
+      slip_no: 'SLIP-DEL-TEST',
+      manager_override_pin: '1234',
+    });
+
+    expect(getCustBal()).toBeCloseTo(initialOutstanding + 9450.0, 2);
+
+    const deleted = erpStore.deleteCreditBill(bill.bill_no);
+    expect(deleted).toBe(true);
+    expect(getCustBal()).toBeCloseTo(initialOutstanding, 2);
+    expect(erpStore.getState().creditBills.some((b) => b.bill_no === bill.bill_no)).toBe(false);
+  });
+
+  it('atomically deletes purchase decanting and rolls back tank stock in store', () => {
+    const tankId = erpStore.getState().tanks[0].id;
+    const getTankStock = () => erpStore.getState().tanks.find((t) => t.id === tankId)?.current_stock || 0;
+    const initialStock = getTankStock();
+
+    const purchase = erpStore.recordPurchaseDecantation({
+      invoice_no: 'INV-TEST-ROLLBACK',
+      dealer_name: 'IOCL',
+      tanker_vehicle_no: 'MH04AB1234',
+      tank_id: tankId,
+      product_id: 1,
+      qty_kl: 2.0,
+      rate_per_kl: 75000,
+      sample_density: 745.0,
+      observed_density: 745.0,
+      observed_temp: 15.0,
+      manager_override_pin: '1234',
+    });
+
+    expect(getTankStock()).toBeCloseTo(initialStock + 2000.0, 2);
+
+    const deleted = erpStore.deletePurchase(purchase.invoice_no);
+    expect(deleted).toBe(true);
+    expect(getTankStock()).toBeCloseTo(initialStock, 2);
+    expect(erpStore.getState().purchases.some((p) => p.invoice_no === 'INV-TEST-ROLLBACK')).toBe(false);
+  });
 });
 
 

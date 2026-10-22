@@ -1493,12 +1493,15 @@ export default function App() {
 
   const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
+    const expPayload = {
+      category: expCategory,
+      amount: expAmount,
+      narration: expNarration,
+      paid_to: expPaidTo,
+    };
     try {
       const newExp = erpStore.recordExpense({
-        category: expCategory,
-        amount: expAmount,
-        narration: expNarration,
-        paid_to: expPaidTo,
+        ...expPayload,
         paid_from_account_id: 1,
       });
 
@@ -1515,15 +1518,22 @@ export default function App() {
         ...prev,
       ]);
 
-      try {
-        await createExpense({
-          category: expCategory,
-          amount: expAmount,
-          narration: expNarration,
-          paid_to: expPaidTo,
-        });
-      } catch (e) {
-        console.warn('Backend expense sync deferred or offline:', e);
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('EXPENSE', expPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Forecourt: Shift expense of ₹${expAmount} saved to local queue.`);
+      } else {
+        try {
+          await createExpense(expPayload);
+        } catch (e: any) {
+          if (!navigator.onLine || e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
+            enqueueOfflineRecord('EXPENSE', expPayload);
+            setOfflineQueueCount(getOfflineQueueCount());
+            showToast(`💾 Offline Buffer: Expense of ₹${expAmount} queued for auto-sync.`);
+          } else {
+            console.warn('Backend expense sync deferred or offline:', e);
+          }
+        }
       }
 
       showToast(`✔ Shift Expense of ₹${expAmount} recorded! Cashier liability reduced in real time.`);
@@ -1536,6 +1546,7 @@ export default function App() {
   const handleDeleteExpense = (id: number) => {
     const expItem = expensesList.find((x) => x.id === id);
     requestManagerAuthorization(`Delete Expense Voucher #${id} (${expItem?.category || 'General'} - ₹${Number(expItem?.amount || 0).toFixed(2)})`, async () => {
+      erpStore.deleteExpense(id);
       try {
         await deleteExpense(id);
       } catch (e) {
@@ -1550,18 +1561,31 @@ export default function App() {
 
   const handleSaveTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
+    const transferPayload = {
+      from_account_id: fromAccId,
+      to_account_id: toAccId,
+      amount: transferAmt,
+      remarks: 'Contra Transfer',
+    };
     try {
-      erpStore.recordTransfer({
-        from_account_id: fromAccId,
-        to_account_id: toAccId,
-        amount: transferAmt,
-        remarks: 'Contra Transfer',
-      });
-      await createTransfer({
-        from_account_id: fromAccId,
-        to_account_id: toAccId,
-        amount: transferAmt,
-      });
+      erpStore.recordTransfer(transferPayload);
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('CONTRA_TRANSFER', transferPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Forecourt: Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} buffered locally.`);
+      } else {
+        try {
+          await createTransfer(transferPayload);
+        } catch (tErr: any) {
+          if (!navigator.onLine || tErr.message?.includes('Failed to fetch') || tErr.message?.includes('NetworkError')) {
+            enqueueOfflineRecord('CONTRA_TRANSFER', transferPayload);
+            setOfflineQueueCount(getOfflineQueueCount());
+            showToast(`💾 Offline Buffer: Contra transfer queued for auto-sync.`);
+          } else {
+            console.warn('Backend transfer sync deferred:', tErr);
+          }
+        }
+      }
       showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} completed!`);
       await loadAllErpData();
     } catch (err: any) {
@@ -1571,24 +1595,37 @@ export default function App() {
 
   const handleSaveDip = async (e: React.FormEvent) => {
     e.preventDefault();
+    const dipPayload = {
+      tank_id: dipTankId,
+      opening_dip: dipOpenCm,
+      opening_stock: dipOpenStock,
+      receipt_liters: dipReceipt,
+      closing_dip: dipCloseCm,
+      closing_stock: dipCloseStock,
+    };
     try {
       erpStore.recordDip({
         tank_id: dipTankId,
         dip_cm: dipCloseCm,
         water_dip_mm: 0,
       });
-      const res = await createTankDip({
-        tank_id: dipTankId,
-        opening_dip: dipOpenCm,
-        opening_stock: dipOpenStock,
-        receipt_liters: dipReceipt,
-        closing_dip: dipCloseCm,
-        closing_stock: dipCloseStock,
-      });
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('DIP_ENTRY', dipPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Forecourt: Tank #${dipTankId} dip recorded in local buffer.`);
+        return;
+      }
+      const res = await createTankDip(dipPayload);
       showToast(`✔ Dip recorded! Variation: ${res.variation_liters} L (Tolerance: ${res.tolerance_limit} L)`);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`✔ Tank physical dip of ${dipCloseCm} cm recorded in local register.`);
+      if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        enqueueOfflineRecord('DIP_ENTRY', dipPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Buffer: Tank physical dip saved locally. Will auto-sync when online.`);
+      } else {
+        showToast(`✔ Tank physical dip of ${dipCloseCm} cm recorded in local register.`);
+      }
     }
   };
 
@@ -2391,6 +2428,7 @@ export default function App() {
         setCreditIndentNo={setCreditIndentNo}
         onDeleteCreditBill={(b) => {
           requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${b.total})`, async () => {
+            erpStore.deleteCreditBill(b.id || b.bill || b.slip);
             try {
               if (b.id) {
                 await deleteCreditSale(b.id);

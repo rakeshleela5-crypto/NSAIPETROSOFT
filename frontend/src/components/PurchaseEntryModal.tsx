@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createPurchase, deletePurchase, fetchPurchases, verifyTankerDensityApi, type DensityVerificationResult } from '../api/client';
 import { exportToCsv } from '../utils/exportCsv';
 import { erpStore } from '../store/erpStore';
+import { enqueueOfflineRecord } from '../utils/offlineQueue';
 import {
   calcSec194QTds,
   calcLfr,
@@ -148,24 +149,36 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
     });
 
     // 2. Also persist to PostgreSQL backend if reachable
-    try {
-      await createPurchase({
-        invoice_no: purInvoiceNo,
-        dealer_name: purDealer,
-        tanker_vehicle_no: purVehicleNo,
-        sample_density: purObservedDensity,
-        observed_density: purObservedDensity,
-        observed_temp: purObservedTemp,
-        invoice_density_15c: purDensity,
-        product_id: purChargeCode === '01' ? 2 : 1,
-        tank_id: selectedTankId,
-        qty_kl: purQtyKl,
-        rate_per_kl: purRateKl,
-        freight: purFreight,
-        manager_override_pin: overridePin,
-      });
-    } catch (e) {
-      console.warn('Backend purchase sync deferred or offline:', e);
+    const purchasePayload = {
+      invoice_no: purInvoiceNo,
+      dealer_name: purDealer,
+      tanker_vehicle_no: purVehicleNo,
+      sample_density: purObservedDensity,
+      observed_density: purObservedDensity,
+      observed_temp: purObservedTemp,
+      invoice_density_15c: purDensity,
+      product_id: purChargeCode === '01' ? 2 : 1,
+      tank_id: selectedTankId,
+      qty_kl: purQtyKl,
+      rate_per_kl: purRateKl,
+      freight: purFreight,
+      manager_override_pin: overridePin,
+    };
+
+    if (!navigator.onLine) {
+      enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
+      showToast(`💾 Offline Forecourt: Inward decanting #${purInvoiceNo} buffered locally. Will auto-sync.`);
+    } else {
+      try {
+        await createPurchase(purchasePayload);
+      } catch (e: any) {
+        if (!navigator.onLine || e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
+          enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
+          showToast(`💾 Offline Buffer: Decanting purchase queued for auto-sync.`);
+        } else {
+          console.warn('Backend purchase sync deferred or offline:', e);
+        }
+      }
     }
 
     showToast(`✔ Inward Decanting #${purInvoiceNo} Recorded! ${incomingLitres.toLocaleString('en-IN')} L added to ${targetTank?.name || 'Tank'}.`);
@@ -574,7 +587,11 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                               className="win-btn-classic"
                               style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                               onClick={() => {
+                                const purKey = p.id ?? p.inv ?? p.inv_no ?? p.po ?? p.po_no;
                                 requestManagerAuthorization(`Delete Purchase Inward #${p.inv || p.inv_no || p.po || p.po_no} (${p.dealer} - ₹${Number(p.amount || 0).toFixed(2)})`, async () => {
+                                  if (purKey !== undefined) {
+                                    erpStore.deletePurchase(purKey);
+                                  }
                                   try {
                                     if (p.id) {
                                       await deletePurchase(p.id);

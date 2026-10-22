@@ -6,6 +6,7 @@ import { formatPaymentReceiptWhatsApp, openWhatsAppChat } from '../utils/whatsap
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 import { erpStore } from '../store/erpStore';
 import { getTodayErpDate, formatErpDate } from '../utils/dateUtils';
+import { enqueueOfflineRecord } from '../utils/offlineQueue';
 
 interface PaymentReceiptModalProps {
   isOpen: boolean;
@@ -256,15 +257,27 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                       bank_name: payBank,
                     });
 
-                    try {
-                      await createPaymentReceipt({
-                        customer_id: custId,
-                        amount: payAmount,
-                        payment_mode: payMode,
-                        bank_name: payBank,
-                      });
-                    } catch (backendErr) {
-                      console.warn('Backend payment sync deferred or offline:', backendErr);
+                    const pmtPayload = {
+                      customer_id: custId,
+                      amount: payAmount,
+                      payment_mode: payMode,
+                      bank_name: payBank,
+                    };
+
+                    if (!navigator.onLine) {
+                      enqueueOfflineRecord('PAYMENT_RECEIPT', pmtPayload);
+                      showToast(`💾 Offline Forecourt: Receipt of ₹${payAmount.toFixed(2)} buffered locally. Will auto-sync.`);
+                    } else {
+                      try {
+                        await createPaymentReceipt(pmtPayload);
+                      } catch (backendErr: any) {
+                        if (!navigator.onLine || backendErr.message?.includes('Failed to fetch') || backendErr.message?.includes('NetworkError')) {
+                          enqueueOfflineRecord('PAYMENT_RECEIPT', pmtPayload);
+                          showToast(`💾 Offline Buffer: Payment receipt queued for cloud sync.`);
+                        } else {
+                          console.warn('Backend payment sync deferred or offline:', backendErr);
+                        }
+                      }
                     }
 
                     showToast(`✔ Receipt of ₹${payAmount.toFixed(2)} recorded! Customer outstanding decremented.`);
@@ -337,6 +350,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                             style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                             onClick={() => {
                               requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${custName} - ₹${amountVal.toFixed(2)})`, async () => {
+                                erpStore.deletePaymentReceipt(h.id || h.receipt_no || (i + 1));
                                 try {
                                   if (h.id) {
                                     await deletePaymentReceipt(h.id);

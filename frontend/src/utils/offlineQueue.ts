@@ -7,7 +7,15 @@
 
 export interface QueuedOfflineRecord {
   id: string;
-  type: 'CREDIT_SALE' | 'SHIFT_METERS' | 'DIP_ENTRY' | 'LUBE_SALE';
+  type:
+    | 'CREDIT_SALE'
+    | 'SHIFT_METERS'
+    | 'DIP_ENTRY'
+    | 'LUBE_SALE'
+    | 'EXPENSE'
+    | 'PAYMENT_RECEIPT'
+    | 'CONTRA_TRANSFER'
+    | 'PURCHASE_DECANTING';
   payload: any;
   created_at: string;
   retry_count: number;
@@ -104,7 +112,15 @@ export function getOfflineQueueCount(): number {
 }
 
 export function enqueueOfflineRecord(
-  type: 'CREDIT_SALE' | 'SHIFT_METERS' | 'DIP_ENTRY' | 'LUBE_SALE',
+  type:
+    | 'CREDIT_SALE'
+    | 'SHIFT_METERS'
+    | 'DIP_ENTRY'
+    | 'LUBE_SALE'
+    | 'EXPENSE'
+    | 'PAYMENT_RECEIPT'
+    | 'CONTRA_TRANSFER'
+    | 'PURCHASE_DECANTING',
   payload: any
 ): QueuedOfflineRecord {
   const record: QueuedOfflineRecord = {
@@ -157,6 +173,14 @@ export async function syncOfflineQueue(
         res = await client.createTankDip(record.payload);
       } else if (record.type === 'LUBE_SALE') {
         res = await client.recordLubeSaleApi(record.payload);
+      } else if (record.type === 'EXPENSE') {
+        res = await client.createExpense(record.payload);
+      } else if (record.type === 'PAYMENT_RECEIPT') {
+        res = await client.createPaymentReceipt(record.payload);
+      } else if (record.type === 'CONTRA_TRANSFER') {
+        res = await client.createTransfer(record.payload);
+      } else if (record.type === 'PURCHASE_DECANTING') {
+        res = await client.createPurchase(record.payload);
       }
 
       removeOfflineRecord(record.id);
