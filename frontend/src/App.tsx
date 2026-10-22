@@ -1187,6 +1187,7 @@ export default function App() {
     const prodName = ratesList.find((p) => p.id === rateProduct)?.name || 'Fuel';
     requestManagerAuthorization(`Change ${prodName} Retail Rate to ₹${rateValue.toFixed(2)}`, async () => {
       try {
+        erpStore.updateFuelRate(rateProduct, rateValue);
         await updateRate(rateProduct, rateValue);
         showToast(`✔ ${prodName} rate updated successfully to ₹${rateValue.toFixed(2)}!`);
         openRateMaster();
@@ -1703,19 +1704,14 @@ export default function App() {
 
   // Card POS Settlement Save
   const handleSaveCardSettlement = async () => {
+    const cardPayload = {
+      machine_name: cardMachine,
+      batch_no: cardBatchNo,
+      slip_count: cardSlipsCount,
+      amount: cardBatchTotal,
+    };
     try {
-      erpStore.recordCardSettlement({
-        machine_name: cardMachine,
-        batch_no: cardBatchNo,
-        slip_count: cardSlipsCount,
-        amount: cardBatchTotal,
-      });
-      await createCardSettlement({
-        machine_name: cardMachine,
-        batch_no: cardBatchNo,
-        slip_count: cardSlipsCount,
-        amount: cardBatchTotal,
-      });
+      erpStore.recordCardSettlement(cardPayload);
       const newEntry = {
         machine: cardMachine,
         batch: cardBatchNo,
@@ -1725,10 +1721,25 @@ export default function App() {
         status: 'SETTLED',
       };
       setCardSettlements((prev) => [newEntry, ...prev]);
+
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('CARD_SETTLEMENT', cardPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Forecourt: EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} buffered locally.`);
+        return;
+      }
+
+      await createCardSettlement(cardPayload);
       showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled!`);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} recorded locally!`);
+      if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        enqueueOfflineRecord('CARD_SETTLEMENT', cardPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Buffer: EDC Batch #${cardBatchNo} queued for auto-sync.`);
+      } else {
+        showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} recorded locally!`);
+      }
     }
   };
 

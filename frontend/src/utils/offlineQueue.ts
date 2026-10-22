@@ -15,7 +15,9 @@ export interface QueuedOfflineRecord {
     | 'EXPENSE'
     | 'PAYMENT_RECEIPT'
     | 'CONTRA_TRANSFER'
-    | 'PURCHASE_DECANTING';
+    | 'PURCHASE_DECANTING'
+    | 'SHIFT_SETTLEMENT'
+    | 'CARD_SETTLEMENT';
   payload: any;
   created_at: string;
   retry_count: number;
@@ -112,15 +114,7 @@ export function getOfflineQueueCount(): number {
 }
 
 export function enqueueOfflineRecord(
-  type:
-    | 'CREDIT_SALE'
-    | 'SHIFT_METERS'
-    | 'DIP_ENTRY'
-    | 'LUBE_SALE'
-    | 'EXPENSE'
-    | 'PAYMENT_RECEIPT'
-    | 'CONTRA_TRANSFER'
-    | 'PURCHASE_DECANTING',
+  type: QueuedOfflineRecord['type'],
   payload: any
 ): QueuedOfflineRecord {
   const record: QueuedOfflineRecord = {
@@ -181,6 +175,10 @@ export async function syncOfflineQueue(
         res = await client.createTransfer(record.payload);
       } else if (record.type === 'PURCHASE_DECANTING') {
         res = await client.createPurchase(record.payload);
+      } else if (record.type === 'SHIFT_SETTLEMENT') {
+        res = await client.saveShiftSettlement(record.payload);
+      } else if (record.type === 'CARD_SETTLEMENT') {
+        res = await client.createCardSettlement(record.payload);
       }
 
       removeOfflineRecord(record.id);

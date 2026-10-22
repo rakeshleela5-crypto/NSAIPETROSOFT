@@ -7,6 +7,7 @@ import {
   fetchEmployeeShortagesApi,
 } from '../api/client';
 import { calculateNetMeterQty } from '../utils/petroUtils';
+import { enqueueOfflineRecord } from '../utils/offlineQueue';
 
 interface EmployeeSettlementModalProps {
   isOpen: boolean;
@@ -610,21 +611,28 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                         empCreditReceived -
                         liveMeterTotal
                       );
+                      const matchedEmp = employeesList.find((e) => e.name === empSettlementEmp);
+                      const payload = {
+                        shift_name: empSettlementShift,
+                        employee_id: matchedEmp?.id,
+                        remarks: empSettlementRemarks,
+                        denominations: denoms,
+                        cash_total: empCashAmount,
+                        digital_total: empCardSwipes.reduce((acc, c) => acc + c.amount, 0),
+                        credit_total: empCreditSaleAmount,
+                        expense_total: empExpensesList.reduce((acc, e) => acc + e.amount, 0),
+                        expected_cash: liveMeterTotal - empCreditSaleAmount - empCardSwipes.reduce((acc, c) => acc + c.amount, 0) - empExpensesList.reduce((acc, e) => acc + e.amount, 0) + empCreditReceived,
+                        actual_cash: empCashAmount,
+                        gap_amount: gap,
+                      };
+
                       try {
-                        const matchedEmp = employeesList.find((e) => e.name === empSettlementEmp);
-                        await saveShiftSettlement({
-                          shift_name: empSettlementShift,
-                          employee_id: matchedEmp?.id,
-                          remarks: empSettlementRemarks,
-                          denominations: denoms,
-                          cash_total: empCashAmount,
-                          digital_total: empCardSwipes.reduce((acc, c) => acc + c.amount, 0),
-                          credit_total: empCreditSaleAmount,
-                          expense_total: empExpensesList.reduce((acc, e) => acc + e.amount, 0),
-                          expected_cash: liveMeterTotal - empCreditSaleAmount - empCardSwipes.reduce((acc, c) => acc + c.amount, 0) - empExpensesList.reduce((acc, e) => acc + e.amount, 0) + empCreditReceived,
-                          actual_cash: empCashAmount,
-                          gap_amount: gap,
-                        });
+                        if (!navigator.onLine) {
+                          enqueueOfflineRecord('SHIFT_SETTLEMENT', payload);
+                          showToast(`💾 Offline Mode: Shift settlement buffered locally. Will auto-sync.`);
+                          return;
+                        }
+                        await saveShiftSettlement(payload);
                         showToast(`✔ Shift Settlement Saved to PostgreSQL! Gap: ₹${gap.toFixed(2)}`);
                         await loadAllErpData();
                         try {
@@ -633,7 +641,12 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                           }).catch(() => {});
                         } catch {}
                       } catch (err: any) {
-                        showToast(`⚠ Error saving shift settlement: ${err.message || 'Database error'}`);
+                        if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+                          enqueueOfflineRecord('SHIFT_SETTLEMENT', payload);
+                          showToast(`💾 Offline Buffer: Shift settlement queued for auto-sync.`);
+                        } else {
+                          showToast(`⚠ Error saving shift settlement: ${err.message || 'Database error'}`);
+                        }
                       }
                     }}
                   >

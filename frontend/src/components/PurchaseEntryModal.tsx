@@ -361,7 +361,21 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                   <span style={{ fontSize: '10px', fontWeight: 600 }}>Charge Code</span>
                   <div style={{ display: 'flex', gap: '2px' }}>
                     <input type="text" className="win-input" value={purChargeCode} onChange={(e) => setPurChargeCode(e.target.value)} style={{ width: '45px' }} />
-                    <button type="button" className="win-btn-classic" style={{ padding: '0 4px' }} title="Add New Charge Code">+</button>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ padding: '0 4px' }}
+                      title="Add New Charge Code"
+                      onClick={() => {
+                        const newCode = window.prompt('Enter Inward Charge Code (e.g. 03 for XP95):', '03');
+                        if (newCode && newCode.trim()) {
+                          setPurChargeCode(newCode.trim().toUpperCase());
+                          showToast(`✔ Charge code set to: ${newCode.trim().toUpperCase()}`);
+                        }
+                      }}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
                 <div>

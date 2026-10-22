@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { recordMeterSwapApi, fetchMeterSwapsApi } from '../api/client';
+import { erpStore } from '../store/erpStore';
 
 interface SalesReadingRow {
   nozzle?: string;
@@ -84,6 +85,16 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
         wm_seal_no: wmSealNo,
         manager_pin: managerPin,
       });
+
+      // Synchronize in-memory store immediately
+      const storeState = erpStore.getState();
+      const noz = storeState.nozzles.find((n) => n.id === selectedNozzle.nozzle_id);
+      if (noz) {
+        noz.opening_meter = newInitialMeter;
+        noz.closing_meter = newInitialMeter;
+        erpStore.notify();
+      }
+
       if (showToast) {
         showToast(`✔ Meter swap authorized! ${selectedNozzle.nozzle || 'Nozzle'} re-initialized to ${newInitialMeter.toFixed(2)}.`);
       }
