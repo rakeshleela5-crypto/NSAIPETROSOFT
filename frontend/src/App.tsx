@@ -757,6 +757,7 @@ export default function App() {
       });
       setCustomers(s.customers);
       setRatesList(s.rates);
+      setEmployeesList(s.employees);
       setShiftNumber(s.activeShift.so_number.replace(/^SO-/, ''));
       setShiftName(s.activeShift.shift_name);
       setShiftStatus(s.activeShift.status.toUpperCase());
@@ -900,9 +901,12 @@ export default function App() {
             receipt_no: p.receipt_no,
             shift: p.shift || 'First',
             date: p.date,
-            cust: p.customer,
-            mode: p.mode,
-            amt: p.amount,
+            cust: p.customer || (p as any).customer_name,
+            customer_name: (p as any).customer_name || p.customer,
+            mode: p.mode || (p as any).payment_mode || 'Cash',
+            payment_mode: (p as any).payment_mode || p.mode || 'Cash',
+            amt: p.amount ?? (p as any).amt ?? 0,
+            amount: p.amount ?? (p as any).amt ?? 0,
           }))
         );
       }
@@ -1640,6 +1644,11 @@ export default function App() {
     e.preventDefault();
     if (!newBankName) return;
     try {
+      erpStore.saveBankAccount({
+        name: newBankName.toUpperCase(),
+        type: newBankType,
+        balance: newBankBalance,
+      });
       await createBankAccount({
         account_name: newBankName.toUpperCase(),
         account_type: newBankType,
@@ -1650,7 +1659,8 @@ export default function App() {
       setNewBankBalance(0);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`⚠ Error creating bank account: ${err.message || 'Database error'}`);
+      showToast(`✔ Bank Account saved locally. Note: ${err.message || 'Database sync pending'}`);
+      await loadAllErpData();
     }
   };
 
@@ -2816,6 +2826,8 @@ export default function App() {
         customers={customers}
         activeShiftId={shiftNumber}
         onCustomerUpdated={loadAllErpData}
+        showToast={showToast}
+        loadAllErpData={loadAllErpData}
       />
       </Suspense>
 

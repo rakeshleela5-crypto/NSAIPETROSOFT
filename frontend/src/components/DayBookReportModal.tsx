@@ -61,7 +61,7 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
   const calculatedCashFromDenoms = denomRows.reduce((acc, r) => acc + (typeof r.value === 'number' ? r.value : 0), 0);
   const effectiveCash = calculatedCashFromDenoms > 0 ? calculatedCashFromDenoms : empCashAmount;
 
-  const effectiveCreditTotal = creditBillsList.reduce((acc, c) => acc + Number(c.total || 0), 0);
+  const effectiveCreditTotal = creditBillsList.reduce((acc, c) => acc + Number(c.total ?? c.amount ?? 0), 0);
   const effectiveDigitalTotal = cardSettlements.length > 0
     ? cardSettlements.reduce((acc, c) => acc + Number(c.amount || 0), 0)
     : empCardSwipes.reduce((acc, c) => acc + Number(c.amount || 0), 0);
@@ -213,10 +213,10 @@ export const DayBookReportModal: React.FC<DayBookReportModalProps> = ({
               [
                 ...denomRows.map(d => ['Cash Denomination', `${d.label} (${d.count})`, d.value]),
                 ['Cash Handover', 'Total Physical Cash', effectiveCash],
-                ...creditBillsList.map(c => ['Credit Slip', `${c.cust} (${c.vehicle})`, c.total]),
+                ...creditBillsList.map(c => ['Credit Slip', `${c.cust || c.customer_name || 'Credit Customer'} (${c.vehicle || c.vehicle_no || '-'})`, Number(c.total ?? c.amount ?? 0)]),
                 ['Credit Sales', 'Total Credit Slips', effectiveCreditTotal],
                 ...(cardSettlements.length > 0
-                  ? cardSettlements.map(cs => ['Digital POS', `${cs.machine} (${cs.batch})`, cs.amount])
+                  ? cardSettlements.map(cs => ['Digital POS', `${cs.machine || cs.machine_name || 'EDC Machine'} (${cs.batch || cs.batch_no || '001'})`, Number(cs.amount || 0)])
                   : empCardSwipes.map(cs => ['Digital POS', cs.name, cs.amount])),
                 ['Digital Sales', 'Total Digital / POS', effectiveDigitalTotal],
                 ...(expensesList.length > 0

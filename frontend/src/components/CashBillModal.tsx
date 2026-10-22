@@ -102,8 +102,8 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
         }
 
         // 1. Post Cash portion if > 0
-        if (splitCash > 0 && state.bankAccounts.length > 0) {
-          state.bankAccounts[0].balance = Math.round((state.bankAccounts[0].balance + splitCash + Number.EPSILON) * 100) / 100;
+        if (splitCash > 0) {
+          erpStore.recordCashSale(splitCash);
         }
 
         // 2. Post Digital / UPI portion if > 0
@@ -158,6 +158,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
         if (tank) {
           tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
           tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+          erpStore.notify();
         }
 
         showToast(`✔ Multi-Mode Split Bill #${cashMemoBillNo} Saved (Cash: ₹${splitCash}, UPI: ₹${splitUpi}, Credit: ₹${splitCredit})!`);
@@ -203,14 +204,8 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
           } catch (e) {
             console.warn('Card settlement sync deferred:', e);
           }
-        } else if (state.bankAccounts.length > 0) {
-          state.bankAccounts[0].balance = Math.round((state.bankAccounts[0].balance + totalAmount + Number.EPSILON) * 100) / 100;
-        }
-
-        const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
-        if (tank) {
-          tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
-          tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+        } else {
+          erpStore.recordCashSale(totalAmount, cashMemoProduct, cashMemoLiters);
         }
         showToast(`✔ Retail Bill #${cashMemoBillNo} Saved (Mode: ${billMode})! Printing 80mm slip...`);
       }

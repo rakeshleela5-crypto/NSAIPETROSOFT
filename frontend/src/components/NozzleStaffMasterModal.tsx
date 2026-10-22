@@ -85,7 +85,6 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     e.preventDefault();
     if (!staffName.trim()) return;
 
-    const state = erpStore.getState();
     const newEmp = {
       id: Date.now(),
       name: staffName.trim().toUpperCase(),
@@ -93,7 +92,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
       mobile: staffMobile.trim(),
     };
 
-    state.employees.push(newEmp);
+    erpStore.saveEmployee(newEmp);
     if (showToast) showToast(`✔ Staff Member "${newEmp.name}" added!`);
     setStaffName('');
     setStaffCode('');

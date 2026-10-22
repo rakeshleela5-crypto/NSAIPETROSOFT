@@ -796,11 +796,11 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
                               <td className="text-right">{b.qty ? `${b.qty.toFixed(2)} L` : '-'}</td>
                               <td className="text-right">{b.rate ? `₹${b.rate.toFixed(2)}` : '-'}</td>
                               <td className="text-right" style={{ color: '#c0392b', fontWeight: 600 }}>
-                                ₹ {(b.total || b.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                ₹ {Number(b.total ?? b.amount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </td>
                               <td className="text-right" style={{ color: '#27ae60' }}>₹ 0.00</td>
                               <td className="text-right" style={{ fontWeight: 700 }}>
-                                ₹ {(b.total || b.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                ₹ {Number(b.total ?? b.amount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </td>
                             </tr>
                           ))}

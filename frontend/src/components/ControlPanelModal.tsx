@@ -42,6 +42,12 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
   const [controlPanelTab, setControlPanelTab] = useState<'shift' | 'profile' | 'backup' | 'cleaning' | 'companies'>('shift');
   const [profileForm, setProfileForm] = useState<StationProfile>(stationProfile);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setProfileForm(stationProfile);
+    }
+  }, [isOpen, stationProfile]);
+
   // Backup & Restore states
   const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);

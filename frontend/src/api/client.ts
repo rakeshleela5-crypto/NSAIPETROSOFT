@@ -1094,10 +1094,22 @@ export async function fetchLubesApi(): Promise<any[]> {
 }
 
 export async function saveLubeProductApi(data: any): Promise<any> {
+  const normalized = {
+    code: (data.code || data.product_code || data.item_code || `LUB-${Date.now().toString().slice(-4)}`).toString().trim().toUpperCase(),
+    name: (data.name || data.product_name || data.item_name || 'LUBRICANT').toString().trim().toUpperCase(),
+    category: data.category || '4T Engine Oil',
+    package_size: data.package_size || data.pack_size || '1 Litre',
+    barcode: data.barcode || null,
+    mrp: Number(data.mrp ?? data.sale_price ?? 0),
+    sale_price: Number(data.sale_price ?? 0),
+    cost_price: Number(data.cost_price ?? 0),
+    current_stock_units: Number(data.current_stock_units ?? data.stock_qty ?? 0),
+    reorder_level: Number(data.reorder_level ?? 5),
+  };
   const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(data),
+    body: JSON.stringify(normalized),
   });
   if (!res.ok) throw new Error(`Save lube item failed: ${res.status}`);
   return res.json();

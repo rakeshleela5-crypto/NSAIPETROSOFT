@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { CustomerFull, StationProfile } from '../models';
 import type { QuotationItem } from '../store/erpStore';
 import { erpStore } from '../store/erpStore';
+import { createCreditSale } from '../api/client';
 
 interface EstimateQuotationModalProps {
   isOpen: boolean;
@@ -80,7 +81,27 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
 
   const handleConvertToBill = async (quoteId: number) => {
     try {
+      const q = quotations.find((item) => item.id === quoteId);
       const bill = erpStore.convertQuotationToCreditBill(quoteId);
+
+      try {
+        const matchedCust = customers?.find((c) => c.name.toUpperCase() === (bill.customer_name || bill.cust || '').toUpperCase());
+        const custId = matchedCust?.id || customers?.[0]?.id || 1;
+        await createCreditSale({
+          customer_id: custId,
+          vehicle_no: bill.vehicle_no || bill.vehicle || 'GJ05AB1234',
+          product_id: (bill.product || bill.product_name || '').toUpperCase().includes('PETROL') || (bill.product || bill.product_name || '').toUpperCase().includes('MS') ? 1 : 2,
+          slip_no: bill.slip_no || bill.slip || `QT-CONV-${quoteId}`,
+          qty: bill.qty,
+          rate: bill.rate,
+          cash_paid: 0,
+          remarks: `Converted from Quotation #${q?.quotation_no || ''}`,
+          indent_no: bill.indent_no,
+        });
+      } catch (backendErr) {
+        console.warn('Backend converted quotation sync deferred or offline:', backendErr);
+      }
+
       if (showToast) showToast(`✔ Quotation converted to active Credit Bill #${bill.bill_no}! Customer ledger updated.`);
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {

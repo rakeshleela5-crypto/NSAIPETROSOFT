@@ -3180,16 +3180,25 @@ async def save_tank_strapping_chart(
 # 20. Packaged Lubricants (Lubes / DEF / AdBlue) API
 # -------------------------------------------------------------
 class LubeProductCreate(BaseModel):
-    code: str
-    name: str
+    code: Optional[str] = None
+    product_code: Optional[str] = None
+    item_code: Optional[str] = None
+    name: Optional[str] = None
+    product_name: Optional[str] = None
+    item_name: Optional[str] = None
     category: str = "LUBE_OIL"  # LUBE_OIL, 2T_OIL, DEF_ADBLUE, GREASE, COOLANT
-    package_size: str = "1 Ltr"
+    package_size: Optional[str] = None
+    pack_size: Optional[str] = None
     barcode: Optional[str] = None
-    mrp: float
-    sale_price: float
+    mrp: float = 0.0
+    sale_price: float = 0.0
     cost_price: float = 0.0
-    current_stock_units: int = 10
+    current_stock_units: Optional[int] = None
+    stock_qty: Optional[int] = None
     reorder_level: int = 5
+    hsn_code: Optional[str] = None
+    gst_percent: Optional[float] = None
+    tax_rate: Optional[float] = None
 
 
 @router.get("/lubes", summary="List Packaged Lubricants & DEF (AdBlue) Stock")
@@ -3233,21 +3242,26 @@ async def list_lubes(db: AsyncSession = Depends(get_db)):
 
 @router.post("/lubes", summary="Create or Update Packaged Lube / DEF Item")
 async def save_lube_product(payload: LubeProductCreate, db: AsyncSession = Depends(get_db)):
-    stmt = select(LubeProduct).where(LubeProduct.code == payload.code.strip().upper())
+    clean_code = (payload.code or payload.product_code or payload.item_code or "LUBE-NEW").strip().upper()
+    clean_name = (payload.name or payload.product_name or payload.item_name or clean_code).strip()
+    clean_pkg = (payload.package_size or payload.pack_size or "1 Ltr").strip()
+    stock_units = payload.current_stock_units if payload.current_stock_units is not None else (payload.stock_qty if payload.stock_qty is not None else 10)
+
+    stmt = select(LubeProduct).where(LubeProduct.code == clean_code)
     res = await db.execute(stmt)
     lube = res.scalar_one_or_none()
     if not lube:
-        lube = LubeProduct(code=payload.code.strip().upper())
+        lube = LubeProduct(code=clean_code)
         db.add(lube)
 
-    lube.name = payload.name.strip()
-    lube.category = payload.category
-    lube.package_size = payload.package_size
+    lube.name = clean_name
+    lube.category = payload.category or "LUBE_OIL"
+    lube.package_size = clean_pkg
     lube.barcode = payload.barcode
-    lube.mrp = payload.mrp
+    lube.mrp = payload.mrp if payload.mrp > 0 else payload.sale_price
     lube.sale_price = payload.sale_price
     lube.cost_price = payload.cost_price
-    lube.current_stock_units = payload.current_stock_units
+    lube.current_stock_units = int(stock_units)
     lube.reorder_level = payload.reorder_level
 
     await db.commit()

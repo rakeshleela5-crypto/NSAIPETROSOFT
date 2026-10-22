@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { decentroBanking } from '../services/decentroBanking';
 import type { DynamicUpiQrResponse, GstinKycResponse, SupplierPayoutResponse } from '../services/decentroBanking';
 import type { CustomerFull } from '../models';
+import { erpStore } from '../store/erpStore';
+import { createCardSettlement } from '../api/client';
 
 interface DecentroBankingModalProps {
   isOpen: boolean;
@@ -9,6 +11,8 @@ interface DecentroBankingModalProps {
   customers: CustomerFull[];
   activeShiftId?: number | string;
   onCustomerUpdated?: () => void;
+  showToast?: (msg: string) => void;
+  loadAllErpData?: () => Promise<void>;
 }
 
 export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
@@ -17,6 +21,8 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
   customers,
   activeShiftId,
   onCustomerUpdated,
+  showToast,
+  loadAllErpData,
 }) => {
   const [activeTab, setActiveTab] = useState<'upi_qr' | 'virtual_accounts' | 'payouts' | 'gstin'>('upi_qr');
 
@@ -53,6 +59,34 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
   const [gstinResult, setGstinResult] = useState<GstinKycResponse | null>(null);
   const [gstinError, setGstinError] = useState<string>('');
 
+  const handlePaymentSuccess = async (utr: string) => {
+    setPaymentConfirmed(true);
+    setConfirmedUtr(utr);
+    const amt = parseFloat(upiAmount) || 0;
+    if (amt > 0) {
+      try {
+        erpStore.recordCardSettlement({
+          machine_name: `UPI QR (${upiLane})`,
+          batch_no: utr.slice(-6),
+          slip_count: 1,
+          amount: amt,
+        });
+        await createCardSettlement({
+          machine_name: `UPI QR (${upiLane})`,
+          batch_no: utr.slice(-6),
+          slip_count: 1,
+          amount: amt,
+        }).catch((e) => console.warn('Backend settlement note:', e));
+
+        if (showToast) showToast(`✔ Real-time UPI payment of ₹${amt.toFixed(2)} received (UTR: ${utr})!`);
+        if (loadAllErpData) await loadAllErpData();
+        else if (onCustomerUpdated) onCustomerUpdated();
+      } catch (err: any) {
+        console.warn('UPI auto-settlement record note:', err);
+      }
+    }
+  };
+
   // Real-Time SSE Subscription for Dynamic UPI QR
   useEffect(() => {
     if (!currentQr?.reference_id || paymentConfirmed) return;
@@ -61,13 +95,11 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
       currentQr.reference_id,
       (update) => {
         if (update.status === 'SUCCESS' || update.status === 'PAID') {
-          setPaymentConfirmed(true);
-          setConfirmedUtr(update.utr || update.bank_reference_number || 'YESB' + Date.now().toString().slice(-8));
+          handlePaymentSuccess(update.utr || update.bank_reference_number || 'YESB' + Date.now().toString().slice(-8));
         }
       },
       (success) => {
-        setPaymentConfirmed(true);
-        setConfirmedUtr(success.utr || success.bank_reference_number || 'YESB' + Date.now().toString().slice(-8));
+        handlePaymentSuccess(success.utr || success.bank_reference_number || 'YESB' + Date.now().toString().slice(-8));
       },
       () => {
         // Fallback polling if SSE is interrupted
@@ -75,8 +107,7 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
           try {
             const status = await decentroBanking.pollUpiQrStatus(currentQr.reference_id);
             if (status.status === 'SUCCESS' || status.status === 'PAID') {
-              setPaymentConfirmed(true);
-              setConfirmedUtr(status.bank_reference_number || status.utr || 'YESB' + Date.now().toString().slice(-8));
+              handlePaymentSuccess(status.bank_reference_number || status.utr || 'YESB' + Date.now().toString().slice(-8));
               clearInterval(timer);
             }
           } catch (e) {
@@ -126,6 +157,9 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
       const resp = await decentroBanking.createFleetVirtualAccount(selectedCustomerId);
       setVaDetails(resp);
       setVaMessage(`Dedicated Virtual Account active: ${resp.account_number} (${resp.bank_name})`);
+      if (showToast) showToast(`✔ Dedicated Virtual Account active for fleet customer: ${resp.account_number}`);
+      if (loadAllErpData) await loadAllErpData();
+      else if (onCustomerUpdated) onCustomerUpdated();
     } catch (err: any) {
       setVaMessage(`Error: ${err.message}`);
     } finally {
@@ -153,6 +187,21 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
         idempotency_key: idempKey,
       });
       setPayoutResult(resp);
+      if (resp) {
+        try {
+          erpStore.recordExpense({
+            category: 'Supplier Payout (OMC)',
+            amount: amt,
+            paid_to: vendorName,
+            narration: `${payoutTransferType} Payout via Decentro BaaS (Txn: ${resp.decentro_txn_id || idempKey}) - ${payoutPurpose}`,
+            paid_from_account_id: 1,
+          });
+          if (showToast) showToast(`✔ Supplier payout of ₹${amt.toLocaleString('en-IN')} recorded in expense ledger!`);
+          if (loadAllErpData) await loadAllErpData();
+        } catch (e) {
+          console.warn('ERP store expense sync warning:', e);
+        }
+      }
     } catch (err: any) {
       alert(`Payout failed: ${err.message}`);
     } finally {
@@ -168,7 +217,9 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
     try {
       const resp = await decentroBanking.verifyGstinKyc(gstinInput, gstinKycCustomer, true);
       setGstinResult(resp);
-      if (onCustomerUpdated) onCustomerUpdated();
+      if (showToast) showToast(`✔ GSTIN verified: ${resp.legal_name || resp.trade_name || 'Active'}`);
+      if (loadAllErpData) await loadAllErpData();
+      else if (onCustomerUpdated) onCustomerUpdated();
     } catch (err: any) {
       setGstinError(err.message || 'GSTIN verification failed');
     } finally {
@@ -378,8 +429,7 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                     {/* Simulated Test Pay Button */}
                     <button
                       onClick={() => {
-                        setPaymentConfirmed(true);
-                        setConfirmedUtr(`YESBR5${Date.now().toString().slice(-8)}`);
+                        handlePaymentSuccess(`YESBR5${Date.now().toString().slice(-8)}`);
                       }}
                       className="text-[11px] text-slate-500 hover:text-slate-300 underline"
                     >

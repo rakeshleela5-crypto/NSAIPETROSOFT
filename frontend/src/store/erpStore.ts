@@ -617,7 +617,7 @@ class ErpStore {
     return () => this.listeners.delete(listener);
   }
 
-  private notify(): void {
+  public notify(): void {
     this.state.lastUpdated = new Date().toISOString();
     this.listeners.forEach((fn) => fn(this.state));
   }
@@ -1310,6 +1310,14 @@ class ErpStore {
       throw new Error('Source or Destination account invalid');
     }
 
+    if (transfer.from_account_id === transfer.to_account_id) {
+      throw new Error('Source and destination accounts must be different');
+    }
+
+    if (transfer.amount <= 0) {
+      throw new Error('Transfer amount must be greater than zero');
+    }
+
     const amt = roundCurrency(transfer.amount);
     if (this.state.bankAccounts[fromIndex].balance < amt) {
       throw new Error(`INSUFFICIENT BALANCE: Source account only has ₹${this.state.bankAccounts[fromIndex].balance}`);
@@ -1610,6 +1618,77 @@ class ErpStore {
         };
       }
     });
+    this.notify();
+  }
+
+  public saveBankAccount(account: { id?: number; name: string; type?: string; balance?: number }): BankAccountItem {
+    if (!account.name) throw new Error('Account name is required');
+    const cleanName = account.name.toUpperCase().trim();
+    if (account.id) {
+      const idx = this.state.bankAccounts.findIndex((a) => a.id === account.id);
+      if (idx !== -1) {
+        this.state.bankAccounts[idx] = {
+          ...this.state.bankAccounts[idx],
+          name: cleanName,
+          type: (account.type?.toUpperCase() || this.state.bankAccounts[idx].type) as any,
+          balance: account.balance !== undefined ? roundCurrency(account.balance) : this.state.bankAccounts[idx].balance,
+        };
+        this.notify();
+        return this.state.bankAccounts[idx];
+      }
+    }
+    const newAcc: BankAccountItem = {
+      id: account.id || Date.now(),
+      name: cleanName,
+      type: (account.type?.toUpperCase() || 'CURRENT') as any,
+      balance: roundCurrency(account.balance || 0),
+    };
+    this.state.bankAccounts.push(newAcc);
+    this.notify();
+    return newAcc;
+  }
+
+  public saveEmployee(emp: { id?: number; name: string; code?: string; mobile?: string }): { id: number; name: string; code: string; mobile?: string } {
+    if (!emp.name?.trim()) throw new Error('Employee name is required');
+    const cleanName = emp.name.trim().toUpperCase();
+    if (emp.id) {
+      const idx = this.state.employees.findIndex((e) => e.id === emp.id);
+      if (idx !== -1) {
+        this.state.employees[idx] = {
+          ...this.state.employees[idx],
+          name: cleanName,
+          code: emp.code?.trim().toUpperCase() || this.state.employees[idx].code,
+          mobile: emp.mobile?.trim() ?? this.state.employees[idx].mobile,
+        };
+        this.notify();
+        return this.state.employees[idx];
+      }
+    }
+    const newEmp = {
+      id: emp.id || Date.now(),
+      name: cleanName,
+      code: emp.code?.trim().toUpperCase() || `EMP0${this.state.employees.length + 1}`,
+      mobile: emp.mobile?.trim() || '',
+    };
+    this.state.employees.push(newEmp);
+    this.notify();
+    return newEmp;
+  }
+
+  public recordCashSale(amount: number, productCode?: string, litres?: number): void {
+    if (amount <= 0) return;
+    const roundedAmt = roundCurrency(amount);
+    const cashAcc = this.state.bankAccounts.find((a) => a.type === 'CASH') || this.state.bankAccounts[0];
+    if (cashAcc) {
+      cashAcc.balance = addCurrency(cashAcc.balance, roundedAmt);
+    }
+    if (productCode && litres && litres > 0) {
+      const tank = this.state.tanks.find((t) => t.code === productCode) || this.state.tanks[0];
+      if (tank) {
+        tank.current_stock = Math.max(0, subCurrency(tank.current_stock, litres));
+        tank.book_stock = Math.max(0, subCurrency(tank.book_stock, litres));
+      }
+    }
     this.notify();
   }
 

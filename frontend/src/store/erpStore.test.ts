@@ -248,5 +248,61 @@ describe('erpStore - Centralized ACID Forecourt Engine', () => {
     expect(prod).toBeDefined();
     expect(prod?.current_stock_units).toBe(30);
   });
+
+  it('saves bank accounts and guards contra transfers between identical accounts or zero amount', () => {
+    const acc = erpStore.saveBankAccount({
+      name: 'HDFC CURRENT 4455',
+      type: 'CURRENT',
+      balance: 50000.0,
+    });
+    expect(acc.id).toBeDefined();
+    expect(acc.name).toBe('HDFC CURRENT 4455');
+    expect(acc.balance).toBe(50000.0);
+
+    // Transfer from acc to itself must throw
+    expect(() => {
+      erpStore.recordTransfer({
+        from_account_id: acc.id,
+        to_account_id: acc.id,
+        amount: 5000.0,
+      });
+    }).toThrow('Source and destination accounts must be different');
+
+    // Transfer with zero amount must throw
+    expect(() => {
+      erpStore.recordTransfer({
+        from_account_id: acc.id,
+        to_account_id: 1,
+        amount: 0,
+      });
+    }).toThrow('Transfer amount must be greater than zero');
+  });
+
+  it('saves new employee and records cash retail sale with automatic tank deduction', () => {
+    const emp = erpStore.saveEmployee({
+      name: 'Ramesh Patel',
+      code: 'EMP99',
+      mobile: '9825112233',
+    });
+    expect(emp.name).toBe('RAMESH PATEL');
+    expect(emp.code).toBe('EMP99');
+
+    const state = erpStore.getState();
+    const foundEmp = state.employees.find((e) => e.code === 'EMP99');
+    expect(foundEmp).toBeDefined();
+
+    const cashAcc = state.bankAccounts.find((a) => a.type === 'CASH') || state.bankAccounts[0];
+    const prevCashBal = cashAcc.balance;
+    const msTank = state.tanks.find((t) => t.code === 'MS');
+    const prevStock = msTank ? msTank.current_stock : 0;
+
+    erpStore.recordCashSale(2000.0, 'MS', 19.48);
+
+    expect(cashAcc.balance).toBeCloseTo(prevCashBal + 2000.0, 2);
+    if (msTank) {
+      expect(msTank.current_stock).toBeCloseTo(prevStock - 19.48, 2);
+    }
+  });
 });
+
 

@@ -46,6 +46,8 @@ export const BuildMisModal: React.FC<BuildMisModalProps> = ({
   const hsdTank = tanks.find((t) => t.code === 'HSD');
   const msEvaporationL = msTank ? Math.round(msTank.current_stock * 0.0059) : 84;
   const hsdEvaporationL = hsdTank ? Math.round(hsdTank.current_stock * 0.001) : 19;
+  const msRate = erpStore.getState().rates.find((r) => r.code === 'MS')?.rate || 102.65;
+  const hsdRate = erpStore.getState().rates.find((r) => r.code === 'HSD')?.rate || 94.5;
 
   const handleExport = () => {
     exportToCsv(
@@ -184,11 +186,11 @@ export const BuildMisModal: React.FC<BuildMisModalProps> = ({
               <div style={{ fontSize: '11px', lineHeight: '1.8', color: '#333' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee' }}>
                   <span>MS Evaporation Allowance:</span>
-                  <strong>{msEvaporationL} Litres (~₹{(msEvaporationL * 102.65).toFixed(0)})</strong>
+                  <strong>{msEvaporationL} Litres (~₹{(msEvaporationL * msRate).toFixed(0)})</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee' }}>
                   <span>HSD Evaporation Allowance:</span>
-                  <strong>{hsdEvaporationL} Litres (~₹{(hsdEvaporationL * 94.5).toFixed(0)})</strong>
+                  <strong>{hsdEvaporationL} Litres (~₹{(hsdEvaporationL * hsdRate).toFixed(0)})</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eee' }}>
                   <span>Total Daily Station Expenses:</span>

@@ -82,7 +82,9 @@ export const SelectCustomerBillModal: React.FC<SelectCustomerBillModalProps> = (
               type="button"
               className="win-btn-classic win-btn-primary"
               onClick={() => {
-                const cust = customers.find((c) => c.name.includes(selectedCustForBill)) || customers[0];
+                const cust = customers.find((c) => c.name.toLowerCase() === selectedCustForBill.toLowerCase()) ||
+                  customers.find((c) => c.name.toLowerCase().includes(selectedCustForBill.toLowerCase())) ||
+                  customers[0];
                 if (cust) {
                   openCustomerStatement(cust.id);
                 } else {
