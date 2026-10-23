@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { recordMeterSwapApi, fetchMeterSwapsApi } from '../api/client';
+import { recordMeterSwapApi, fetchMeterSwapsApi, deleteMeterSwapApi } from '../api/client';
 import { erpStore } from '../store/erpStore';
 
 interface SalesReadingRow {
@@ -106,6 +106,32 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
       }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleVoidMeterSwap = async (swapId: number, oldFinalMeter: number) => {
+    const pin = window.prompt(`⚠️ Void Meter Swap #${swapId}?\nThis will revert nozzle meter to ${Number(oldFinalMeter).toFixed(2)}.\nEnter Manager PIN:`, '1234');
+    if (!pin) return;
+
+    try {
+      await deleteMeterSwapApi(swapId, pin);
+      // Synchronize in-memory store immediately
+      if (selectedNozzle?.nozzle_id) {
+        const storeState = erpStore.getState();
+        const noz = storeState.nozzles.find((n) => n.id === selectedNozzle.nozzle_id);
+        if (noz) {
+          noz.opening_meter = oldFinalMeter;
+          noz.closing_meter = oldFinalMeter;
+          erpStore.notify();
+        }
+        // Refresh audit list
+        const logs = await fetchMeterSwapsApi(selectedNozzle.nozzle_id);
+        setAuditList(logs || []);
+      }
+      if (showToast) showToast(`✔ Meter swap #${swapId} voided and dispenser meter restored to ${Number(oldFinalMeter).toFixed(2)}!`);
+      if (onRefresh) await onRefresh();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error voiding swap: ${err.message}`);
     }
   };
 
@@ -362,17 +388,33 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
                         <th>Reason</th>
                         <th>W&M Seal</th>
                         <th>Authorized By</th>
+                        <th style={{ textAlign: 'center', width: '55px' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {auditList.map((a, idx) => (
-                        <tr key={idx}>
+                        <tr key={a.id || idx}>
                           <td>{a.date}</td>
                           <td className="text-right" style={{ color: '#c0392b', fontWeight: 600 }}>{Number(a.old_final_meter).toFixed(2)}</td>
                           <td className="text-right" style={{ color: '#27ae60', fontWeight: 600 }}>{Number(a.new_initial_meter).toFixed(2)}</td>
                           <td>{a.reason}</td>
                           <td style={{ fontWeight: 600 }}>{a.wm_seal_no || '-'}</td>
                           <td>{a.authorized_by}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            {a.id ? (
+                              <button
+                                type="button"
+                                className="win-btn-classic"
+                                style={{ fontSize: '9px', height: '18px', padding: '0 3px', color: '#c0392b', fontWeight: 600 }}
+                                onClick={() => handleVoidMeterSwap(a.id, Number(a.old_final_meter))}
+                                title="Void swap and restore nozzle meter"
+                              >
+                                🗑️ Void
+                              </button>
+                            ) : (
+                              <span style={{ color: '#888', fontSize: '9px' }}>-</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

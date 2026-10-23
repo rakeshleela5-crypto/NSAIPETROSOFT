@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { TankMasterItem } from '../store/erpStore';
 import { erpStore } from '../store/erpStore';
 import { calcTankUllage } from '../utils/mathEngine';
-import { createTankApi, updateTankApi, deleteTankApi } from '../api/client';
+import {
+  createTankApi,
+  updateTankApi,
+  deleteTankApi,
+  fetchTankStrappingChartApi,
+  saveStrappingPointApi,
+  deleteStrappingPointApi,
+} from '../api/client';
 
 interface UndergroundTankMasterModalProps {
   isOpen: boolean;
@@ -30,6 +37,61 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
   const [formDeadStock, setFormDeadStock] = useState<number>(500);
   const [formCurrentStock, setFormCurrentStock] = useState<number>(10000);
   const [formConnectedNozzles, setFormConnectedNozzles] = useState<string>('N5, N6');
+
+  // Live Strapping Chart Calibration State
+  const [selectedChartTankId, setSelectedChartTankId] = useState<number>(tanks[0]?.id || 1);
+  const [chartPoints, setChartPoints] = useState<Array<{ id: number; dip_cm: number; volume_liters: number; notes: string }>>([]);
+  const [isLoadingChart, setIsLoadingChart] = useState<boolean>(false);
+  const [newDipCm, setNewDipCm] = useState<number>(100);
+  const [newVolumeLiters, setNewVolumeLiters] = useState<number>(8950);
+  const [newNotes, setNewNotes] = useState<string>('W&M Strapping Point');
+
+  const loadStrappingPoints = async (tId: number) => {
+    setIsLoadingChart(true);
+    try {
+      const data = await fetchTankStrappingChartApi(tId);
+      if (data && data.calibration_points) {
+        setChartPoints(data.calibration_points);
+      }
+    } catch (err: any) {
+      console.warn('Could not load strapping chart:', err);
+    } finally {
+      setIsLoadingChart(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen || !selectedChartTankId) return;
+    loadStrappingPoints(selectedChartTankId);
+  }, [isOpen, selectedChartTankId]);
+
+  const handleSaveStrappingPoint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await saveStrappingPointApi(selectedChartTankId, {
+        dip_cm: newDipCm,
+        volume_liters: newVolumeLiters,
+        notes: newNotes,
+      });
+      if (showToast) showToast(`✔ Calibrated strapping point ${newDipCm}cm -> ${newVolumeLiters}L saved!`);
+      await loadStrappingPoints(selectedChartTankId);
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error saving strapping point: ${err.message}`);
+    }
+  };
+
+  const handleDeleteStrappingPoint = async (ptId: number, dip: number) => {
+    const pin = window.prompt(`⚠️ Delete Strapping Point #${ptId} (${dip} cm)?\nEnter Manager PIN:`, '1234');
+    if (!pin) return;
+    try {
+      await deleteStrappingPointApi(ptId, pin);
+      if (showToast) showToast(`✔ Strapping point ${dip}cm deleted.`);
+      await loadStrappingPoints(selectedChartTankId);
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error deleting strapping point: ${err.message}`);
+    }
+  };
+
 
   if (!isOpen) return null;
 
@@ -296,28 +358,110 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
 
           {/* Statutory Calibration Strapping Chart */}
           <div style={{ marginTop: '14px', borderTop: '1px solid #ccc', paddingTop: '8px' }}>
-            <div style={{ fontWeight: 700, fontSize: '12px', marginBottom: '4px' }}>
-              Statutory Dip Calibration Reference Table (Height cm vs Volume Litres)
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <div style={{ fontWeight: 700, fontSize: '12px', color: '#002b80' }}>
+                📐 Statutory Dip Calibration Strapping Table (Height cm vs Volume Litres)
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600 }}>Active Tank:</span>
+                <select
+                  className="win-select"
+                  value={selectedChartTankId}
+                  onChange={(e) => setSelectedChartTankId(parseInt(e.target.value))}
+                  style={{ fontSize: '11px', fontWeight: 700 }}
+                >
+                  {tanks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.product})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '130px', overflowY: 'auto' }}>
-              <table className="win-datagrid">
-                <thead>
-                  <tr>
-                    <th>Dip (cm)</th>
-                    <th>Petrol (MS) Litres</th>
-                    <th>Diesel (HSD) Litres</th>
-                    <th>Ullage %</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>25.0 cm</td><td>1,240 L</td><td>1,250 L</td><td>6.2%</td><td>Dead Stock Zone</td></tr>
-                  <tr><td>50.0 cm</td><td>3,420 L</td><td>3,440 L</td><td>17.1%</td><td>Low Stock Alert</td></tr>
-                  <tr><td>100.0 cm</td><td>8,950 L</td><td>8,990 L</td><td>44.8%</td><td>Normal Operation</td></tr>
-                  <tr><td>150.0 cm</td><td>14,100 L</td><td>14,200 L</td><td>70.5%</td><td>Optimal Decanting Window</td></tr>
-                  <tr><td>200.0 cm</td><td>18,200 L</td><td>18,250 L</td><td>91.0%</td><td>Near Max Safe Capacity</td></tr>
-                </tbody>
-              </table>
+
+            {/* Quick Add Strapping Point Form */}
+            <form onSubmit={handleSaveStrappingPoint} style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '8px', background: '#f0f4f8', padding: '6px', border: '1px solid #c2d4e5', borderRadius: '3px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600 }}>New Point:</span>
+              <input
+                type="number"
+                step="0.5"
+                placeholder="Dip cm"
+                className="win-input"
+                style={{ width: '80px', fontSize: '11px' }}
+                value={newDipCm}
+                onChange={(e) => setNewDipCm(parseFloat(e.target.value) || 0)}
+                required
+              />
+              <span style={{ fontSize: '11px' }}>cm =</span>
+              <input
+                type="number"
+                step="10"
+                placeholder="Litres"
+                className="win-input"
+                style={{ width: '100px', fontSize: '11px', fontWeight: 700 }}
+                value={newVolumeLiters}
+                onChange={(e) => setNewVolumeLiters(parseFloat(e.target.value) || 0)}
+                required
+              />
+              <span style={{ fontSize: '11px' }}>L</span>
+              <input
+                type="text"
+                placeholder="Remarks / Note"
+                className="win-input"
+                style={{ flex: 1, fontSize: '11px' }}
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+              />
+              <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontSize: '11px', height: '22px', fontWeight: 700 }}>
+                ➕ Calibrate Point
+              </button>
+            </form>
+
+            <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '150px', overflowY: 'auto' }}>
+              {isLoadingChart ? (
+                <div style={{ padding: '15px', textAlign: 'center', fontSize: '11px' }}>Loading calibrated points from PostgreSQL...</div>
+              ) : (
+                <table className="win-datagrid">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '15%' }}>Dip (cm)</th>
+                      <th className="text-right" style={{ width: '25%' }}>Calibrated Volume (L)</th>
+                      <th style={{ width: '45%' }}>Notes / Calibration Details</th>
+                      <th style={{ textAlign: 'center', width: '15%' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chartPoints.length > 0 ? (
+                      chartPoints.map((p) => (
+                        <tr key={p.id}>
+                          <td style={{ fontWeight: 700 }}>{p.dip_cm.toFixed(1)} cm</td>
+                          <td className="text-right" style={{ fontWeight: 700, color: '#002b80' }}>
+                            {Number(p.volume_liters).toLocaleString('en-IN')} L
+                          </td>
+                          <td>{p.notes || 'Calibrated Strapping Point'}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ fontSize: '9.5px', height: '18px', padding: '0 4px', color: '#c0392b', fontWeight: 600 }}
+                              onClick={() => handleDeleteStrappingPoint(p.id, p.dip_cm)}
+                              title="Delete strapping calibration point"
+                            >
+                              🗑️ Del
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} style={{ textAlign: 'center', color: '#888', padding: '10px' }}>
+                          No custom strapping points found. Standard strapping curve active.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

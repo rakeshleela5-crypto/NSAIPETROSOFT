@@ -2,6 +2,7 @@ import React from 'react';
 import type { FuelProductRate } from '../models';
 
 interface RateHistoryItem {
+  id?: number;
   product_name: string;
   rate: number;
   effective_date: string;
@@ -17,6 +18,7 @@ interface FuelRateMasterModalProps {
   rateValue: number;
   setRateValue: (val: number) => void;
   onSaveRate: (e: React.FormEvent) => void;
+  onDeleteRateHistory?: (historyId: number) => Promise<void> | void;
 }
 
 export const FuelRateMasterModal: React.FC<FuelRateMasterModalProps> = ({
@@ -29,6 +31,7 @@ export const FuelRateMasterModal: React.FC<FuelRateMasterModalProps> = ({
   rateValue,
   setRateValue,
   onSaveRate,
+  onDeleteRateHistory,
 }) => {
   if (!isOpen) return null;
 
@@ -121,14 +124,30 @@ export const FuelRateMasterModal: React.FC<FuelRateMasterModalProps> = ({
                       <th>Product</th>
                       <th>Old Rate</th>
                       <th>Date</th>
+                      <th style={{ textAlign: 'center', width: '65px' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rateHist.map((h, idx) => (
-                      <tr key={idx}>
+                      <tr key={h.id || idx}>
                         <td>{h.product_name}</td>
-                        <td>₹ {h.rate}</td>
+                        <td style={{ fontWeight: 600 }}>₹ {h.rate}</td>
                         <td>{h.effective_date}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          {h.id && onDeleteRateHistory ? (
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ fontSize: '9.5px', height: '18px', padding: '0 4px', color: '#c0392b', fontWeight: 600 }}
+                              onClick={() => onDeleteRateHistory(h.id!)}
+                              title="Delete this revision and revert to preceding rate"
+                            >
+                              🗑️ Revert
+                            </button>
+                          ) : (
+                            <span style={{ color: '#888', fontSize: '9px' }}>-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

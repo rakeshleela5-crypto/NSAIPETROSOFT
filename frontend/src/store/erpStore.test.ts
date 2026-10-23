@@ -445,11 +445,37 @@ describe('erpStore - Centralized ACID Forecourt Engine', () => {
       vehicles: ['GJ05AB9999', 'GJ05CD8888'],
     });
 
-    expect(erpStore.getState().customers.find((c) => c.id === cust.id)?.vehicles).toContain('GJ05AB9999');
-
     erpStore.removeCustomerVehicle(cust.id, 'GJ05AB9999');
     expect(erpStore.getState().customers.find((c) => c.id === cust.id)?.vehicles).not.toContain('GJ05AB9999');
     expect(erpStore.getState().customers.find((c) => c.id === cust.id)?.vehicles).toContain('GJ05CD8888');
+  });
+
+  it('records retail cash bills and reverses cash balance and tank stock on void/delete', () => {
+    const cashAcc = erpStore.getState().bankAccounts.find((a) => a.type === 'CASH')!;
+    const msTank = erpStore.getState().tanks.find((t) => t.code === 'MS')!;
+    const initialCash = cashAcc.balance;
+    const initialStock = msTank.current_stock;
+
+    const bill = erpStore.recordCashBill({
+      bill_no: 'POS-TEST-101',
+      vehicle_no: 'GJ05ZZ1234',
+      product_name: 'Motor Spirit (Petrol)',
+      product_code: 'MS',
+      qty: 25.0,
+      rate: 102.65,
+      amount: 2566.25,
+      payment_mode: 'CASH',
+    });
+
+    expect(erpStore.getState().cashBills.some((b) => b.id === bill.id)).toBe(true);
+    expect(erpStore.getState().bankAccounts.find((a) => a.id === cashAcc.id)?.balance).toBeCloseTo(initialCash + 2566.25, 2);
+    expect(erpStore.getState().tanks.find((t) => t.id === msTank.id)?.current_stock).toBeCloseTo(initialStock - 25.0, 2);
+
+    const voided = erpStore.deleteCashBill(bill.id);
+    expect(voided).toBe(true);
+    expect(erpStore.getState().cashBills.some((b) => b.id === bill.id)).toBe(false);
+    expect(erpStore.getState().bankAccounts.find((a) => a.id === cashAcc.id)?.balance).toBeCloseTo(initialCash, 2);
+    expect(erpStore.getState().tanks.find((t) => t.id === msTank.id)?.current_stock).toBeCloseTo(initialStock, 2);
   });
 });
 

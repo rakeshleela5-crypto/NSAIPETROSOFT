@@ -1,4 +1,5 @@
 import pytest
+from datetime import date
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -11,6 +12,7 @@ from app.models.petrol_pump import (
     Customer,
     FuelProduct,
     Nozzle,
+    RateHistory,
     Tank,
     StationProfileSetting,
 )
@@ -43,11 +45,12 @@ async def test_parity_crud_endpoints():
         acc1 = BankAccount(id=1, account_name="Cash on Hand", account_type="CASH", balance=100000.0)
         acc2 = BankAccount(id=2, account_name="SBI Current A/C", account_type="BANK", balance=50000.0)
         prod = FuelProduct(id=1, code="HSD", name="High Speed Diesel", current_rate=92.5)
+        rate_hist0 = RateHistory(id=1, product_id=1, rate=92.5, effective_date=date(2026, 1, 1))
         tank = Tank(id=1, tank_name="HSD Underground Tank 1", product_id=1, capacity_liters=20000.0, current_stock=12000.0)
         nozzle = Nozzle(id=1, nozzle_name="Nozzle 1 (HSD)", machine_name="MPD 1", tank_id=1, product_id=1, current_meter=5000.0)
         profile = StationProfileSetting(id=1, station_name="TEST DEALER OUTLET", manager_pin="1234")
 
-        db.add_all([acc1, acc2, prod, tank, nozzle, profile])
+        db.add_all([acc1, acc2, prod, rate_hist0, tank, nozzle, profile])
         await db.commit()
 
     transport = ASGITransport(app=app)
@@ -161,3 +164,111 @@ async def test_parity_crud_endpoints():
         assert nozzle_rem["wm_seal_no"] == "WM-LEAD-2026-4491"
         assert nozzle_rem["last_stamped"] == "15-Jun-2026"
         assert nozzle_rem["next_due"] == "15-Jun-2027"
+
+        # 5. Test Retail Cash Invoices CRUD, Stock & Cash Ledger Rollback
+        cash_bill_res = await client.post(
+            "/api/v1/pump/cash-bills",
+            json={
+                "bill_no": "POS-TEST-881",
+                "vehicle_no": "GJ05AB1234",
+                "product_name": "High Speed Diesel",
+                "product_code": "HSD",
+                "qty": 50.0,
+                "rate": 92.5,
+                "amount": 4625.0,
+                "payment_mode": "CASH",
+            },
+        )
+        assert cash_bill_res.status_code == 200, cash_bill_res.text
+        cb_data = cash_bill_res.json()
+        assert cb_data["bill_no"] == "POS-TEST-881"
+        assert cb_data["amount"] == 4625.0
+        bill_id = cb_data["id"]
+
+        # Verify Cash on Hand increased and Tank stock decreased
+        async with async_session() as db:
+            cash_acc = await db.get(BankAccount, 1)
+            assert cash_acc.balance == 104625.0
+            hsd_tank = await db.get(Tank, 1)
+            assert hsd_tank.current_stock == 11950.0  # 12000 - 50
+
+        # Fetch cash bills list
+        bills_res = await client.get("/api/v1/pump/cash-bills")
+        assert bills_res.status_code == 200
+        bills = bills_res.json()
+        assert any(b["bill_no"] == "POS-TEST-881" for b in bills)
+
+        # Void cash bill and verify cash and stock rollback
+        del_cb_res = await client.delete(f"/api/v1/pump/cash-bills/{bill_id}?manager_pin=1234")
+        assert del_cb_res.status_code == 200, del_cb_res.text
+
+        async with async_session() as db:
+            cash_acc = await db.get(BankAccount, 1)
+            assert cash_acc.balance == 100000.0  # restored
+            hsd_tank = await db.get(Tank, 1)
+            assert hsd_tank.current_stock == 12000.0  # restored
+
+        # 6. Test Fuel Rate History Reversion / Rollback
+        # Update rate to new test rate
+        rate_upd = await client.post(
+            "/api/v1/pump/rates",
+            json={"product_id": 1, "rate": 98.75, "manager_pin": "1234"},
+        )
+        assert rate_upd.status_code == 200
+        rates_data = (await client.get("/api/v1/pump/rates")).json()
+        assert rates_data["products"][0]["rate"] == 98.75
+        latest_hist_id = rates_data["history"][0]["id"]
+
+        # Delete the erroneous rate revision
+        del_rate_res = await client.delete(f"/api/v1/pump/rates/history/{latest_hist_id}?manager_pin=1234")
+        assert del_rate_res.status_code == 200, del_rate_res.text
+
+        # Verify product rate rolled back to prior rate (92.5)
+        rates_data_after = (await client.get("/api/v1/pump/rates")).json()
+        assert rates_data_after["products"][0]["rate"] == 92.5
+
+        # 7. Test Nozzle Meter Swap Deletion & Rollback
+        swap_res = await client.post(
+            "/api/v1/pump/nozzles/1/meter-swap",
+            json={
+                "old_final_meter": 5000.0,
+                "new_initial_meter": 0.0,
+                "reason": "Totalizer repair",
+                "wm_seal_no": "WM-SWAP-1",
+                "manager_pin": "1234",
+            },
+        )
+        assert swap_res.status_code == 200
+        swaps_list = (await client.get("/api/v1/pump/nozzles/1/meter-swaps")).json()
+        assert len(swaps_list) >= 1
+        swap_id = swaps_list[0]["id"]
+
+        # Verify nozzle current_meter is 0.0
+        async with async_session() as db:
+            noz = await db.get(Nozzle, 1)
+            assert noz.current_meter == 0.0
+
+        # Void meter swap and verify current_meter reverts to 5000.0
+        del_swap_res = await client.delete(f"/api/v1/pump/nozzles/meter-swaps/{swap_id}?manager_pin=1234")
+        assert del_swap_res.status_code == 200
+        async with async_session() as db:
+            noz = await db.get(Nozzle, 1)
+            assert noz.current_meter == 5000.0
+
+        # 8. Test Tank Strapping Calibration Point Addition & Deletion
+        pt_res = await client.post(
+            "/api/v1/pump/tanks/1/strapping-chart/point",
+            json={"dip_cm": 125.5, "volume_liters": 11340.0, "notes": "Test Calibration Point"},
+        )
+        assert pt_res.status_code == 200
+        pt_id = pt_res.json()["id"]
+
+        chart_res = await client.get("/api/v1/pump/tanks/1/strapping-chart")
+        assert chart_res.status_code == 200
+        chart_points = chart_res.json()["calibration_points"]
+        assert any(p["dip_cm"] == 125.5 and p["volume_liters"] == 11340.0 for p in chart_points)
+
+        # Delete strapping point
+        del_pt_res = await client.delete(f"/api/v1/pump/tanks/strapping-chart/{pt_id}?manager_pin=1234")
+        assert del_pt_res.status_code == 200
+

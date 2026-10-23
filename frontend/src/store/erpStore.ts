@@ -36,6 +36,8 @@ import type {
   PaymentReceiptItem,
   LubeProductItem,
 } from '../models';
+import type { RetailCashBillItem } from '../api/client';
+
 
 export interface VehicleEntry {
   vehicle_no: string;
@@ -187,6 +189,7 @@ export interface ErpStoreState {
   dips: TankDipRecord[];
   transfers: TransferEntryRecord[];
   quotations: QuotationItem[];
+  cashBills: RetailCashBillItem[];
 }
 
 // Purge any residual legacy localStorage cache from previous software iterations
@@ -599,6 +602,22 @@ export const DEFAULT_INITIAL_STATE: ErpStoreState = {
       status: 'ISSUED',
     },
   ],
+  cashBills: [
+    {
+      id: 1,
+      bill_no: 'POS-1001',
+      date: new Date().toISOString().split('T')[0],
+      vehicle_no: 'GJ05AB1234',
+      product_name: 'Motor Spirit (Petrol)',
+      product_code: 'MS',
+      qty: 20.0,
+      rate: 102.65,
+      amount: 2053.0,
+      tax_amount: 246.36,
+      payment_mode: 'CASH',
+      status: 'PAID',
+    },
+  ],
 };
 
 class ErpStore {
@@ -671,6 +690,7 @@ class ErpStore {
     dips?: any[];
     transfers?: any[];
     quotations?: any[];
+    cashBills?: any[];
   }): void {
     if (payload.stationProfile) {
       this.state.stationProfile = { ...this.state.stationProfile, ...payload.stationProfile };
@@ -905,6 +925,25 @@ class ErpStore {
         terms: q.terms || '',
         status: q.status || 'ISSUED',
         items: q.items || [],
+      }));
+    }
+    if (payload.cashBills && payload.cashBills.length > 0) {
+      this.state.cashBills = payload.cashBills.map((b: any) => ({
+        id: Number(b.id),
+        bill_no: b.bill_no,
+        date: b.date || this.state.activeShift.date,
+        vehicle_no: b.vehicle_no || 'WALK-IN',
+        product_name: b.product_name || 'Fuel',
+        product_code: b.product_code || 'MS',
+        qty: Number(b.qty || 0),
+        rate: Number(b.rate || 0),
+        amount: Number(b.amount || 0),
+        tax_amount: Number(b.tax_amount || 0),
+        payment_mode: b.payment_mode || 'CASH',
+        split_details: b.split_details,
+        driver_name: b.driver_name,
+        status: b.status || 'PAID',
+        created_at: b.created_at,
       }));
     }
     this.notify();
@@ -2047,8 +2086,101 @@ class ErpStore {
   }
 
   // -------------------------------------------------------------------------
+  // RETAIL CASH INVOICES & WALK-IN POS MEMOS
+  // -------------------------------------------------------------------------
+
+  public recordCashBill(bill: Partial<RetailCashBillItem>): RetailCashBillItem {
+    if (!bill.product_name) throw new Error('Product name is required');
+    const newBill: RetailCashBillItem = {
+      id: bill.id || Date.now(),
+      bill_no: bill.bill_no || `POS-${Date.now().toString().slice(-4)}`,
+      date: bill.date || this.state.activeShift.date,
+      vehicle_no: (bill.vehicle_no || 'WALK-IN').toUpperCase(),
+      product_name: bill.product_name,
+      product_code: bill.product_code || 'MS',
+      qty: Number(bill.qty || 0),
+      rate: Number(bill.rate || 0),
+      amount: Number(bill.amount || 0),
+      tax_amount: Number(bill.tax_amount || 0),
+      payment_mode: (bill.payment_mode as any) || 'CASH',
+      split_details: bill.split_details,
+      driver_name: bill.driver_name,
+      status: 'PAID',
+    };
+
+    // If CASH or SPLIT, increase Cash on Hand
+    if (newBill.payment_mode === 'CASH') {
+      const cashAcc = this.state.bankAccounts.find((a) => a.type === 'CASH') || this.state.bankAccounts[0];
+      if (cashAcc) {
+        cashAcc.balance = addCurrency(cashAcc.balance, newBill.amount);
+      }
+    } else if (newBill.payment_mode === 'SPLIT' && newBill.split_details) {
+      try {
+        const split = JSON.parse(newBill.split_details);
+        if (split.cash && split.cash > 0) {
+          const cashAcc = this.state.bankAccounts.find((a) => a.type === 'CASH') || this.state.bankAccounts[0];
+          if (cashAcc) {
+            cashAcc.balance = addCurrency(cashAcc.balance, split.cash);
+          }
+        }
+      } catch {}
+    }
+
+    // Atomically decrement tank stock
+    if (newBill.product_code && newBill.qty > 0) {
+      const tank = this.state.tanks.find((t) => t.code === newBill.product_code) || this.state.tanks[0];
+      if (tank) {
+        tank.current_stock = Math.max(0, subCurrency(tank.current_stock, newBill.qty));
+        tank.book_stock = Math.max(0, subCurrency(tank.book_stock, newBill.qty));
+      }
+    }
+
+    this.state.cashBills.unshift(newBill);
+    this.notify();
+    return newBill;
+  }
+
+  public deleteCashBill(billId: number): boolean {
+    const idx = this.state.cashBills.findIndex((b) => b.id === billId);
+    if (idx === -1) return false;
+    const bill = this.state.cashBills[idx];
+
+    // Revert cash balance
+    if (bill.payment_mode === 'CASH') {
+      const cashAcc = this.state.bankAccounts.find((a) => a.type === 'CASH') || this.state.bankAccounts[0];
+      if (cashAcc) {
+        cashAcc.balance = Math.max(0, subCurrency(cashAcc.balance, bill.amount));
+      }
+    } else if (bill.payment_mode === 'SPLIT' && bill.split_details) {
+      try {
+        const split = JSON.parse(bill.split_details);
+        if (split.cash && split.cash > 0) {
+          const cashAcc = this.state.bankAccounts.find((a) => a.type === 'CASH') || this.state.bankAccounts[0];
+          if (cashAcc) {
+            cashAcc.balance = Math.max(0, subCurrency(cashAcc.balance, split.cash));
+          }
+        }
+      } catch {}
+    }
+
+    // Revert tank stock
+    if (bill.product_code && bill.qty > 0) {
+      const tank = this.state.tanks.find((t) => t.code === bill.product_code) || this.state.tanks[0];
+      if (tank) {
+        tank.current_stock = addCurrency(tank.current_stock, bill.qty);
+        tank.book_stock = addCurrency(tank.book_stock, bill.qty);
+      }
+    }
+
+    this.state.cashBills.splice(idx, 1);
+    this.notify();
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
   // CONTROL PANEL: BACKUP, RESTORE, CLEANING
   // -------------------------------------------------------------------------
+
 
   public exportBackupJson(): { jsonString: string; filename: string; checksum: string } {
     const payload = JSON.stringify(this.state, null, 2);
@@ -2100,6 +2232,7 @@ class ErpStore {
       this.state.dips = [];
       this.state.transfers = [];
       this.state.quotations = [];
+      this.state.cashBills = [];
       // Reset customer outstanding
       this.state.customers.forEach((c) => {
         c.current_outstanding = 0;

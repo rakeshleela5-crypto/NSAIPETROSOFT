@@ -51,6 +51,7 @@ from app.models.petrol_pump import (
     CardSettlement,
     ContraTransfer,
     Quotation,
+    RetailCashInvoice,
 )
 router = APIRouter()
 
@@ -382,6 +383,50 @@ async def update_rate(
     return {"message": "Rate updated successfully", "product": product.name, "new_rate": product.current_rate}
 
 
+@router.delete("/rates/history/{history_id}", summary="Delete/Revert Erroneous Product Rate Revision")
+async def delete_rate_history(
+    history_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to revert fuel price revisions.",
+        )
+
+    entry = await db.get(RateHistory, history_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Rate revision history record not found")
+
+    prod_id = entry.product_id
+    product = await db.get(FuelProduct, prod_id)
+    await db.delete(entry)
+    await db.flush()
+
+    # Roll back product current_rate to the latest remaining rate
+    latest_stmt = (
+        select(RateHistory)
+        .where(RateHistory.product_id == prod_id)
+        .order_by(desc(RateHistory.id))
+        .limit(1)
+    )
+    latest_res = await db.execute(latest_stmt)
+    latest_hist = latest_res.scalars().first()
+    if product and latest_hist:
+        product.current_rate = latest_hist.rate
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Rate history entry #{history_id} deleted. Current rate for {product.name if product else 'fuel'} restored to ₹{product.current_rate if product else 0:.2f}",
+        "current_rate": product.current_rate if product else None,
+    }
+
+
+
 # -------------------------------------------------------------
 # 3. Shift Meter Reading & Sales Entry API
 # -------------------------------------------------------------
@@ -473,6 +518,39 @@ async def list_meter_swaps(nozzle_id: int, db: AsyncSession = Depends(get_db)):
         }
         for s in swaps
     ]
+
+
+@router.delete("/nozzles/meter-swaps/{swap_id}", summary="Delete/Revert Nozzle Meter Replacement Swap")
+async def delete_meter_swap(
+    swap_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to void nozzle meter changeover.",
+        )
+
+    swap = await db.get(NozzleMeterReplacement, swap_id)
+    if not swap:
+        raise HTTPException(status_code=404, detail="Meter replacement record not found")
+
+    nozzle = await db.get(Nozzle, swap.nozzle_id)
+    reverted_reading = swap.old_final_meter
+    if nozzle:
+        nozzle.current_meter = swap.old_final_meter
+
+    await db.delete(swap)
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Meter swap #{swap_id} voided. Nozzle meter reverted to {reverted_reading:.2f}",
+        "reverted_meter": reverted_reading,
+    }
+
 
 
 @router.get("/shifts/current", summary="Get Current Active Shift and Meter Readings")
@@ -3424,6 +3502,70 @@ async def save_tank_strapping_chart(
     }
 
 
+@router.post("/tanks/{tank_id}/strapping-chart/point", summary="Add/Update Single Strapping Chart Point")
+async def add_or_update_strapping_point(
+    tank_id: int,
+    payload: StrappingPointInput,
+    db: AsyncSession = Depends(get_db),
+):
+    tank = await db.get(Tank, tank_id)
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
+
+    # Check if point for this dip_cm already exists
+    stmt = select(TankCalibrationChart).where(
+        TankCalibrationChart.tank_id == tank_id,
+        TankCalibrationChart.dip_cm == payload.dip_cm,
+    )
+    res = await db.execute(stmt)
+    existing = res.scalars().first()
+    if existing:
+        existing.volume_liters = payload.volume_liters
+        existing.notes = payload.notes or "Updated Strapping Point"
+        pt_id = existing.id
+    else:
+        new_point = TankCalibrationChart(
+            tank_id=tank.id,
+            dip_cm=payload.dip_cm,
+            volume_liters=payload.volume_liters,
+            notes=payload.notes or "Calibrated Strapping Point",
+        )
+        db.add(new_point)
+        await db.flush()
+        pt_id = new_point.id
+
+    await db.commit()
+    return {
+        "status": "success",
+        "id": pt_id,
+        "message": f"Strapping point {payload.dip_cm}cm -> {payload.volume_liters}L recorded for {tank.tank_name}",
+    }
+
+
+@router.delete("/tanks/strapping-chart/{point_id}", summary="Delete Tank Strapping Chart Point")
+async def delete_strapping_point(
+    point_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete calibration strapping points.",
+        )
+
+    point = await db.get(TankCalibrationChart, point_id)
+    if not point:
+        raise HTTPException(status_code=404, detail="Strapping calibration point not found")
+
+    await db.delete(point)
+    await db.commit()
+    return {"status": "success", "message": f"Strapping point #{point_id} deleted successfully", "id": point_id}
+
+
+
 # -------------------------------------------------------------
 # 19b. Underground Storage Tanks CRUD API
 # -------------------------------------------------------------
@@ -4204,3 +4346,168 @@ async def delete_quotation(
     await db.delete(quote)
     await db.commit()
     return {"message": f"Quotation #{q_no} deleted successfully", "id": quotation_id}
+
+
+# -------------------------------------------------------------
+# 25. Retail Cash Invoices & POS Walk-in Fuel Memos API
+# -------------------------------------------------------------
+class RetailCashBillInput(BaseModel):
+    bill_no: Optional[str] = None
+    date: Optional[date] = None
+    vehicle_no: str = "WALK-IN"
+    product_name: str
+    product_code: str = "MS"
+    qty: float
+    rate: float
+    amount: float
+    tax_amount: float = 0.0
+    payment_mode: str = "CASH"
+    split_details: Optional[str] = None
+    driver_name: Optional[str] = None
+
+
+@router.get("/cash-bills", summary="List All Retail Cash Memos & Walk-in Invoices")
+async def list_cash_bills(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(RetailCashInvoice).order_by(desc(RetailCashInvoice.id)).limit(limit)
+    res = await db.execute(stmt)
+    bills = res.scalars().all()
+    return [
+        {
+            "id": b.id,
+            "bill_no": b.bill_no,
+            "date": str(b.date),
+            "vehicle_no": b.vehicle_no,
+            "product_name": b.product_name,
+            "product_code": b.product_code,
+            "qty": b.qty,
+            "rate": b.rate,
+            "amount": b.amount,
+            "tax_amount": b.tax_amount,
+            "payment_mode": b.payment_mode,
+            "split_details": b.split_details,
+            "driver_name": b.driver_name,
+            "status": b.status,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+        }
+        for b in bills
+    ]
+
+
+@router.post("/cash-bills", summary="Record Walk-in Retail Cash / POS Bill")
+async def create_cash_bill(
+    data: RetailCashBillInput,
+    db: AsyncSession = Depends(get_db),
+):
+    b_no = data.bill_no.strip() if data.bill_no else f"POS-{int(time.time())}"
+    # Ensure uniqueness
+    chk = await db.execute(select(RetailCashInvoice).where(RetailCashInvoice.bill_no == b_no))
+    if chk.scalars().first():
+        b_no = f"{b_no}-{int(time.time()) % 1000}"
+
+    invoice = RetailCashInvoice(
+        bill_no=b_no,
+        date=data.date or today_ist(),
+        vehicle_no=data.vehicle_no.strip().upper(),
+        product_name=data.product_name.strip(),
+        product_code=data.product_code.strip().upper(),
+        qty=data.qty,
+        rate=data.rate,
+        amount=data.amount,
+        tax_amount=data.tax_amount,
+        payment_mode=data.payment_mode.strip().upper(),
+        split_details=data.split_details,
+        driver_name=data.driver_name.strip() if data.driver_name else None,
+        status="PAID",
+    )
+    db.add(invoice)
+
+    # If CASH or SPLIT, update Primary Cash On Hand bank account balance
+    if data.payment_mode.upper() in ("CASH", "SPLIT"):
+        cash_res = await db.execute(select(BankAccount).where(BankAccount.account_type == "CASH").limit(1))
+        cash_acc = cash_res.scalars().first()
+        if not cash_acc:
+            cash_acc = await db.get(BankAccount, 1)
+        if cash_acc:
+            cash_amt = data.amount
+            if data.payment_mode.upper() == "SPLIT" and data.split_details:
+                try:
+                    split_info = json.loads(data.split_details)
+                    cash_amt = float(split_info.get("cash", 0))
+                except Exception:
+                    pass
+            cash_acc.balance = round(cash_acc.balance + cash_amt, 2)
+
+    # Decrement tank current stock if matching product exists
+    tank_res = await db.execute(select(Tank).join(FuelProduct).where(FuelProduct.code == data.product_code.upper()).limit(1))
+    tank = tank_res.scalars().first()
+    if tank and data.qty > 0:
+        tank.current_stock = max(0.0, round(tank.current_stock - data.qty, 2))
+
+    await db.commit()
+    await db.refresh(invoice)
+    return {
+        "id": invoice.id,
+        "bill_no": invoice.bill_no,
+        "date": str(invoice.date),
+        "vehicle_no": invoice.vehicle_no,
+        "product_name": invoice.product_name,
+        "product_code": invoice.product_code,
+        "qty": invoice.qty,
+        "rate": invoice.rate,
+        "amount": invoice.amount,
+        "tax_amount": invoice.tax_amount,
+        "payment_mode": invoice.payment_mode,
+        "split_details": invoice.split_details,
+        "driver_name": invoice.driver_name,
+        "status": invoice.status,
+        "message": f"Retail bill #{invoice.bill_no} recorded successfully",
+    }
+
+
+@router.delete("/cash-bills/{bill_id}", summary="Delete / Void Retail Cash Bill with Rollback")
+async def delete_cash_bill(
+    bill_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to void/delete retail cash memos.",
+        )
+    invoice = await db.get(RetailCashInvoice, bill_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Retail cash bill not found")
+
+    # Reverse cash balance if CASH or SPLIT
+    if invoice.payment_mode in ("CASH", "SPLIT"):
+        cash_res = await db.execute(select(BankAccount).where(BankAccount.account_type == "CASH").limit(1))
+        cash_acc = cash_res.scalars().first()
+        if not cash_acc:
+            cash_acc = await db.get(BankAccount, 1)
+        if cash_acc:
+            cash_amt = invoice.amount
+            if invoice.payment_mode == "SPLIT" and invoice.split_details:
+                try:
+                    split_info = json.loads(invoice.split_details)
+                    cash_amt = float(split_info.get("cash", 0))
+                except Exception:
+                    pass
+            cash_acc.balance = max(0.0, round(cash_acc.balance - cash_amt, 2))
+
+    # Restore tank current stock
+    tank_res = await db.execute(select(Tank).join(FuelProduct).where(FuelProduct.code == invoice.product_code.upper()).limit(1))
+    tank = tank_res.scalars().first()
+    if tank and invoice.qty > 0:
+        tank.current_stock = round(tank.current_stock + invoice.qty, 2)
+
+    b_no = invoice.bill_no
+    await db.delete(invoice)
+    await db.commit()
+    return {"message": f"Retail cash bill #{b_no} voided and stock/cash liability rolled back", "id": bill_id}
+

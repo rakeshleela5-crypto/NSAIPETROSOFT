@@ -1609,3 +1609,136 @@ export async function updateNozzleStampingApi(
   }
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Retail Cash Invoices & Walk-in POS Memos API
+// ---------------------------------------------------------------------------
+export interface RetailCashBillItem {
+  id: number;
+  bill_no: string;
+  date: string;
+  vehicle_no: string;
+  product_name: string;
+  product_code: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  tax_amount?: number;
+  payment_mode: 'CASH' | 'UPI' | 'SPLIT' | 'CREDIT';
+  split_details?: string;
+  driver_name?: string;
+  status: string;
+  created_at?: string;
+}
+
+export interface CreateCashBillPayload {
+  bill_no?: string;
+  date?: string;
+  vehicle_no?: string;
+  product_name: string;
+  product_code?: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  tax_amount?: number;
+  payment_mode?: string;
+  split_details?: string;
+  driver_name?: string;
+}
+
+export async function fetchCashBillsApi(limit: number = 100): Promise<RetailCashBillItem[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/cash-bills?limit=${limit}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Fetch cash bills failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function saveCashBillApi(data: CreateCashBillPayload): Promise<RetailCashBillItem> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/cash-bills`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Save cash bill failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteCashBillApi(billId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/cash-bills/${billId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/cash-bills/${billId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete cash bill failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Fuel Rate Revision Reversal API
+// ---------------------------------------------------------------------------
+export async function deleteRateHistoryApi(historyId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/rates/history/${historyId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/rates/history/${historyId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete rate history failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Nozzle Meter Replacement Swap Reversal API
+// ---------------------------------------------------------------------------
+export async function deleteMeterSwapApi(swapId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/nozzles/meter-swaps/${swapId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/nozzles/meter-swaps/${swapId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete meter swap failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Tank Strapping Calibration Chart Points API
+// ---------------------------------------------------------------------------
+
+export async function saveStrappingPointApi(
+  tankId: number,
+  point: { dip_cm: number; volume_liters: number; notes?: string }
+): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}/strapping-chart/point`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(point),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Save strapping point failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteStrappingPointApi(pointId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/tanks/strapping-chart/${pointId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/tanks/strapping-chart/${pointId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete strapping point failed: ${res.status}`);
+  }
+  return res.json();
+}
+

@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import type { CustomerFull, FuelProductRate, StationProfile } from '../models';
 import { erpStore } from '../store/erpStore';
-import { createCreditSale, createCardSettlement } from '../api/client';
+import {
+  createCreditSale,
+  createCardSettlement,
+  saveCashBillApi,
+  deleteCashBillApi,
+  type RetailCashBillItem,
+} from '../api/client';
 import { getTodayErpDate } from '../utils/dateUtils';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 import { calcSaleAmount, calcTaxSplit } from '../utils/mathEngine';
+import { exportToCsv } from '../utils/exportCsv';
 
 interface CashBillModalProps {
   isOpen: boolean;
@@ -211,6 +218,29 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
         showToast(`✔ Retail Bill #${cashMemoBillNo} Saved (Mode: ${billMode})! Printing 80mm slip...`);
       }
 
+      // 5. Persist Immutable Retail Cash Memo in Store & PostgreSQL Database
+      const cashBillPayload = {
+        bill_no: cashMemoBillNo,
+        date: getTodayErpDate(),
+        vehicle_no: cashMemoVehicle.toUpperCase() || 'WALK-IN',
+        product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
+        product_code: cashMemoProduct,
+        qty: cashMemoLiters,
+        rate: cashMemoRate,
+        amount: totalAmount,
+        tax_amount: taxSplit.taxAmount,
+        payment_mode: billMode,
+        split_details: billMode === 'SPLIT' ? JSON.stringify({ cash: splitCash, upi: splitUpi, credit: splitCredit }) : undefined,
+        driver_name: driverName || undefined,
+      };
+
+      erpStore.recordCashBill(cashBillPayload);
+      try {
+        await saveCashBillApi(cashBillPayload);
+      } catch (apiErr) {
+        console.warn('Backend cash bill sync deferred/offline:', apiErr);
+      }
+
       handlePrintThermalSlip();
       await loadAllErpData();
       setCashMemoBillNo(`POS-${Date.now().toString().slice(-4)}`);
@@ -218,6 +248,101 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
       showToast(`❌ Error: ${err.message}`);
     }
   };
+
+  const handleReprintBill = (bill: RetailCashBillItem) => {
+    const is58mm = stationProfile.printerPaperWidth === '58mm';
+    const paperWidth = is58mm ? 58 : 80;
+    const bodyWidth = is58mm ? '200px' : '280px';
+    const fontSize = is58mm ? '10px' : '11.5px';
+    const titleSize = is58mm ? '13px' : '15px';
+
+    const qrImg = stationProfile.upiVpa && bill.payment_mode !== 'CREDIT'
+      ? `<div style="text-align: center; margin: 6px 0;">
+          <img src="${generateUpiQrUrl(stationProfile.upiVpa, stationProfile.stationName, bill.amount, `FUEL-${bill.bill_no}`)}" style="width: 90px; height: 90px;" alt="UPI QR"/>
+          <div style="font-size: 8px;">UPI: ${stationProfile.upiVpa}</div>
+         </div>`
+      : '';
+
+    const html = `
+      <div style="font-family: 'Courier New', monospace; font-size: ${fontSize}; width: ${bodyWidth}; margin: 0 auto; line-height: 1.35; color: #000;">
+        <div style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="font-size: ${titleSize}; font-weight: bold;">${stationProfile.stationName}</div>
+          <div style="font-size: 10px;">${stationProfile.oilCompany} RETAIL OUTLET</div>
+          ${stationProfile.dealerCode ? `<div style="font-size: 9px;">RO Code: ${stationProfile.dealerCode}</div>` : ''}
+          <div style="font-size: 9px;">${stationProfile.address ? `${stationProfile.address}, ` : ''}${stationProfile.city || ''}</div>
+          <div style="font-size: 9px;">GSTIN: ${stationProfile.gstin || '-'} | PH: ${stationProfile.phone || '-'}</div>
+          <div style="font-weight: bold; margin-top: 3px; font-size: 11px;">*** DUPLICATE CASH MEMO (REPRINT) ***</div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Bill No: ${bill.bill_no}</span>
+          <span>Date: ${bill.date}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Vehicle: <b>${bill.vehicle_no || 'WALK-IN'}</b></span>
+          <span>Mode: ${bill.payment_mode}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold;">
+          <span>${bill.product_name}</span>
+          <span>${Number(bill.qty).toFixed(2)} L</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span>Rate:</span>
+          <span>Rs ${Number(bill.rate).toFixed(2)}</span>
+        </div>
+        <div style="border-bottom: 1px dashed #000; margin: 4px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13px;">
+          <span>TOTAL PAID:</span>
+          <span>Rs ${Number(bill.amount).toFixed(2)}</span>
+        </div>
+        ${qrImg}
+        <div style="text-align: center; font-size: 9px; margin-top: 8px;">
+          *** THANK YOU! DRIVE SAFELY ***
+        </div>
+      </div>
+    `;
+    printThermalReceiptHtml(html, { paperWidthMm: paperWidth });
+    showToast(`🖨️ Reprinted Retail Memo #${bill.bill_no}`);
+  };
+
+  const handleVoidBill = async (billId: number, billNo: string, amount: number) => {
+    const pin = window.prompt(`⚠️ Void Cash Memo #${billNo} (₹${amount.toFixed(2)})?\nEnter Manager Authorization PIN:`, '1234');
+    if (!pin) return;
+
+    try {
+      erpStore.deleteCashBill(billId);
+      try {
+        await deleteCashBillApi(billId, pin);
+      } catch (e: any) {
+        console.warn('Backend cash bill void deferred/offline:', e);
+      }
+      showToast(`✔ Retail Cash Memo #${billNo} voided and fuel/cash rolled back!`);
+      await loadAllErpData();
+    } catch (err: any) {
+      showToast(`❌ Void error: ${err.message || 'Authorization failed'}`);
+    }
+  };
+
+  const handleExportCashBillsCsv = () => {
+    const bills = erpStore.getState().cashBills || [];
+    exportToCsv(
+      `NSAIPETROSOFT_RetailCashBills_${getTodayErpDate()}`,
+      ['Bill No', 'Date', 'Vehicle No', 'Product', 'Liters', 'Rate', 'Amount (INR)', 'Mode', 'Status'],
+      bills.map((b) => [
+        b.bill_no,
+        b.date,
+        b.vehicle_no,
+        b.product_name,
+        b.qty,
+        b.rate,
+        b.amount,
+        b.payment_mode,
+        b.status,
+      ])
+    );
+    showToast('✔ Retail cash memos exported to CSV!');
+  };
+
 
   const handlePrintThermalSlip = () => {
     const is58mm = stationProfile.printerPaperWidth === '58mm';
@@ -294,7 +419,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
 
   return (
     <div className="win-modal-overlay">
-      <div className="win-form-dialog" style={{ width: '740px' }}>
+      <div className="win-form-dialog" style={{ width: '840px', maxHeight: '92vh', overflowY: 'auto' }}>
         <div className="win-dialog-titlebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>⛽</span>
@@ -546,6 +671,99 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
               <div style={{ textAlign: 'center', fontSize: '9px', marginTop: '10px', color: '#666' }}>
                 *** THANK YOU! VISIT AGAIN ***
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Recent Retail Cash Memos & POS Invoices */}
+        <div style={{ padding: '0 12px 10px 12px' }}>
+          <div style={{ borderTop: '1px solid #ccc', paddingTop: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <div style={{ fontWeight: 700, fontSize: '11px', color: '#002b80' }}>
+                📋 Recent Retail Cash Memos & POS Slips (PostgreSQL Sync)
+              </div>
+              <button
+                type="button"
+                className="win-btn-classic"
+                style={{ fontSize: '10px', height: '20px', padding: '0 6px' }}
+                onClick={handleExportCashBillsCsv}
+              >
+                📥 Export CSV
+              </button>
+            </div>
+            <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '120px', overflowY: 'auto' }}>
+              <table className="win-datagrid">
+                <thead>
+                  <tr>
+                    <th>Bill No</th>
+                    <th>Date</th>
+                    <th>Vehicle</th>
+                    <th>Product</th>
+                    <th className="text-right">Qty (L)</th>
+                    <th className="text-right">Rate</th>
+                    <th className="text-right">Total (₹)</th>
+                    <th>Mode</th>
+                    <th style={{ textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(erpStore.getState().cashBills || []).length > 0 ? (
+                    (erpStore.getState().cashBills || []).slice(0, 15).map((b) => (
+                      <tr key={b.id}>
+                        <td style={{ fontWeight: 700 }}>{b.bill_no}</td>
+                        <td>{b.date}</td>
+                        <td style={{ fontWeight: 600 }}>{b.vehicle_no}</td>
+                        <td>{b.product_code || b.product_name}</td>
+                        <td className="text-right">{Number(b.qty).toFixed(2)}</td>
+                        <td className="text-right">₹{Number(b.rate).toFixed(2)}</td>
+                        <td className="text-right" style={{ fontWeight: 700, color: '#002b80' }}>
+                          ₹{Number(b.amount).toFixed(2)}
+                        </td>
+                        <td>
+                          <span style={{
+                            padding: '1px 4px',
+                            borderRadius: '2px',
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            background: b.payment_mode === 'CASH' ? '#e8f8f5' : b.payment_mode === 'UPI' ? '#eaf2f8' : '#fef9e7',
+                            color: b.payment_mode === 'CASH' ? '#27ae60' : b.payment_mode === 'UPI' ? '#2980b9' : '#d35400',
+                          }}>
+                            {b.payment_mode}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ fontSize: '9.5px', height: '18px', padding: '0 4px' }}
+                              onClick={() => handleReprintBill(b)}
+                              title="Reprint duplicate thermal slip"
+                            >
+                              🖨️ Print
+                            </button>
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ fontSize: '9.5px', height: '18px', padding: '0 4px', color: '#c0392b', fontWeight: 600 }}
+                              onClick={() => handleVoidBill(b.id, b.bill_no, Number(b.amount))}
+                              title="Void retail memo and reverse cash & stock"
+                            >
+                              🗑️ Void
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9} style={{ textAlign: 'center', color: '#888', padding: '8px' }}>
+                        No retail cash bills recorded yet today.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

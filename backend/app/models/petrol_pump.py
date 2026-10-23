@@ -548,3 +548,26 @@ class Quotation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class RetailCashInvoice(Base):
+    __tablename__ = "retail_cash_invoices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    bill_no: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    vehicle_no: Mapped[str] = mapped_column(String(30), nullable=False, default="WALK-IN", index=True)
+    product_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    product_code: Mapped[str] = mapped_column(String(20), nullable=False, default="MS")
+    qty: Mapped[float] = mapped_column(DECIMAL_LITERS, nullable=False)
+    rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    tax_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    payment_mode: Mapped[str] = mapped_column(String(30), default="CASH")  # CASH, UPI, SPLIT, CREDIT
+    split_details: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    driver_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="PAID")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+

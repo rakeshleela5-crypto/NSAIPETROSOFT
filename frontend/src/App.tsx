@@ -50,6 +50,8 @@ import {
   fetchTransfersApi,
   deleteTransferApi,
   fetchQuotationsApi,
+  fetchCashBillsApi,
+  deleteRateHistoryApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
@@ -485,6 +487,7 @@ export default function App() {
         lubesData,
         transfersData,
         quotationsData,
+        cashBillsData,
       ] = await Promise.all([
         fetchDashboard().catch(() => null),
         fetchCurrentShift().catch(() => null),
@@ -508,6 +511,7 @@ export default function App() {
         fetchLubesApi().catch(() => []),
         fetchTransfersApi().catch(() => []),
         fetchQuotationsApi().catch(() => []),
+        fetchCashBillsApi().catch(() => []),
       ]);
 
       if (transfersData) {
@@ -742,6 +746,7 @@ export default function App() {
         products: (lubesData && lubesData.length > 0) ? lubesData : undefined,
         transfers: transfersData && transfersData.length > 0 ? transfersData : undefined,
         quotations: quotationsData && quotationsData.length > 0 ? quotationsData : undefined,
+        cashBills: cashBillsData && cashBillsData.length > 0 ? cashBillsData : undefined,
       });
     } catch (err: any) {
       console.warn('Live ERP synchronization error:', err);
@@ -1785,6 +1790,19 @@ export default function App() {
       }
     });
   };
+
+  const handleDeleteRateHistory = (historyId: number) => {
+    requestManagerAuthorization(`Revert / Delete Fuel Rate Revision #${historyId}`, async (pin) => {
+      try {
+        await deleteRateHistoryApi(historyId, pin || '1234');
+        showToast(`✔ Fuel rate revision #${historyId} deleted and product rate reverted!`);
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(`❌ Error deleting rate revision: ${err.message}`);
+      }
+    });
+  };
+
 
   const handleSaveDip = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2834,6 +2852,7 @@ export default function App() {
         rateValue={rateValue}
         setRateValue={setRateValue}
         onSaveRate={handleSaveRate}
+        onDeleteRateHistory={handleDeleteRateHistory}
       />
 
       <TankDipRegisterModal
