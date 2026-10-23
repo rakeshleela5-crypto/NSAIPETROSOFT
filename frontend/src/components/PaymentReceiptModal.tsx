@@ -123,7 +123,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
   return (
     <div className="win-modal-overlay">
-      <div className="win-form-dialog" style={{ width: '920px' }}>
+      <div className="win-form-dialog payment-receipt-dialog" style={{ width: '920px' }}>
         <div className="win-dialog-titlebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>💰</span>
@@ -132,7 +132,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
           <button className="win-btn" onClick={onClose}>✕</button>
         </div>
 
-        <div className="win-dialog-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '12px' }}>
+        <div className="win-dialog-body payment-receipt-body">
           <div>
             <div className="win-form-row">
               <span className="win-label">Shift</span>
@@ -237,9 +237,10 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 <div style={{ fontSize: '9px', color: '#666' }}>GPay • PhonePe • Paytm • BHIM</div>
               </div>
             )}
-            <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+            <div className="payment-receipt-actions">
               <button
-                className="win-btn-classic win-btn-primary"
+                type="button"
+                className="win-btn-classic win-btn-primary payment-receipt-btn"
                 onClick={async () => {
                   if (!payAmount || payAmount <= 0) {
                     showToast('Please enter a valid payment amount');
@@ -288,14 +289,28 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                   }
                 }}
               >
-                Save (F2)
+                <span>💾</span>
+                <span>Save (F2)</span>
               </button>
-              <button className="win-btn-classic" onClick={() => { setPayReceiptNo((parseInt(payReceiptNo) + 1).toString().padStart(5, '0')); showToast('New Receipt initiated'); }}>New Entry (F1)</button>
-              <button className="win-btn-classic" onClick={handlePrintPaymentReceipt}>🖨️ Print Receipt</button>
               <button
                 type="button"
-                className="win-btn-classic"
-                style={{ background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                className="win-btn-classic payment-receipt-btn"
+                onClick={() => { setPayReceiptNo((parseInt(payReceiptNo) + 1).toString().padStart(5, '0')); showToast('New Receipt initiated'); }}
+              >
+                <span>📄</span>
+                <span>New Entry (F1)</span>
+              </button>
+              <button
+                type="button"
+                className="win-btn-classic payment-receipt-btn"
+                onClick={handlePrintPaymentReceipt}
+              >
+                <span>🖨️</span>
+                <span>Print Receipt</span>
+              </button>
+              <button
+                type="button"
+                className="win-btn-classic payment-receipt-btn payment-receipt-whatsapp-btn"
                 onClick={() => {
                   const cust = customers.find((c) => c.name === payCustName);
                   const msg = formatPaymentReceiptWhatsApp({
@@ -313,7 +328,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                   showToast(`📲 Opening WhatsApp payment acknowledgment for ${payCustName}...`);
                 }}
               >
-                📲 WhatsApp Receipt
+                <span>📲</span>
+                <span>WhatsApp Receipt</span>
               </button>
             </div>
           </div>

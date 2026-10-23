@@ -1404,6 +1404,55 @@ textarea:focus {
 }
 
 /* -------------------------------------------------------------
+ * Customer's Payment (Receipt Voucher & Credit Settlement) Modal
+ * ------------------------------------------------------------- */
+.payment-receipt-dialog {
+  width: 920px;
+}
+
+.payment-receipt-body {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 12px;
+}
+
+.payment-receipt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.payment-receipt-actions .win-btn-classic,
+.payment-receipt-btn {
+  height: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1.2;
+  text-align: center;
+  box-sizing: border-box;
+  white-space: normal;
+  border-radius: 3px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.payment-receipt-whatsapp-btn {
+  background: #25d366 !important;
+  color: #ffffff !important;
+  border-color: #128c7e !important;
+  font-weight: 700 !important;
+}
+
+.payment-receipt-whatsapp-btn:hover {
+  background: #20ba5a !important;
+}
+
+/* -------------------------------------------------------------
  * Mobile-Only Elements (Hidden on Desktop >= 769px)
  * ------------------------------------------------------------- */
 .win-mobile-menu-trigger {
@@ -1821,6 +1870,39 @@ textarea:focus {
 
   .emp-settlement-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  /* Customer's Payment (Receipt Voucher & Credit Settlement) Modal on Mobile */
+  .payment-receipt-dialog {
+    width: 96vw !important;
+    max-width: 96vw !important;
+  }
+
+  .payment-receipt-body {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .payment-receipt-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .payment-receipt-actions .win-btn-classic,
+  .payment-receipt-btn {
+    height: auto !important;
+    min-height: 36px !important;
+    padding: 8px 12px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    line-height: 1.2 !important;
+    text-align: center !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 }
 
