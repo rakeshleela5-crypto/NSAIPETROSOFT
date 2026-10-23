@@ -47,6 +47,9 @@ import {
   deleteBankAccountApi,
   deleteTankDipApi,
   deleteCardSettlementApi,
+  fetchTransfersApi,
+  deleteTransferApi,
+  fetchQuotationsApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
@@ -448,6 +451,10 @@ export default function App() {
   // Purchase Inward PO History (Frame 0161)
   const [purPoHistory, setPurPoHistory] = useState<any[]>([]);
 
+  // Contra Transfers & Quotations History
+  const [transfersList, setTransfersList] = useState<any[]>([]);
+  const [transferRemarks, setTransferRemarks] = useState<string>('');
+  const [quotationsList, setQuotationsList] = useState<any[]>([]);
 
   // Master ERP Synchronization Engine: Hydrates & Interconnects All Pump Models from Live Railway Backend
   const loadAllErpData = async () => {
@@ -476,6 +483,8 @@ export default function App() {
         settlementsData,
         cardSettlementsData,
         lubesData,
+        transfersData,
+        quotationsData,
       ] = await Promise.all([
         fetchDashboard().catch(() => null),
         fetchCurrentShift().catch(() => null),
@@ -497,7 +506,16 @@ export default function App() {
         fetchShiftSettlements().catch(() => []),
         fetchCardSettlements().catch(() => []),
         fetchLubesApi().catch(() => []),
+        fetchTransfersApi().catch(() => []),
+        fetchQuotationsApi().catch(() => []),
       ]);
+
+      if (transfersData) {
+        setTransfersList(transfersData);
+      }
+      if (quotationsData && quotationsData.length > 0) {
+        setQuotationsList(quotationsData);
+      }
 
       if (dashData) {
         setDashboard(dashData);
@@ -722,6 +740,8 @@ export default function App() {
         dips: dipsData,
         bankAccounts: dashData?.accounts,
         products: (lubesData && lubesData.length > 0) ? lubesData : undefined,
+        transfers: transfersData && transfersData.length > 0 ? transfersData : undefined,
+        quotations: quotationsData && quotationsData.length > 0 ? quotationsData : undefined,
       });
     } catch (err: any) {
       console.warn('Live ERP synchronization error:', err);
@@ -1724,7 +1744,7 @@ export default function App() {
       from_account_id: fromAccId,
       to_account_id: toAccId,
       amount: transferAmt,
-      remarks: 'Contra Transfer',
+      remarks: transferRemarks.trim() || 'Contra Transfer',
     };
     try {
       erpStore.recordTransfer(transferPayload);
@@ -1746,10 +1766,24 @@ export default function App() {
         }
       }
       showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} completed!`);
+      setTransferRemarks('');
       await loadAllErpData();
     } catch (err: any) {
       showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} recorded in local accounts!`);
     }
+  };
+
+  const handleDeleteTransfer = (transferId: number) => {
+    requestManagerAuthorization(`Void & Revert Contra Transfer #${transferId}`, async (pin) => {
+      erpStore.deleteTransfer(transferId);
+      try {
+        await deleteTransferApi(transferId, pin);
+        showToast(`✔ Contra transfer #${transferId} reverted successfully!`);
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(`⚠ Revert failed: ${err.message}`);
+      }
+    });
   };
 
   const handleSaveDip = async (e: React.FormEvent) => {
@@ -2783,7 +2817,11 @@ export default function App() {
         setToAccId={setToAccId}
         transferAmt={transferAmt}
         setTransferAmt={setTransferAmt}
+        transferRemarks={transferRemarks}
+        setTransferRemarks={setTransferRemarks}
         onSaveTransfer={handleSaveTransfer}
+        transfersList={transfersList}
+        onDeleteTransfer={handleDeleteTransfer}
       />
 
       <FuelRateMasterModal
@@ -2850,6 +2888,9 @@ export default function App() {
         isOpen={activeDialog === 'stamping'}
         onClose={() => setActiveDialog(null)}
         stampingList={stampingList}
+        loadAllErpData={loadAllErpData}
+        showToast={showToast}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <HelpDeskModal
@@ -3106,7 +3147,7 @@ export default function App() {
       <EstimateQuotationModal
         isOpen={activeDialog === 'estimate'}
         onClose={() => setActiveDialog(null)}
-        quotations={erpStore.getState().quotations}
+        quotations={quotationsList.length > 0 ? quotationsList : erpStore.getState().quotations}
         customers={customers}
         ratesList={ratesList}
         stationProfile={stationProfile}

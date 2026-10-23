@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { CustomerFull, StationProfile } from '../models';
 import type { QuotationItem } from '../store/erpStore';
 import { erpStore } from '../store/erpStore';
-import { createCreditSale } from '../api/client';
+import { createCreditSale, saveQuotationApi, deleteQuotationApi } from '../api/client';
 
 interface EstimateQuotationModalProps {
   isOpen: boolean;
@@ -62,20 +62,47 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
       return;
     }
 
+    const quotePayload = {
+      customer_name: custName.trim().toUpperCase(),
+      customer_mobile: custMobile.trim(),
+      valid_until: new Date(Date.now() + validDays * 86400000).toISOString().split('T')[0],
+      terms,
+      items,
+    };
+
     try {
-      const q = erpStore.saveQuotation({
-        customer_name: custName.trim().toUpperCase(),
-        customer_mobile: custMobile.trim(),
-        valid_until: new Date(Date.now() + validDays * 86400000).toISOString().split('T')[0],
-        terms,
-        items,
-      });
+      const q = erpStore.saveQuotation(quotePayload);
+
+      try {
+        await saveQuotationApi({
+          ...quotePayload,
+          quotation_no: q.quotation_no,
+          total_amount: q.total_amount,
+        });
+      } catch (backendErr) {
+        console.warn('Backend quotation save deferred or offline:', backendErr);
+      }
 
       if (showToast) showToast(`✔ Quotation #${q.quotation_no} created successfully!`);
       setIsCreating(false);
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
       if (showToast) showToast(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteQuotation = async (quoteId: number) => {
+    try {
+      erpStore.deleteQuotation(quoteId);
+      try {
+        await deleteQuotationApi(quoteId);
+      } catch (backendErr) {
+        console.warn('Backend quotation delete deferred:', backendErr);
+      }
+      if (showToast) showToast('✔ Quotation deleted successfully');
+      if (loadAllErpData) await loadAllErpData();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error deleting quotation: ${err.message}`);
     }
   };
 
@@ -380,6 +407,15 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
                             ⚡ Convert to Credit Bill
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="win-btn-classic"
+                          style={{ fontSize: '10px', height: '20px', padding: '0 6px', color: '#c0392b', fontWeight: 600, marginLeft: '4px' }}
+                          onClick={() => handleDeleteQuotation(q.id)}
+                          title="Delete this quotation"
+                        >
+                          ✕
+                        </button>
                       </td>
                     </tr>
                   ))}

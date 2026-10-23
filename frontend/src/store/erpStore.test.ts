@@ -396,6 +396,61 @@ describe('erpStore - Centralized ACID Forecourt Engine', () => {
     expect(getTankStock()).toBeCloseTo(initialStock, 2);
     expect(erpStore.getState().purchases.some((p) => p.invoice_no === 'INV-TEST-ROLLBACK')).toBe(false);
   });
+
+  it('atomically deletes contra transfer and reverts both bank account balances', () => {
+    const fromAcc = erpStore.getState().bankAccounts[0];
+    const toAcc = erpStore.getState().bankAccounts[1];
+    const initialFromBal = fromAcc.balance;
+    const initialToBal = toAcc.balance;
+
+    const trf = erpStore.recordTransfer({
+      from_account_id: fromAcc.id,
+      to_account_id: toAcc.id,
+      amount: 1500.0,
+      remarks: 'Test Contra Deposit',
+    });
+
+    expect(erpStore.getState().bankAccounts.find((a) => a.id === fromAcc.id)?.balance).toBeCloseTo(initialFromBal - 1500.0, 2);
+    expect(erpStore.getState().bankAccounts.find((a) => a.id === toAcc.id)?.balance).toBeCloseTo(initialToBal + 1500.0, 2);
+
+    const reverted = erpStore.deleteTransfer(trf.id);
+    expect(reverted).toBe(true);
+    expect(erpStore.getState().bankAccounts.find((a) => a.id === fromAcc.id)?.balance).toBeCloseTo(initialFromBal, 2);
+    expect(erpStore.getState().bankAccounts.find((a) => a.id === toAcc.id)?.balance).toBeCloseTo(initialToBal, 2);
+    expect(erpStore.getState().transfers.some((t) => t.id === trf.id)).toBe(false);
+  });
+
+  it('saves, tracks, and deletes estimates and quotations', () => {
+    const quote = erpStore.saveQuotation({
+      customer_name: 'GUJARAT LOGISTICS CORP',
+      customer_mobile: '9898011223',
+      items: [
+        { product_name: 'Diesel (HSD)', qty: 1000, rate: 92.5, amount: 92500, tax_percent: 13.7 },
+      ],
+    });
+
+    expect(quote.quotation_no).toBeDefined();
+    expect(quote.total_amount).toBe(92500);
+    expect(erpStore.getState().quotations.some((q) => q.id === quote.id)).toBe(true);
+
+    const deleted = erpStore.deleteQuotation(quote.id);
+    expect(deleted).toBe(true);
+    expect(erpStore.getState().quotations.some((q) => q.id === quote.id)).toBe(false);
+  });
+
+  it('removes vehicle from customer fleet list in store', () => {
+    const cust = erpStore.saveCustomer({
+      name: 'AMBICA TRANSPORT',
+      mobile: '9825123456',
+      vehicles: ['GJ05AB9999', 'GJ05CD8888'],
+    });
+
+    expect(erpStore.getState().customers.find((c) => c.id === cust.id)?.vehicles).toContain('GJ05AB9999');
+
+    erpStore.removeCustomerVehicle(cust.id, 'GJ05AB9999');
+    expect(erpStore.getState().customers.find((c) => c.id === cust.id)?.vehicles).not.toContain('GJ05AB9999');
+    expect(erpStore.getState().customers.find((c) => c.id === cust.id)?.vehicles).toContain('GJ05CD8888');
+  });
 });
 
 

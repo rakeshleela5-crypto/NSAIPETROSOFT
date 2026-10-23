@@ -19,6 +19,8 @@ from app.models.petrol_pump import (
     Vehicle,
     User,
     StationProfileSetting,
+    ContraTransfer,
+    Quotation,
 )
 from app.models.decentro import (
     CustomerVirtualAccount,
@@ -59,6 +61,8 @@ __all__ = [
     "TankDipEntry",
     "PurchaseEntry",
     "BankAccount",
+    "ContraTransfer",
+    "Quotation",
     "User",
     "StationProfileSetting",
     "DecentroTransaction",

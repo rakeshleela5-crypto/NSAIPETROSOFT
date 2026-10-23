@@ -669,6 +669,8 @@ class ErpStore {
     expenses?: any[];
     purchases?: any[];
     dips?: any[];
+    transfers?: any[];
+    quotations?: any[];
   }): void {
     if (payload.stationProfile) {
       this.state.stationProfile = { ...this.state.stationProfile, ...payload.stationProfile };
@@ -875,6 +877,34 @@ class ErpStore {
         variance_percent: Number(d.variance_percent || 0),
         is_within_tolerance: d.is_within_tolerance ?? (Math.abs(Number(d.variation || 0)) <= Number(d.tolerance_limit || 50)),
         status: (d.status || (Math.abs(Number(d.variation || 0)) <= Number(d.tolerance_limit || 50) ? 'NORMAL' : 'VARIATION')) as any,
+      }));
+    }
+    if (payload.transfers && payload.transfers.length > 0) {
+      this.state.transfers = payload.transfers.map((t: any) => ({
+        id: Number(t.id),
+        date: t.date || this.state.activeShift.date,
+        from_account_id: Number(t.from_account_id || 1),
+        from_account_name: t.from_account_name || 'Cash',
+        to_account_id: Number(t.to_account_id || 2),
+        to_account_name: t.to_account_name || 'Bank',
+        amount: Number(t.amount || 0),
+        remarks: t.remarks || '',
+        reference_no: t.reference_no,
+      }));
+    }
+    if (payload.quotations && payload.quotations.length > 0) {
+      this.state.quotations = payload.quotations.map((q: any) => ({
+        id: Number(q.id),
+        quotation_no: q.quotation_no || `QT-${q.id}`,
+        date: q.date || this.state.activeShift.date,
+        valid_until: q.valid_until,
+        customer_name: q.customer_name || 'Customer',
+        customer_mobile: q.customer_mobile || '',
+        customer_gstin: q.customer_gstin || '',
+        total_amount: Number(q.total_amount || 0),
+        terms: q.terms || '',
+        status: q.status || 'ISSUED',
+        items: q.items || [],
       }));
     }
     this.notify();
@@ -1352,6 +1382,33 @@ class ErpStore {
     return newTransfer;
   }
 
+  public deleteTransfer(transferId: number): boolean {
+    const idx = this.state.transfers.findIndex((t) => t.id === transferId);
+    if (idx === -1) return false;
+    const trf = this.state.transfers[idx];
+
+    // Revert bank balances atomically
+    const fromIndex = this.state.bankAccounts.findIndex((a) => a.id === trf.from_account_id);
+    const toIndex = this.state.bankAccounts.findIndex((a) => a.id === trf.to_account_id);
+
+    if (fromIndex !== -1) {
+      this.state.bankAccounts[fromIndex] = {
+        ...this.state.bankAccounts[fromIndex],
+        balance: addCurrency(this.state.bankAccounts[fromIndex].balance, trf.amount),
+      };
+    }
+    if (toIndex !== -1) {
+      this.state.bankAccounts[toIndex] = {
+        ...this.state.bankAccounts[toIndex],
+        balance: subCurrency(this.state.bankAccounts[toIndex].balance, trf.amount),
+      };
+    }
+
+    this.state.transfers.splice(idx, 1);
+    this.notify();
+    return true;
+  }
+
   /**
    * Alias for recordDipReading
    */
@@ -1505,6 +1562,13 @@ class ErpStore {
     }
 
     this.state.customers = this.state.customers.filter((c) => c.id !== customerId);
+    this.notify();
+  }
+
+  public removeCustomerVehicle(customerId: number, vehicleNo: string): void {
+    const cust = this.state.customers.find((c) => c.id === customerId);
+    if (!cust || !cust.vehicles) return;
+    cust.vehicles = cust.vehicles.filter((v) => v.toUpperCase() !== vehicleNo.toUpperCase().trim());
     this.notify();
   }
 
@@ -1941,6 +2005,14 @@ class ErpStore {
     this.state.quotations.unshift(newQuote);
     this.notify();
     return newQuote;
+  }
+
+  public deleteQuotation(quotationId: number): boolean {
+    const idx = this.state.quotations.findIndex((q) => q.id === quotationId);
+    if (idx === -1) return false;
+    this.state.quotations.splice(idx, 1);
+    this.notify();
+    return true;
   }
 
   public convertQuotationToCreditBill(quotationId: number): CreditSaleItem {

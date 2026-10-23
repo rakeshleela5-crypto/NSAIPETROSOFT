@@ -49,6 +49,8 @@ from app.models.petrol_pump import (
     LubeSaleEntry,
     SupervisorReversalVoucher,
     CardSettlement,
+    ContraTransfer,
+    Quotation,
 )
 router = APIRouter()
 
@@ -1547,6 +1549,26 @@ async def add_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db)):
     return {"message": "Vehicle added successfully", "vehicle_no": veh.vehicle_no}
 
 
+@router.delete("/customers/{customer_id}/vehicles/{vehicle_no}", summary="Delete Vehicle From Customer Fleet")
+async def delete_customer_vehicle(
+    customer_id: int,
+    vehicle_no: str,
+    db: AsyncSession = Depends(get_db),
+):
+    v_res = await db.execute(
+        select(Vehicle).where(
+            Vehicle.customer_id == customer_id,
+            func.upper(Vehicle.vehicle_no) == vehicle_no.strip().upper(),
+        )
+    )
+    veh = v_res.scalar_one_or_none()
+    if not veh:
+        raise HTTPException(status_code=404, detail=f"Vehicle '{vehicle_no}' not found for customer #{customer_id}")
+    await db.delete(veh)
+    await db.commit()
+    return {"message": f"Vehicle '{vehicle_no}' removed from customer #{customer_id} fleet", "vehicle_no": vehicle_no}
+
+
 class CustomerUpdate(BaseModel):
     name: Optional[str] = None
     mobile: Optional[str] = None
@@ -2306,10 +2328,14 @@ async def get_stamping_register(db: AsyncSession = Depends(get_db)):
 
     register = []
     for n in nozzles:
-        # Latest meter swap or default 1 year validity from installation
-        latest_swap = n.meter_swaps[-1] if n.meter_swaps else None
-        last_date = latest_swap.replace_date if latest_swap else (today - timedelta(days=90))
-        next_due = last_date + timedelta(days=365)  # Statutory annual W&M re-stamping
+        if n.last_stamped_date and n.stamping_due_date:
+            last_date = n.last_stamped_date
+            next_due = n.stamping_due_date
+        else:
+            # Latest meter swap or default 1 year validity from installation
+            latest_swap = n.meter_swaps[-1] if n.meter_swaps else None
+            last_date = latest_swap.replace_date if latest_swap else (today - timedelta(days=90))
+            next_due = last_date + timedelta(days=365)  # Statutory annual W&M re-stamping
         days_left = (next_due - today).days
 
         if days_left < 0:
@@ -2318,6 +2344,8 @@ async def get_stamping_register(db: AsyncSession = Depends(get_db)):
             status = "DUE_SOON"
         else:
             status = "VALID"
+
+        wm_seal = n.wm_seal_no or (latest_swap.wm_seal_no if latest_swap and latest_swap.wm_seal_no else "WM-IND-2026-A")
 
         register.append({
             "nozzle_id": n.id,
@@ -2328,7 +2356,8 @@ async def get_stamping_register(db: AsyncSession = Depends(get_db)):
             "last_stamping_date": str(last_date),
             "next_stamping_due": str(next_due),
             "days_left": days_left,
-            "wm_seal_no": latest_swap.wm_seal_no if latest_swap else "WM-IND-2026-A",
+            "wm_seal_no": wm_seal,
+            "wm_certificate_no": n.wm_certificate_no or "",
             "status": status,
         })
 
@@ -2965,13 +2994,93 @@ async def create_transfer(data: TransferCreate, db: AsyncSession = Depends(get_d
 
     from_acc.balance = round(from_acc.balance - data.amount, 2)
     to_acc.balance = round(to_acc.balance + data.amount, 2)
+
+    ref_no = data.reference_no or f"TRF-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    transfer_record = ContraTransfer(
+        date=today_ist(),
+        from_account_id=from_acc.id,
+        to_account_id=to_acc.id,
+        amount=round(data.amount, 2),
+        reference_no=ref_no,
+        remarks=data.remarks or f"Transferred ₹{data.amount:.2f} from {from_acc.account_name} to {to_acc.account_name}",
+    )
+    db.add(transfer_record)
     await db.commit()
+    await db.refresh(transfer_record)
 
     return {
         "status": "success",
-        "message": f"Transferred ₹{data.amount} from {from_acc.account_name} to {to_acc.account_name}",
+        "id": transfer_record.id,
+        "transfer_id": transfer_record.id,
+        "reference_no": ref_no,
+        "message": f"Transferred ₹{data.amount:.2f} from {from_acc.account_name} to {to_acc.account_name}",
         "from_balance": from_acc.balance,
         "to_balance": to_acc.balance,
+    }
+
+
+@router.get("/transfers", summary="List All Contra Transfers")
+async def get_transfers(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(ContraTransfer)
+        .options(selectinload(ContraTransfer.from_account), selectinload(ContraTransfer.to_account))
+        .order_by(desc(ContraTransfer.id))
+    )
+    transfers = res.scalars().all()
+    return [
+        {
+            "id": t.id,
+            "date": t.date.strftime("%d-%b-%Y"),
+            "from_account_id": t.from_account_id,
+            "from_account_name": t.from_account.account_name if t.from_account else f"Account #{t.from_account_id}",
+            "to_account_id": t.to_account_id,
+            "to_account_name": t.to_account.account_name if t.to_account else f"Account #{t.to_account_id}",
+            "amount": t.amount,
+            "reference_no": t.reference_no,
+            "remarks": t.remarks or "Contra Transfer",
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        }
+        for t in transfers
+    ]
+
+
+@router.delete("/transfers/{transfer_id}", summary="Delete / Revert Contra Transfer")
+async def delete_transfer(
+    transfer_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager authorization or PIN required to void contra transfers.",
+        )
+
+    t_stmt = select(ContraTransfer).where(ContraTransfer.id == transfer_id).with_for_update()
+    transfer = (await db.execute(t_stmt)).scalar_one_or_none()
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Transfer record not found")
+
+    # Reverse the fund transfer atomically
+    from_res = await db.execute(select(BankAccount).where(BankAccount.id == transfer.from_account_id).with_for_update())
+    from_acc = from_res.scalar_one_or_none()
+
+    to_res = await db.execute(select(BankAccount).where(BankAccount.id == transfer.to_account_id).with_for_update())
+    to_acc = to_res.scalar_one_or_none()
+
+    if from_acc and to_acc:
+        from_acc.balance = round(from_acc.balance + transfer.amount, 2)
+        to_acc.balance = round(to_acc.balance - transfer.amount, 2)
+
+    await db.delete(transfer)
+    await db.commit()
+
+    return {
+        "message": f"Contra transfer #{transfer_id} of ₹{transfer.amount:.2f} reverted successfully",
+        "transfer_id": transfer_id,
+        "reverted_amount": transfer.amount,
     }
 
 
@@ -3043,17 +3152,31 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
 # -------------------------------------------------------------
 # 14. Weights & Measures Nozzle Stamping Due Calendar
 # -------------------------------------------------------------
+class NozzleStampingUpdate(BaseModel):
+    last_stamped_date: date
+    stamping_due_date: Optional[date] = None
+    wm_seal_no: Optional[str] = None
+    wm_certificate_no: Optional[str] = None
+    manager_pin: Optional[str] = None
+
+
 @router.get("/stamping-reminders", summary="Weights & Measures Nozzle Stamping Schedule")
 async def get_stamping_reminders(db: AsyncSession = Depends(get_db)):
     nozzles_res = await db.execute(select(Nozzle).options(selectinload(Nozzle.tank)))
     nozzles = nozzles_res.scalars().all()
     today = today_ist()
-    next_due_dt = date(today.year + 1, 5, 15) if today.month > 5 else date(today.year, 5, 15)
-    last_stamped_dt = date(next_due_dt.year - 1, 5, 15)
-    days_rem = (next_due_dt - today).days
 
     reminders = []
     for n in nozzles:
+        if n.last_stamped_date and n.stamping_due_date:
+            last_stamped_dt = n.last_stamped_date
+            next_due_dt = n.stamping_due_date
+        else:
+            next_due_dt = date(today.year + 1, 5, 15) if today.month > 5 else date(today.year, 5, 15)
+            last_stamped_dt = date(next_due_dt.year - 1, 5, 15)
+        days_rem = (next_due_dt - today).days
+        status_str = "EXPIRED" if days_rem < 0 else ("DUE_SOON" if days_rem <= 30 else "VALID")
+
         reminders.append({
             "nozzle_id": n.id,
             "nozzle_name": n.nozzle_name,
@@ -3061,7 +3184,9 @@ async def get_stamping_reminders(db: AsyncSession = Depends(get_db)):
             "last_stamped": last_stamped_dt.strftime("%d-%b-%Y"),
             "next_due": next_due_dt.strftime("%d-%b-%Y"),
             "days_remaining": days_rem,
-            "status": "VALID",
+            "wm_seal_no": n.wm_seal_no or "WM-VERIFIED",
+            "wm_certificate_no": n.wm_certificate_no or "",
+            "status": status_str,
         })
     if not reminders:
         for i in range(1, 7):
@@ -3069,12 +3194,55 @@ async def get_stamping_reminders(db: AsyncSession = Depends(get_db)):
                 "nozzle_id": i,
                 "nozzle_name": f"HSD {i}" if i <= 4 else f"MS {i-4}",
                 "tank": "HSD Tank 1" if i <= 4 else "MS Tank 1",
-                "last_stamped": last_stamped_dt.strftime("%d-%b-%Y"),
-                "next_due": next_due_dt.strftime("%d-%b-%Y"),
-                "days_remaining": days_rem,
+                "last_stamped": date(today.year - 1, 5, 15).strftime("%d-%b-%Y"),
+                "next_due": date(today.year, 5, 15).strftime("%d-%b-%Y"),
+                "days_remaining": (date(today.year, 5, 15) - today).days,
+                "wm_seal_no": "WM-DEFAULT",
+                "wm_certificate_no": "",
                 "status": "VALID",
             })
     return reminders
+
+
+@router.put("/nozzles/{nozzle_id}/stamping", summary="Record Official W&M Verification & Stamping")
+async def update_nozzle_stamping(
+    nozzle_id: int,
+    data: NozzleStampingUpdate,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    pin_to_check = data.manager_pin or manager_pin
+    if not await check_manager_authorized(pin_to_check, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager authorization or PIN required to update Legal Metrology stamping records.",
+        )
+
+    n_res = await db.execute(select(Nozzle).where(Nozzle.id == nozzle_id).with_for_update())
+    nozzle = n_res.scalar_one_or_none()
+    if not nozzle:
+        raise HTTPException(status_code=404, detail=f"Nozzle #{nozzle_id} not found")
+
+    nozzle.last_stamped_date = data.last_stamped_date
+    nozzle.stamping_due_date = data.stamping_due_date or (data.last_stamped_date + timedelta(days=365))
+    if data.wm_seal_no:
+        nozzle.wm_seal_no = data.wm_seal_no.strip()
+    if data.wm_certificate_no:
+        nozzle.wm_certificate_no = data.wm_certificate_no.strip()
+
+    await db.commit()
+    await db.refresh(nozzle)
+
+    return {
+        "message": f"Stamping record updated for Nozzle '{nozzle.nozzle_name}'",
+        "nozzle_id": nozzle.id,
+        "last_stamped_date": str(nozzle.last_stamped_date),
+        "stamping_due_date": str(nozzle.stamping_due_date),
+        "wm_seal_no": nozzle.wm_seal_no,
+        "wm_certificate_no": nozzle.wm_certificate_no,
+    }
 
 
 # -------------------------------------------------------------
@@ -3899,3 +4067,140 @@ async def save_station_profile_endpoint(
     }
 
 
+# -------------------------------------------------------------
+# 22. Quotations & Price Estimates API
+# -------------------------------------------------------------
+class QuotationCreate(BaseModel):
+    id: Optional[int] = None
+    quotation_no: Optional[str] = None
+    date: Optional[date] = None
+    valid_until: Optional[date] = None
+    customer_name: str
+    customer_mobile: Optional[str] = None
+    customer_gstin: Optional[str] = None
+    total_amount: Optional[float] = None
+    terms: Optional[str] = None
+    status: Optional[str] = "ISSUED"
+    items: Optional[List[Dict[str, Any]]] = None
+
+
+@router.get("/quotations", summary="List All Quotations & Estimates")
+async def get_quotations(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Quotation).order_by(desc(Quotation.id)))
+    quotes = res.scalars().all()
+    results = []
+    for q in quotes:
+        items = []
+        try:
+            items = json.loads(q.items_json) if q.items_json else []
+        except Exception:
+            items = []
+        results.append({
+            "id": q.id,
+            "quotation_no": q.quotation_no,
+            "date": str(q.date),
+            "valid_until": str(q.valid_until),
+            "customer_name": q.customer_name,
+            "customer_mobile": q.customer_mobile or "",
+            "customer_gstin": q.customer_gstin or "",
+            "total_amount": q.total_amount,
+            "terms": q.terms or "",
+            "status": q.status,
+            "items": items,
+        })
+    return results
+
+
+@router.post("/quotations", summary="Create or Update Quotation / Estimate")
+async def save_quotation(data: QuotationCreate, db: AsyncSession = Depends(get_db)):
+    if not data.customer_name or not data.customer_name.strip():
+        raise HTTPException(status_code=400, detail="Customer / Firm name is required")
+
+    items = data.items or []
+    total_amt = data.total_amount
+    if total_amt is None:
+        total_amt = sum(item.get("amount", 0.0) for item in items)
+    total_amt = round(float(total_amt), 2)
+
+    today = today_ist()
+    val_until = data.valid_until or (today + timedelta(days=14))
+
+    quote = None
+    if data.id:
+        quote = await db.get(Quotation, data.id)
+
+    if not quote:
+        if not data.quotation_no:
+            cnt_res = await db.execute(select(func.count(Quotation.id)))
+            next_num = (cnt_res.scalar() or 0) + 1
+            q_no = f"QT-{today.year}-{next_num:03d}"
+        else:
+            q_no = data.quotation_no
+
+        quote = Quotation(
+            quotation_no=q_no,
+            date=data.date or today,
+            valid_until=val_until,
+            customer_name=data.customer_name.strip().upper(),
+            customer_mobile=data.customer_mobile.strip() if data.customer_mobile else None,
+            customer_gstin=data.customer_gstin.strip().upper() if data.customer_gstin else None,
+            total_amount=total_amt,
+            terms=data.terms or "Payment strictly within 15 days against fleet challan.",
+            status=data.status or "ISSUED",
+            items_json=json.dumps(items),
+        )
+        db.add(quote)
+    else:
+        if data.quotation_no:
+            quote.quotation_no = data.quotation_no
+        if data.date:
+            quote.date = data.date
+        quote.valid_until = val_until
+        quote.customer_name = data.customer_name.strip().upper()
+        quote.customer_mobile = data.customer_mobile.strip() if data.customer_mobile else None
+        quote.customer_gstin = data.customer_gstin.strip().upper() if data.customer_gstin else None
+        quote.total_amount = total_amt
+        if data.terms is not None:
+            quote.terms = data.terms
+        if data.status:
+            quote.status = data.status
+        quote.items_json = json.dumps(items)
+
+    await db.commit()
+    await db.refresh(quote)
+    return {
+        "id": quote.id,
+        "quotation_no": quote.quotation_no,
+        "date": str(quote.date),
+        "valid_until": str(quote.valid_until),
+        "customer_name": quote.customer_name,
+        "customer_mobile": quote.customer_mobile or "",
+        "customer_gstin": quote.customer_gstin or "",
+        "total_amount": quote.total_amount,
+        "terms": quote.terms,
+        "status": quote.status,
+        "items": items,
+        "message": f"Quotation #{quote.quotation_no} saved successfully",
+    }
+
+
+@router.delete("/quotations/{quotation_id}", summary="Delete Quotation")
+async def delete_quotation(
+    quotation_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete quotations.",
+        )
+    quote = await db.get(Quotation, quotation_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    q_no = quote.quotation_no
+    await db.delete(quote)
+    await db.commit()
+    return {"message": f"Quotation #{q_no} deleted successfully", "id": quotation_id}

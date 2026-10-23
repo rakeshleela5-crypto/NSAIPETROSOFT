@@ -1514,3 +1514,98 @@ export async function deleteLubeProductApi(productId: number): Promise<any> {
   }
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Contra Transfers API
+// ---------------------------------------------------------------------------
+export async function fetchTransfersApi(): Promise<any[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/transfers`);
+  if (!res.ok) throw new Error(`Transfers API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteTransferApi(transferId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/transfers/${transferId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/transfers/${transferId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete transfer failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Quotations & Estimates API
+// ---------------------------------------------------------------------------
+export async function fetchQuotationsApi(): Promise<any[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/quotations`);
+  if (!res.ok) throw new Error(`Quotations API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveQuotationApi(data: any): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/quotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Save quotation failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteQuotationApi(quotationId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/quotations/${quotationId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/quotations/${quotationId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete quotation failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Customer Vehicle Deletion API
+// ---------------------------------------------------------------------------
+export async function deleteCustomerVehicleApi(customerId: number, vehicleNo: string): Promise<any> {
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/pump/customers/${customerId}/vehicles/${encodeURIComponent(vehicleNo)}`,
+    { method: 'DELETE' }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete customer vehicle failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Weights & Measures Nozzle Stamping API
+// ---------------------------------------------------------------------------
+export async function updateNozzleStampingApi(
+  nozzleId: number,
+  data: {
+    last_stamped_date: string;
+    stamping_due_date?: string;
+    wm_seal_no?: string;
+    wm_certificate_no?: string;
+    manager_pin?: string;
+  }
+): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}/stamping`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Update nozzle stamping failed: ${res.status}`);
+  }
+  return res.json();
+}

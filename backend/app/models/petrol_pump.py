@@ -85,6 +85,10 @@ class Nozzle(Base):
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("fuel_products.id"), nullable=False)
     current_meter: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_stamped_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    stamping_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    wm_seal_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    wm_certificate_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     tank = relationship("Tank", back_populates="nozzles")
     product = relationship("FuelProduct", back_populates="nozzles")
@@ -509,4 +513,38 @@ class CardSettlement(Base):
     )
 
 
+class ContraTransfer(Base):
+    __tablename__ = "contra_transfers"
 
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    from_account_id: Mapped[int] = mapped_column(Integer, ForeignKey("bank_accounts.id"), nullable=False, index=True)
+    to_account_id: Mapped[int] = mapped_column(Integer, ForeignKey("bank_accounts.id"), nullable=False, index=True)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    reference_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="Contra Transfer")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    from_account = relationship("BankAccount", foreign_keys=[from_account_id])
+    to_account = relationship("BankAccount", foreign_keys=[to_account_id])
+
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    quotation_no: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    valid_until: Mapped[date] = mapped_column(Date, nullable=False)
+    customer_name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    customer_mobile: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    customer_gstin: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    total_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    terms: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="ISSUED")  # ISSUED, CONVERTED, EXPIRED, CANCELLED
+    items_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

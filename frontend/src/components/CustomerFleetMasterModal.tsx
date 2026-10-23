@@ -6,6 +6,7 @@ import {
   updateCustomer,
   deleteCustomer as deleteCustomerApi,
   addVehicle,
+  deleteCustomerVehicleApi,
 } from '../api/client';
 
 interface CustomerFleetMasterModalProps {
@@ -94,8 +95,17 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     setNewVehDriver('');
   };
 
-  const handleRemoveVehicle = (vehNo: string) => {
+  const handleRemoveVehicle = async (vehNo: string) => {
     setVehicleList(vehicleList.filter((v) => v.vehicle_no !== vehNo));
+    if (editCustId) {
+      erpStore.removeCustomerVehicle(editCustId, vehNo);
+      try {
+        await deleteCustomerVehicleApi(editCustId, vehNo);
+        showToast(`✔ Vehicle ${vehNo} removed from fleet`);
+      } catch (err: any) {
+        console.warn('Backend delete vehicle deferred or offline:', err);
+      }
+    }
   };
 
   const handleSaveCustomer = async (e: React.FormEvent) => {
