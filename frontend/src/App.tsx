@@ -44,6 +44,9 @@ import {
   fetchCardSettlements,
   fetchLubesApi,
   closeShiftApi,
+  deleteBankAccountApi,
+  deleteTankDipApi,
+  deleteCardSettlementApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
@@ -1785,6 +1788,20 @@ export default function App() {
     }
   };
 
+  const handleDeleteDip = (id: number) => {
+    requestManagerAuthorization(`Delete Tank Dip Reading #${id}`, async () => {
+      erpStore.deleteDipReading(id);
+      try {
+        await deleteTankDipApi(id);
+      } catch (e) {
+        console.warn('Backend dip delete deferred:', e);
+      }
+      setDipsList((prev) => prev.filter((d: any) => d.id !== id));
+      showToast(`✔ Tank dip entry #${id} deleted.`);
+      await loadAllErpData();
+    });
+  };
+
   const handleCalculateDenom = async () => {
     const digitalCards = cardSettlements.length > 0 
       ? cardSettlements.reduce((acc, c) => acc + Number(c.amount || 0), 0)
@@ -1857,6 +1874,23 @@ export default function App() {
     }
   };
 
+  const handleDeleteBankAccount = (id: number, name: string) => {
+    if (id === 1) {
+      showToast('❌ Cannot delete primary Cash On Hand ledger account.');
+      return;
+    }
+    requestManagerAuthorization(`Delete Bank / POS Account "${name}"`, async () => {
+      erpStore.deleteBankAccount(id);
+      try {
+        await deleteBankAccountApi(id);
+      } catch (e) {
+        console.warn('Backend bank account delete deferred:', e);
+      }
+      showToast(`✔ Bank Account "${name}" deleted.`);
+      await loadAllErpData();
+    });
+  };
+
   // Card POS Settlement Save
   const handleSaveCardSettlement = async () => {
     const cardPayload = {
@@ -1896,6 +1930,22 @@ export default function App() {
         showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} recorded locally!`);
       }
     }
+  };
+
+  const handleDeleteCardSettlement = (idOrBatch: string | number, machineName: string, amount: number) => {
+    requestManagerAuthorization(`Void EDC Batch Settlement (${machineName} - ₹${amount.toFixed(2)})`, async () => {
+      erpStore.deleteCardSettlement(idOrBatch);
+      if (typeof idOrBatch === 'number') {
+        try {
+          await deleteCardSettlementApi(idOrBatch);
+        } catch (e) {
+          console.warn('Backend card settlement delete deferred:', e);
+        }
+      }
+      setCardSettlements((prev) => prev.filter((c: any) => (c.id !== idOrBatch && c.batch !== idOrBatch && c.batch_no !== idOrBatch)));
+      showToast(`✔ EDC Settlement (${machineName} - ₹${amount.toFixed(2)}) voided.`);
+      await loadAllErpData();
+    });
   };
 
   // Station Control Actions
@@ -2767,6 +2817,7 @@ export default function App() {
         dipsList={dipsList}
         salesReadings={salesReadings}
         onSaveDip={handleSaveDip}
+        onDeleteDip={handleDeleteDip}
       />
 
       <PurchaseEntryModal
@@ -2961,6 +3012,7 @@ export default function App() {
         setNewBankBalance={setNewBankBalance}
         onCreateBankAccount={handleCreateBankAccount}
         onOpenTransfer={() => setActiveDialog('transfer')}
+        onDeleteBankAccount={handleDeleteBankAccount}
       />
 
       <ControlPanelModal
@@ -2993,6 +3045,7 @@ export default function App() {
         setCardBatchTotal={setCardBatchTotal}
         cardSettlements={cardSettlements}
         onSaveCardSettlement={handleSaveCardSettlement}
+        onDeleteCardSettlement={handleDeleteCardSettlement}
       />
 
       <CashBillModal

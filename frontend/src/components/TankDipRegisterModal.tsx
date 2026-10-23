@@ -24,6 +24,7 @@ interface TankDipRegisterModalProps {
   dipsList: any[];
   salesReadings?: any[];
   onSaveDip: (e: React.FormEvent) => void;
+  onDeleteDip?: (id: number) => void;
 }
 
 export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
@@ -45,6 +46,7 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
   dipsList,
   salesReadings,
   onSaveDip,
+  onDeleteDip,
 }) => {
   const [calcNotice, setCalcNotice] = useState<string>('');
 
@@ -264,6 +266,61 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
               </button>
             </div>
           </form>
+
+          {/* Recent Underground Tank Dip Entries */}
+          {dipsList && dipsList.length > 0 && (
+            <div style={{ marginTop: '12px' }}>
+              <div style={{ fontWeight: 700, fontSize: '11px', marginBottom: '4px', color: '#1e3a8a' }}>
+                📋 Underground Tank Dip Physical Audit Log
+              </div>
+              <div className="table-container" style={{ maxHeight: '130px', overflowY: 'auto', border: '1px solid #cbd5e1' }}>
+                <table className="win-table" style={{ fontSize: '10px' }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Tank</th>
+                      <th className="text-right">Open Dip</th>
+                      <th className="text-right">Close Dip</th>
+                      <th className="text-right">Meter Sales</th>
+                      <th className="text-right">Variation</th>
+                      <th style={{ width: '36px', textAlign: 'center' }}>Del</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dipsList.map((d: any, idx: number) => {
+                      const dipId = d.id ?? idx;
+                      const varL = Number(d.variation ?? d.variation_liters ?? 0);
+                      return (
+                        <tr key={dipId}>
+                          <td>{d.date || 'Today'}</td>
+                          <td>{d.tank_name || `Tank #${d.tank_id || dipTankId}`}</td>
+                          <td className="text-right">{d.opening_dip ?? 0} cm ({d.opening_stock ?? 0} L)</td>
+                          <td className="text-right">{d.closing_dip ?? 0} cm ({d.closing_stock ?? 0} L)</td>
+                          <td className="text-right">{Number(d.meter_sale ?? d.meter_wise_sale ?? 0).toLocaleString('en-IN')} L</td>
+                          <td className="text-right" style={{ fontWeight: 700, color: varL < 0 ? '#dc2626' : '#16a34a' }}>
+                            {varL > 0 ? `+${varL}` : varL} L
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {d.id && onDeleteDip && (
+                              <button
+                                type="button"
+                                className="win-btn-classic"
+                                style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
+                                onClick={() => onDeleteDip(d.id)}
+                                title="Delete inaccurate dip reading"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit | F2=Save</span>

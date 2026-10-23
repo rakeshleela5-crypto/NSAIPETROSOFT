@@ -4,6 +4,7 @@ import type { LubeProductItem } from '../models';
 import { erpStore } from '../store/erpStore';
 import {
   saveLubeProductApi,
+  deleteLubeProductApi,
   createNozzleApi,
   updateNozzleApi,
   deleteNozzleApi,
@@ -231,6 +232,22 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
       setLubeCode('');
       setLubeHsn('2710');
       setLubeGst(18);
+      if (loadAllErpData) await loadAllErpData();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteLube = async (prodId: number, prodName: string) => {
+    if (!window.confirm(`Are you sure you want to delete product "${prodName}" from inventory master?`)) return;
+    try {
+      erpStore.deleteLubeProduct(prodId);
+      try {
+        await deleteLubeProductApi(prodId);
+      } catch (apiErr) {
+        console.warn('Backend lube delete deferred/offline:', apiErr);
+      }
+      if (showToast) showToast(`✔ Product "${prodName}" deleted.`);
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
       if (showToast) showToast(`❌ Error: ${err.message}`);
@@ -476,6 +493,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                         <th className="text-right">Sale ₹</th>
                         <th className="text-right">Stock</th>
                         <th>Status</th>
+                        <th style={{ width: '40px', textAlign: 'center' }}>Act</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -494,6 +512,17 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                             <span style={{ fontSize: '10px', color: p.is_low_stock ? '#c0392b' : '#27ae60', fontWeight: 700 }}>
                               {p.is_low_stock ? 'REORDER' : 'OK'}
                             </span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
+                              onClick={() => handleDeleteLube(p.id, p.name)}
+                              title="Delete lube or packed retail product"
+                            >
+                              ✕
+                            </button>
                           </td>
                         </tr>
                       ))}

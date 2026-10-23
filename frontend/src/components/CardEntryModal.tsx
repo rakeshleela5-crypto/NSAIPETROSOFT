@@ -2,6 +2,7 @@ import React from 'react';
 import { exportToCsv } from '../utils/exportCsv';
 
 interface CardSettlementRow {
+  id?: number;
   machine?: string;
   batch?: string;
   slips?: number;
@@ -25,6 +26,7 @@ interface CardEntryModalProps {
   setCardBatchTotal: (tot: number) => void;
   cardSettlements: CardSettlementRow[];
   onSaveCardSettlement: () => void;
+  onDeleteCardSettlement?: (idOrBatch: string | number, machineName: string, amount: number) => void;
 }
 
 export const CardEntryModal: React.FC<CardEntryModalProps> = ({
@@ -40,6 +42,7 @@ export const CardEntryModal: React.FC<CardEntryModalProps> = ({
   setCardBatchTotal,
   cardSettlements,
   onSaveCardSettlement,
+  onDeleteCardSettlement,
 }) => {
   if (!isOpen) return null;
 
@@ -123,18 +126,37 @@ export const CardEntryModal: React.FC<CardEntryModalProps> = ({
                     <th>Slips</th>
                     <th className="text-right">Amount</th>
                     <th>Status</th>
+                    <th style={{ width: '36px', textAlign: 'center' }}>Del</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {cardSettlements.map((c, i) => (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{c.machine || c.machine_name || 'EDC POS'}</td>
-                      <td>{c.batch || c.batch_no || '001'}</td>
-                      <td>{c.slips ?? c.slip_count ?? 1}</td>
-                      <td className="text-right" style={{ fontWeight: 700 }}>₹ {c.amount.toFixed(2)}</td>
-                      <td><span style={{ color: '#27ae60', fontWeight: 700 }}>{c.status || 'SETTLED'}</span></td>
-                    </tr>
-                  ))}
+                  {cardSettlements.map((c, i) => {
+                    const rowKey = c.id ?? c.batch ?? c.batch_no ?? i;
+                    const machineName = c.machine || c.machine_name || 'EDC POS';
+                    const batchKey = c.id ?? c.batch ?? c.batch_no ?? '';
+                    return (
+                      <tr key={rowKey}>
+                        <td style={{ fontWeight: 600 }}>{machineName}</td>
+                        <td>{c.batch || c.batch_no || '001'}</td>
+                        <td>{c.slips ?? c.slip_count ?? 1}</td>
+                        <td className="text-right" style={{ fontWeight: 700 }}>₹ {c.amount.toFixed(2)}</td>
+                        <td><span style={{ color: '#27ae60', fontWeight: 700 }}>{c.status || 'SETTLED'}</span></td>
+                        <td style={{ textAlign: 'center' }}>
+                          {onDeleteCardSettlement && (
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
+                              onClick={() => onDeleteCardSettlement(batchKey, machineName, c.amount)}
+                              title="Void this POS EDC batch settlement"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

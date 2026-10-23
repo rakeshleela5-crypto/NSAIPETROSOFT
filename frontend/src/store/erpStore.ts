@@ -1824,6 +1824,59 @@ class ErpStore {
     return false;
   }
 
+  public deleteBankAccount(id: number): boolean {
+    if (id === 1) return false; // Guard core Cash On Hand ledger
+    const idx = this.state.bankAccounts.findIndex((a) => a.id === id);
+    if (idx !== -1) {
+      this.state.bankAccounts.splice(idx, 1);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
+  public updateBankAccount(id: number, data: Partial<BankAccountItem>): boolean {
+    const acc = this.state.bankAccounts.find((a) => a.id === id);
+    if (acc) {
+      if (data.name) acc.name = data.name.toUpperCase();
+      if (data.type) acc.type = data.type;
+      if (data.balance !== undefined) acc.balance = roundCurrency(data.balance);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
+  public deleteCardSettlement(idOrBatch: string | number): boolean {
+    const idx = this.state.cardSettlements.findIndex((c) => c.id === idOrBatch || c.batch_no === idOrBatch || c.batch === idOrBatch);
+    if (idx !== -1) {
+      this.state.cardSettlements.splice(idx, 1);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
+  public deleteDipReading(id: number): boolean {
+    const idx = this.state.dips.findIndex((d) => d.id === id);
+    if (idx !== -1) {
+      this.state.dips.splice(idx, 1);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
+  public deleteLubeProduct(idOrCode: number | string): boolean {
+    const idx = this.state.products.findIndex((p) => p.id === idOrCode || p.code === idOrCode);
+    if (idx !== -1) {
+      this.state.products.splice(idx, 1);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
   public recordCashSale(amount: number, productCode?: string, litres?: number): void {
     if (amount <= 0) return;
     const roundedAmt = roundCurrency(amount);

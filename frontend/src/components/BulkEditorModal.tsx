@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { LubeProductItem } from '../models';
 import { erpStore } from '../store/erpStore';
-import { saveLubeProductApi } from '../api/client';
+import { saveLubeProductApi, deleteLubeProductApi } from '../api/client';
 
 interface BulkEditorModalProps {
   isOpen: boolean;
@@ -82,6 +82,23 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
     }
   };
 
+  const handleDeleteProduct = async (id: number, name: string) => {
+    if (!window.confirm(`Delete product "${name}" from inventory master?`)) return;
+    try {
+      erpStore.deleteLubeProduct(id);
+      try {
+        await deleteLubeProductApi(id);
+      } catch (e) {
+        console.warn('Backend product delete deferred:', e);
+      }
+      setGridData((prev) => prev.filter((p) => p.id !== id));
+      if (showToast) showToast(`✔ Product "${name}" deleted.`);
+      if (loadAllErpData) await loadAllErpData();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error: ${err.message}`);
+    }
+  };
+
   return (
     <div className="win-modal-overlay">
       <div className="win-form-dialog" style={{ width: '840px', maxHeight: '90vh' }}>
@@ -115,6 +132,7 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
                   <th style={{ width: '14%', textAlign: 'right' }}>Sale Price (₹)</th>
                   <th style={{ width: '12%', textAlign: 'right' }}>Stock Units</th>
                   <th style={{ width: '12%', textAlign: 'right' }}>Reorder Lvl</th>
+                  <th style={{ width: '6%', textAlign: 'center' }}>Del</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,6 +177,17 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
                         className="win-input text-right"
                         style={{ width: '100%', height: '22px', padding: '0 4px' }}
                       />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        className="win-btn-classic"
+                        style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
+                        onClick={() => handleDeleteProduct(row.id, row.name)}
+                        title="Delete product from master list"
+                      >
+                        ✕
+                      </button>
                     </td>
                   </tr>
                 ))}

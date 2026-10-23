@@ -1334,6 +1334,46 @@ async def create_bank_account(data: BankAccountCreate, db: AsyncSession = Depend
     }
 
 
+class BankAccountUpdate(BaseModel):
+    account_name: Optional[str] = None
+    account_type: Optional[str] = None
+    balance: Optional[float] = None
+
+
+@router.put("/bank-accounts/{account_id}", summary="Update Bank or Ledger Account")
+async def update_bank_account(account_id: int, data: BankAccountUpdate, db: AsyncSession = Depends(get_db)):
+    acc = await db.get(BankAccount, account_id)
+    if not acc:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+    if data.account_name is not None and data.account_name.strip():
+        acc.account_name = data.account_name.strip().upper()
+    if data.account_type is not None and data.account_type.strip():
+        acc.account_type = data.account_type.strip().upper()
+    if data.balance is not None:
+        acc.balance = data.balance
+    await db.commit()
+    await db.refresh(acc)
+    return {
+        "status": "success",
+        "id": acc.id,
+        "name": acc.account_name,
+        "type": acc.account_type,
+        "balance": acc.balance,
+    }
+
+
+@router.delete("/bank-accounts/{account_id}", summary="Delete Bank or Ledger Account")
+async def delete_bank_account(account_id: int, db: AsyncSession = Depends(get_db)):
+    if account_id == 1:
+        raise HTTPException(status_code=400, detail="Cannot delete core Cash On Hand ledger account")
+    acc = await db.get(BankAccount, account_id)
+    if not acc:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+    await db.delete(acc)
+    await db.commit()
+    return {"status": "success", "message": f"Bank account #{account_id} deleted"}
+
+
 class CardSettlementCreate(BaseModel):
     machine_name: str
     batch_no: str
@@ -1399,6 +1439,24 @@ async def list_card_settlements(db: AsyncSession = Depends(get_db)):
         }
         for s in settlements
     ]
+
+
+@router.delete("/card-settlements/{settlement_id}", summary="Delete / Void EDC Card Settlement Batch")
+async def delete_card_settlement(settlement_id: int, db: AsyncSession = Depends(get_db)):
+    settlement = await db.get(CardSettlement, settlement_id)
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Card settlement not found")
+    # Reverse bank balance credit
+    bank_query = select(BankAccount).where(
+        func.upper(BankAccount.account_name).like(f"%{settlement.machine_name.upper().strip()}%")
+    )
+    bank_res = await db.execute(bank_query)
+    bank_acc = bank_res.scalar_one_or_none()
+    if bank_acc:
+        bank_acc.balance = max(0.0, bank_acc.balance - settlement.amount)
+    await db.delete(settlement)
+    await db.commit()
+    return {"status": "success", "message": f"Settlement #{settlement_id} deleted and bank ledger reversed"}
 
 
 
@@ -1654,6 +1712,16 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
         "tolerance_limit": tolerance_limit,
         "exceeds_tolerance": variation < tolerance_limit,
     }
+
+
+@router.delete("/dips/{dip_id}", summary="Delete Inaccurate Tank Dip Reading")
+async def delete_tank_dip(dip_id: int, db: AsyncSession = Depends(get_db)):
+    entry = await db.get(TankDipEntry, dip_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Tank dip reading not found")
+    await db.delete(entry)
+    await db.commit()
+    return {"status": "success", "message": f"Tank dip entry #{dip_id} deleted"}
 
 
 # -------------------------------------------------------------
@@ -3615,6 +3683,16 @@ async def save_lube_product(payload: LubeProductCreate, db: AsyncSession = Depen
         "code": lube.code,
         "current_stock_units": lube.current_stock_units,
     }
+
+
+@router.delete("/lubes/{product_id}", summary="Delete Packaged Lube / Retail Product")
+async def delete_lube_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    lube = await db.get(LubeProduct, product_id)
+    if not lube:
+        raise HTTPException(status_code=404, detail="Product not found")
+    await db.delete(lube)
+    await db.commit()
+    return {"status": "success", "message": f"Product #{product_id} deleted from catalog"}
 
 
 class LubeSaleRequest(BaseModel):

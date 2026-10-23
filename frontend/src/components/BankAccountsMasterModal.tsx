@@ -14,6 +14,7 @@ interface BankAccountsMasterModalProps {
   setNewBankBalance: (bal: number) => void;
   onCreateBankAccount: (e: React.FormEvent) => void;
   onOpenTransfer: () => void;
+  onDeleteBankAccount?: (id: number, name: string) => void;
 }
 
 export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = ({
@@ -28,6 +29,7 @@ export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = (
   setNewBankBalance,
   onCreateBankAccount,
   onOpenTransfer,
+  onDeleteBankAccount,
 }) => {
   if (!isOpen) return null;
 
@@ -51,6 +53,7 @@ export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = (
                     <th>Account Name</th>
                     <th>Type</th>
                     <th className="text-right">Balance</th>
+                    <th style={{ width: '40px', textAlign: 'center' }}>Del</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -60,6 +63,19 @@ export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = (
                       <td>{a.type}</td>
                       <td className="text-right" style={{ fontWeight: 700, color: a.balance > 0 ? '#1b6b80' : '#c0392b' }}>
                         ₹ {a.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {a.id !== 1 && onDeleteBankAccount && (
+                          <button
+                            type="button"
+                            className="win-btn-classic"
+                            style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
+                            onClick={() => onDeleteBankAccount(a.id, a.name)}
+                            title="Delete custom bank or POS account"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

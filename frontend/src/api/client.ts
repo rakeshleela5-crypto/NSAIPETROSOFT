@@ -1443,5 +1443,74 @@ export async function closeShiftApi(
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Bank Accounts CRUD Additions
+// ---------------------------------------------------------------------------
+export async function updateBankAccountApi(
+  accountId: number,
+  data: { account_name?: string; account_type?: string; balance?: number }
+): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/bank-accounts/${accountId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Update bank account failed: ${res.status}`);
+  }
+  return res.json();
+}
 
+export async function deleteBankAccountApi(accountId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/bank-accounts/${accountId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete bank account failed: ${res.status}`);
+  }
+  return res.json();
+}
 
+// ---------------------------------------------------------------------------
+// Card Settlement Void / Deletion
+// ---------------------------------------------------------------------------
+export async function deleteCardSettlementApi(settlementId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/card-settlements/${settlementId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete card settlement failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Tank Dip Entry Deletion
+// ---------------------------------------------------------------------------
+export async function deleteTankDipApi(dipId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/dips/${dipId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete tank dip failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Packaged Lube & DEF Product Deletion
+// ---------------------------------------------------------------------------
+export async function deleteLubeProductApi(productId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes/${productId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete lube product failed: ${res.status}`);
+  }
+  return res.json();
+}
