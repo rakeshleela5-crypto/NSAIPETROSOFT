@@ -29,7 +29,7 @@ interface PaymentReceiptModalProps {
   }>;
   showToast: (msg: string) => void;
   loadAllErpData: () => Promise<void>;
-  requestManagerAuthorization: (actionDesc: string, onAuthorized: () => Promise<void> | void) => void;
+  requestManagerAuthorization: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
@@ -365,16 +365,16 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                             className="win-btn-classic"
                             style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                             onClick={() => {
-                              requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${custName} - ₹${amountVal.toFixed(2)})`, async () => {
+                              requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${custName} - ₹${amountVal.toFixed(2)})`, async (pin?: string) => {
                                 erpStore.deletePaymentReceipt(h.id || h.receipt_no || (i + 1));
                                 try {
                                   if (h.id) {
-                                    await deletePaymentReceipt(h.id);
+                                    await deletePaymentReceipt(h.id, pin);
                                   } else {
                                     const latest = await fetchPayments();
                                     const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === custName && x.amount === amountVal));
                                     if (found && found.id) {
-                                      await deletePaymentReceipt(found.id);
+                                      await deletePaymentReceipt(found.id, pin);
                                     }
                                   }
                                   showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);

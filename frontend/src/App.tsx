@@ -1733,11 +1733,11 @@ export default function App() {
 
   const handleDeleteExpense = (id: number) => {
     const expItem = expensesList.find((x) => x.id === id);
-    requestManagerAuthorization(`Delete Expense Voucher #${id} (${expItem?.category || 'General'} - ₹${Number(expItem?.amount || 0).toFixed(2)})`, async () => {
+    requestManagerAuthorization(`Delete Expense Voucher #${id} (${expItem?.category || 'General'} - ₹${Number(expItem?.amount || 0).toFixed(2)})`, async (pin?: string) => {
       erpStore.deleteExpense(id);
       try {
-        await deleteExpense(id);
-      } catch (e) {
+        await deleteExpense(id, pin);
+      } catch (e: any) {
         console.warn('Backend expense delete deferred or offline:', e);
       }
       setExpensesList((prev) => prev.filter((x) => x.id !== id));
@@ -1845,11 +1845,11 @@ export default function App() {
   };
 
   const handleDeleteDip = (id: number) => {
-    requestManagerAuthorization(`Delete Tank Dip Reading #${id}`, async () => {
+    requestManagerAuthorization(`Delete Tank Dip Reading #${id}`, async (pin?: string) => {
       erpStore.deleteDipReading(id);
       try {
-        await deleteTankDipApi(id);
-      } catch (e) {
+        await deleteTankDipApi(id, pin);
+      } catch (e: any) {
         console.warn('Backend dip delete deferred:', e);
       }
       setDipsList((prev) => prev.filter((d: any) => d.id !== id));
@@ -1935,14 +1935,15 @@ export default function App() {
       showToast('❌ Cannot delete primary Cash On Hand ledger account.');
       return;
     }
-    requestManagerAuthorization(`Delete Bank / POS Account "${name}"`, async () => {
-      erpStore.deleteBankAccount(id);
+    requestManagerAuthorization(`Delete Bank / POS Account "${name}"`, async (pin?: string) => {
       try {
-        await deleteBankAccountApi(id);
-      } catch (e) {
-        console.warn('Backend bank account delete deferred:', e);
+        await deleteBankAccountApi(id, pin);
+        erpStore.deleteBankAccount(id);
+        showToast(`✔ Bank Account "${name}" deleted.`);
+      } catch (e: any) {
+        console.warn('Backend bank account delete rejected:', e);
+        showToast(`❌ Cannot delete Bank Account: ${e.message || 'Operation failed'}`);
       }
-      showToast(`✔ Bank Account "${name}" deleted.`);
       await loadAllErpData();
     });
   };
@@ -1989,12 +1990,12 @@ export default function App() {
   };
 
   const handleDeleteCardSettlement = (idOrBatch: string | number, machineName: string, amount: number) => {
-    requestManagerAuthorization(`Void EDC Batch Settlement (${machineName} - ₹${amount.toFixed(2)})`, async () => {
+    requestManagerAuthorization(`Void EDC Batch Settlement (${machineName} - ₹${amount.toFixed(2)})`, async (pin?: string) => {
       erpStore.deleteCardSettlement(idOrBatch);
       if (typeof idOrBatch === 'number') {
         try {
-          await deleteCardSettlementApi(idOrBatch);
-        } catch (e) {
+          await deleteCardSettlementApi(idOrBatch, pin);
+        } catch (e: any) {
           console.warn('Backend card settlement delete deferred:', e);
         }
       }
@@ -2777,16 +2778,16 @@ export default function App() {
         creditIndentNo={creditIndentNo}
         setCreditIndentNo={setCreditIndentNo}
         onDeleteCreditBill={(b) => {
-          requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${b.total})`, async () => {
+          requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${b.total})`, async (pin?: string) => {
             erpStore.deleteCreditBill(b.id || b.bill || b.slip);
             try {
               if (b.id) {
-                await deleteCreditSale(b.id);
+                await deleteCreditSale(b.id, pin);
               } else {
                 const latest = await fetchCreditSales();
                 const found = latest.find((x) => x.bill_no === b.bill || x.slip_no === b.slip);
                 if (found && found.id) {
-                  await deleteCreditSale(found.id);
+                  await deleteCreditSale(found.id, pin);
                 }
               }
               showToast(`✔ Credit bill #${b.bill} deleted & ledger reversed!`);
@@ -3044,6 +3045,7 @@ export default function App() {
         openCustomerStatement={openCustomerStatement}
         showToast={showToast}
         loadAllErpData={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <UndergroundTankMasterModal
@@ -3053,6 +3055,7 @@ export default function App() {
         onOpenDipDialog={openDipDialog}
         showToast={showToast}
         loadAllErpData={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <NozzleTotalizerMasterModal
@@ -3143,6 +3146,7 @@ export default function App() {
         products={erpStore.getState().products}
         showToast={showToast}
         loadAllErpData={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <AddProductModal
@@ -3158,6 +3162,7 @@ export default function App() {
         products={erpStore.getState().products}
         showToast={showToast}
         loadAllErpData={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <PriceListModal

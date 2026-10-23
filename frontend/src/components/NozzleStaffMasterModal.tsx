@@ -22,6 +22,7 @@ interface NozzleStaffMasterModalProps {
   products?: LubeProductItem[];
   showToast?: (msg: string) => void;
   loadAllErpData?: () => Promise<void>;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
@@ -33,6 +34,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
   products = erpStore.getState().products,
   showToast,
   loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [activeTab, setActiveTab] = useState<'nozzles' | 'staff' | 'lubes'>('nozzles');
 
@@ -112,19 +114,23 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     }
   };
 
-  const handleDeleteNozzle = async (nozzleId: number) => {
-    if (!window.confirm('Are you sure you want to delete this nozzle?')) return;
-    try {
-      erpStore.deleteNozzle(nozzleId);
+  const handleDeleteNozzle = (nozzleId: number) => {
+    const doDelete = async (pin?: string) => {
       try {
-        await deleteNozzleApi(nozzleId);
-      } catch (apiErr) {
-        console.warn('Backend nozzle delete deferred/offline:', apiErr);
+        await deleteNozzleApi(nozzleId, pin);
+        erpStore.deleteNozzle(nozzleId);
+        if (showToast) showToast('✔ Nozzle deleted successfully!');
+        if (loadAllErpData) await loadAllErpData();
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Cannot delete nozzle: ${err.message || 'Operation failed'}`);
       }
-      if (showToast) showToast('✔ Nozzle deleted successfully!');
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete Forecourt Nozzle #${nozzleId}`, doDelete);
+    } else {
+      if (!window.confirm('Are you sure you want to delete this nozzle?')) return;
+      doDelete();
     }
   };
 
@@ -172,19 +178,24 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     }
   };
 
-  const handleDeleteStaff = async (empId: number) => {
-    if (!window.confirm('Are you sure you want to delete this staff member?')) return;
-    try {
-      erpStore.deleteEmployee(empId);
+  const handleDeleteStaff = (empId: number, name?: string) => {
+    const staffTitle = name || `Staff #${empId}`;
+    const doDelete = async (pin?: string) => {
       try {
-        await deleteEmployeeApi(empId);
-      } catch (apiErr) {
-        console.warn('Backend employee delete deferred/offline:', apiErr);
+        await deleteEmployeeApi(empId, pin);
+        erpStore.deleteEmployee(empId);
+        if (showToast) showToast(`✔ Staff member "${staffTitle}" removed!`);
+        if (loadAllErpData) await loadAllErpData();
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Cannot remove staff member: ${err.message || 'Operation failed'}`);
       }
-      if (showToast) showToast('✔ Staff member removed!');
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete Staff Member "${staffTitle}"`, doDelete);
+    } else {
+      if (!window.confirm(`Are you sure you want to delete ${staffTitle}?`)) return;
+      doDelete();
     }
   };
 
@@ -238,19 +249,23 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     }
   };
 
-  const handleDeleteLube = async (prodId: number, prodName: string) => {
-    if (!window.confirm(`Are you sure you want to delete product "${prodName}" from inventory master?`)) return;
-    try {
-      erpStore.deleteLubeProduct(prodId);
+  const handleDeleteLube = (prodId: number, prodName: string) => {
+    const doDelete = async (pin?: string) => {
       try {
-        await deleteLubeProductApi(prodId);
-      } catch (apiErr) {
-        console.warn('Backend lube delete deferred/offline:', apiErr);
+        await deleteLubeProductApi(prodId, pin);
+        erpStore.deleteLubeProduct(prodId);
+        if (showToast) showToast(`✔ Product "${prodName}" deleted.`);
+        if (loadAllErpData) await loadAllErpData();
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Cannot delete product: ${err.message || 'Operation failed'}`);
       }
-      if (showToast) showToast(`✔ Product "${prodName}" deleted.`);
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete Product "${prodName}" from Master`, doDelete);
+    } else {
+      if (!window.confirm(`Are you sure you want to delete product "${prodName}" from inventory master?`)) return;
+      doDelete();
     }
   };
 

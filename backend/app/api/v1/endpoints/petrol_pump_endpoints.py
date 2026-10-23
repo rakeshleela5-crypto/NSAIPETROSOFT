@@ -1443,12 +1443,28 @@ async def update_bank_account(account_id: int, data: BankAccountUpdate, db: Asyn
 
 
 @router.delete("/bank-accounts/{account_id}", summary="Delete Bank or Ledger Account")
-async def delete_bank_account(account_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_bank_account(
+    account_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete bank accounts.",
+        )
     if account_id == 1:
         raise HTTPException(status_code=400, detail="Cannot delete core Cash On Hand ledger account")
     acc = await db.get(BankAccount, account_id)
     if not acc:
         raise HTTPException(status_code=404, detail="Bank account not found")
+    if acc.balance and abs(acc.balance) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete account '{acc.account_name}' with active balance of ₹{acc.balance:.2f}. Transfer balance via Contra Entry first.",
+        )
     await db.delete(acc)
     await db.commit()
     return {"status": "success", "message": f"Bank account #{account_id} deleted"}
@@ -1475,11 +1491,14 @@ async def create_card_settlement(data: CardSettlementCreate, db: AsyncSession = 
 
     bank_query = select(BankAccount).where(
         func.upper(BankAccount.account_name).like(f"%{data.machine_name.upper().strip()}%")
-    )
+    ).with_for_update()
     bank_res = await db.execute(bank_query)
     bank_acc = bank_res.scalar_one_or_none()
+    if not bank_acc:
+        bank_res2 = await db.execute(select(BankAccount).where(BankAccount.account_type == "POS").with_for_update().limit(1))
+        bank_acc = bank_res2.scalars().first()
     if bank_acc:
-        bank_acc.balance += data.amount
+        bank_acc.balance = round(bank_acc.balance + data.amount, 2)
 
     await db.commit()
     await db.refresh(card_entry)
@@ -1522,18 +1541,32 @@ async def list_card_settlements(db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/card-settlements/{settlement_id}", summary="Delete / Void EDC Card Settlement Batch")
-async def delete_card_settlement(settlement_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_card_settlement(
+    settlement_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to void EDC batch settlements.",
+        )
     settlement = await db.get(CardSettlement, settlement_id)
     if not settlement:
         raise HTTPException(status_code=404, detail="Card settlement not found")
     # Reverse bank balance credit
     bank_query = select(BankAccount).where(
         func.upper(BankAccount.account_name).like(f"%{settlement.machine_name.upper().strip()}%")
-    )
+    ).with_for_update()
     bank_res = await db.execute(bank_query)
     bank_acc = bank_res.scalar_one_or_none()
+    if not bank_acc:
+        bank_res2 = await db.execute(select(BankAccount).where(BankAccount.account_type == "POS").with_for_update().limit(1))
+        bank_acc = bank_res2.scalars().first()
     if bank_acc:
-        bank_acc.balance = max(0.0, bank_acc.balance - settlement.amount)
+        bank_acc.balance = max(0.0, round(bank_acc.balance - settlement.amount, 2))
     await db.delete(settlement)
     await db.commit()
     return {"status": "success", "message": f"Settlement #{settlement_id} deleted and bank ledger reversed"}
@@ -1592,7 +1625,7 @@ async def list_customers(db: AsyncSession = Depends(get_db)):
 async def create_customer(data: CustomerCreate, db: AsyncSession = Depends(get_db)):
     count_res = await db.execute(select(func.count(Customer.id)))
     code = f"{(count_res.scalar() or 0) + 1}"
-    initial_outstanding = float(data.current_outstanding if data.current_outstanding is not None else (data.opening_balance or 0.0))
+    initial_outstanding = float(data.current_outstanding or data.opening_balance or 0.0)
     cust = Customer(
         code=code,
         name=data.name.strip(),
@@ -1631,8 +1664,16 @@ async def add_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db)):
 async def delete_customer_vehicle(
     customer_id: int,
     vehicle_no: str,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to remove fleet vehicles.",
+        )
     v_res = await db.execute(
         select(Vehicle).where(
             Vehicle.customer_id == customer_id,
@@ -1693,7 +1734,18 @@ async def update_customer(customer_id: int, data: CustomerUpdate, db: AsyncSessi
 
 
 @router.delete("/customers/{customer_id}", summary="Delete Customer")
-async def delete_customer(customer_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_customer(
+    customer_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete customer accounts.",
+        )
     cust = await db.get(Customer, customer_id)
     if not cust:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -1801,9 +1853,11 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     )
     db.add(entry)
     await db.commit()
+    await db.refresh(entry)
 
     return {
         "message": "Tank dip recorded successfully",
+        "id": entry.id,
         "tank_name": tank.tank_name,
         "dip_wise_sale": dip_sale,
         "meter_wise_sale": meter_sale,
@@ -1815,7 +1869,18 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
 
 
 @router.delete("/dips/{dip_id}", summary="Delete Inaccurate Tank Dip Reading")
-async def delete_tank_dip(dip_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_tank_dip(
+    dip_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete tank dip audit entries.",
+        )
     entry = await db.get(TankDipEntry, dip_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Tank dip reading not found")
@@ -2043,6 +2108,16 @@ async def settle_employee_shortage(
         notes=payload.notes or f"Shortage cleared via {payload.settlement_type}",
     )
     db.add(recovery_entry)
+
+    # Credit Cash on Hand if recovered in cash
+    if "CASH" in (payload.settlement_type or "").upper():
+        cash_res = await db.execute(select(BankAccount).where(BankAccount.account_type == "CASH").with_for_update().limit(1))
+        cash_acc = cash_res.scalars().first()
+        if not cash_acc:
+            cash_acc = await db.get(BankAccount, 1)
+        if cash_acc:
+            cash_acc.balance = round(cash_acc.balance + payload.amount, 2)
+
     await db.commit()
 
     return {
@@ -3054,22 +3129,50 @@ async def create_expense(data: ExpenseCreate, db: AsyncSession = Depends(get_db)
         select(BankAccount).where(BankAccount.account_name == "CASH ON HAND").with_for_update()
     )
     cash_acc = cash_acc_res.scalar_one_or_none()
+    if not cash_acc:
+        cash_res2 = await db.execute(
+            select(BankAccount).where(BankAccount.account_type == "CASH").with_for_update().limit(1)
+        )
+        cash_acc = cash_res2.scalars().first()
+    if not cash_acc:
+        cash_acc = await db.get(BankAccount, 1)
     if cash_acc:
         cash_acc.balance = max(0.0, round(cash_acc.balance - data.amount, 2))
 
     await db.commit()
-    return {"status": "success", "message": f"Expense of ₹{data.amount} recorded"}
+    await db.refresh(exp)
+    return {"status": "success", "message": f"Expense of ₹{data.amount} recorded", "id": exp.id}
 
 
 @router.delete("/expenses/{expense_id}", summary="Delete Expense & Restore Cash On Hand")
-async def delete_expense(expense_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_expense(
+    expense_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete expense vouchers.",
+        )
     exp = await db.get(Expense, expense_id)
     if not exp:
         raise HTTPException(status_code=404, detail=f"Expense #{expense_id} not found")
 
     # Restore Cash On Hand balance
-    cash_acc_res = await db.execute(select(BankAccount).where(BankAccount.account_name == "CASH ON HAND"))
+    cash_acc_res = await db.execute(
+        select(BankAccount).where(BankAccount.account_name == "CASH ON HAND").with_for_update()
+    )
     cash_acc = cash_acc_res.scalar_one_or_none()
+    if not cash_acc:
+        cash_res2 = await db.execute(
+            select(BankAccount).where(BankAccount.account_type == "CASH").with_for_update().limit(1)
+        )
+        cash_acc = cash_res2.scalars().first()
+    if not cash_acc:
+        cash_acc = await db.get(BankAccount, 1)
     if cash_acc:
         cash_acc.balance = round(cash_acc.balance + exp.amount, 2)
 
@@ -3728,10 +3831,33 @@ async def update_tank(tank_id: int, payload: TankUpdate, db: AsyncSession = Depe
 
 
 @router.delete("/tanks/{tank_id}", summary="Delete Underground Storage Tank")
-async def delete_tank(tank_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_tank(
+    tank_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete underground tanks.",
+        )
     tank = await db.get(Tank, tank_id)
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
+    if tank.current_stock and tank.current_stock > 10.0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete tank '{tank.tank_name}' with active fuel stock of {tank.current_stock:.2f} Liters. Decant or transfer stock first.",
+        )
+    active_nozzles_res = await db.execute(select(func.count(Nozzle.id)).where(Nozzle.tank_id == tank_id))
+    active_nozzles = active_nozzles_res.scalar_one()
+    if active_nozzles > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete tank '{tank.tank_name}': {active_nozzles} dispenser nozzle(s) are connected to it.",
+        )
     await db.execute(delete(TankCalibrationChart).where(TankCalibrationChart.tank_id == tank_id))
     await db.delete(tank)
     await db.commit()
@@ -3837,13 +3963,29 @@ async def update_nozzle(nozzle_id: int, payload: NozzleUpdate, db: AsyncSession 
 
 
 @router.delete("/nozzles/{nozzle_id}", summary="Delete Dispenser Nozzle")
-async def delete_nozzle(nozzle_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_nozzle(
+    nozzle_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete dispenser nozzles.",
+        )
     nozzle = await db.get(Nozzle, nozzle_id)
     if not nozzle:
         raise HTTPException(status_code=404, detail="Nozzle not found")
+    readings_count = (await db.execute(select(func.count(ShiftMeterReading.id)).where(ShiftMeterReading.nozzle_id == nozzle_id))).scalar_one()
+    if readings_count > 0:
+        nozzle.active = False
+        await db.commit()
+        return {"status": "success", "message": f"Nozzle '{nozzle.nozzle_name}' deactivated to preserve audit history.", "id": nozzle_id}
     await db.delete(nozzle)
     await db.commit()
-    return {"status": "success", "message": f"Nozzle #{nozzle_id} deleted successfully"}
+    return {"status": "success", "message": f"Nozzle #{nozzle_id} deleted successfully", "id": nozzle_id}
 
 
 # -------------------------------------------------------------
@@ -3934,13 +4076,29 @@ async def update_employee(employee_id: int, payload: EmployeeUpdate, db: AsyncSe
 
 
 @router.delete("/employees/{employee_id}", summary="Delete Attendant or Staff")
-async def delete_employee(employee_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_employee(
+    employee_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to remove staff members.",
+        )
     emp = await db.get(Employee, employee_id)
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+    if emp.shortage_balance and abs(emp.shortage_balance) > 0.01:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete employee '{emp.name}' with unsettled shortage debt of ₹{emp.shortage_balance:.2f}. Settle debt first.",
+        )
     await db.delete(emp)
     await db.commit()
-    return {"status": "success", "message": f"Employee #{employee_id} deleted successfully"}
+    return {"status": "success", "message": f"Employee #{employee_id} deleted successfully", "id": employee_id}
 
 
 # -------------------------------------------------------------
@@ -4043,10 +4201,26 @@ async def save_lube_product(payload: LubeProductCreate, db: AsyncSession = Depen
 
 
 @router.delete("/lubes/{product_id}", summary="Delete Packaged Lube / Retail Product")
-async def delete_lube_product(product_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_lube_product(
+    product_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to delete packaged inventory products.",
+        )
     lube = await db.get(LubeProduct, product_id)
     if not lube:
         raise HTTPException(status_code=404, detail="Product not found")
+    if lube.current_stock_units and lube.current_stock_units > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete product '{lube.name}' with active inventory of {lube.current_stock_units} units. Sell or write off stock to 0 before removing from catalog.",
+        )
     await db.delete(lube)
     await db.commit()
     return {"status": "success", "message": f"Product #{product_id} deleted from catalog"}

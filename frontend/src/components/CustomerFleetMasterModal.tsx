@@ -16,6 +16,7 @@ interface CustomerFleetMasterModalProps {
   openCustomerStatement: (id: number) => void;
   showToast: (msg: string) => void;
   loadAllErpData: () => Promise<void>;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> = ({
@@ -25,6 +26,7 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
   openCustomerStatement,
   showToast,
   loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [masterCustSearch, setMasterCustSearch] = useState<string>('');
   const [selectedCustId, setSelectedCustId] = useState<number | null>(null);
@@ -96,15 +98,24 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
   };
 
   const handleRemoveVehicle = async (vehNo: string) => {
-    setVehicleList(vehicleList.filter((v) => v.vehicle_no !== vehNo));
-    if (editCustId) {
-      erpStore.removeCustomerVehicle(editCustId, vehNo);
-      try {
-        await deleteCustomerVehicleApi(editCustId, vehNo);
-        showToast(`✔ Vehicle ${vehNo} removed from fleet`);
-      } catch (err: any) {
-        console.warn('Backend delete vehicle deferred or offline:', err);
+    const doRemove = async (pin?: string) => {
+      setVehicleList(vehicleList.filter((v) => v.vehicle_no !== vehNo));
+      if (editCustId) {
+        erpStore.removeCustomerVehicle(editCustId, vehNo);
+        try {
+          await deleteCustomerVehicleApi(editCustId, vehNo, pin);
+          showToast(`✔ Vehicle ${vehNo} removed from fleet`);
+          await loadAllErpData();
+        } catch (err: any) {
+          console.warn('Backend delete vehicle deferred or offline:', err);
+        }
       }
+    };
+
+    if (requestManagerAuthorization && editCustId) {
+      requestManagerAuthorization(`Remove Vehicle "${vehNo}" from Customer Fleet`, doRemove);
+    } else {
+      doRemove();
     }
   };
 
@@ -189,20 +200,23 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     }
   };
 
-  const handleDeleteCustomer = async (c: CustomerFull) => {
-    if (!window.confirm(`Are you sure you want to delete customer "${c.name}"?`)) return;
-
-    try {
+  const handleDeleteCustomer = (c: CustomerFull) => {
+    const doDelete = async (pin?: string) => {
       try {
-        await deleteCustomerApi(c.id);
-      } catch (apiErr: any) {
-        console.warn('Backend delete error:', apiErr);
+        await deleteCustomerApi(c.id, pin);
+        erpStore.deleteCustomer(c.id);
+        showToast(`✔ Customer "${c.name}" deleted from database.`);
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(`❌ Cannot delete: ${err.message || 'Operation failed'}`);
       }
-      erpStore.deleteCustomer(c.id);
-      showToast(`✔ Customer "${c.name}" deleted from database.`);
-      await loadAllErpData();
-    } catch (err: any) {
-      showToast(`❌ Guard Rejection: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete Customer "${c.name}"`, doDelete);
+    } else {
+      if (!window.confirm(`Are you sure you want to delete customer "${c.name}"?`)) return;
+      doDelete();
     }
   };
 

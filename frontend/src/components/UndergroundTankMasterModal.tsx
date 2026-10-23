@@ -18,6 +18,7 @@ interface UndergroundTankMasterModalProps {
   onOpenDipDialog: (tankId?: number) => void;
   showToast?: (msg: string) => void;
   loadAllErpData: () => Promise<void>;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProps> = ({
@@ -27,6 +28,7 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
   onOpenDipDialog,
   showToast,
   loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editTankId, setEditTankId] = useState<number | null>(null);
@@ -169,19 +171,23 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
     }
   };
 
-  const handleDeleteTank = async (tankId: number) => {
-    if (!window.confirm('Are you sure you want to delete this tank?')) return;
-    try {
-      erpStore.deleteTank(tankId);
+  const handleDeleteTank = (tankId: number) => {
+    const doDelete = async (pin?: string) => {
       try {
-        await deleteTankApi(tankId);
-      } catch (apiErr) {
-        console.warn('Backend tank delete deferred/offline:', apiErr);
+        await deleteTankApi(tankId, pin);
+        erpStore.deleteTank(tankId);
+        if (showToast) showToast('✔ Tank deleted successfully!');
+        await loadAllErpData();
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Cannot delete tank: ${err.message || 'Operation failed'}`);
       }
-      if (showToast) showToast('✔ Tank deleted successfully!');
-      await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete Underground Storage Tank #${tankId}`, doDelete);
+    } else {
+      if (!window.confirm('Are you sure you want to delete this tank?')) return;
+      doDelete();
     }
   };
 

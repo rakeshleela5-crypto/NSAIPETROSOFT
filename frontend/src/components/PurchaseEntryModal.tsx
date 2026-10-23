@@ -27,7 +27,7 @@ interface PurchaseEntryModalProps {
   }>;
   showToast: (msg: string) => void;
   loadAllErpData: () => Promise<void>;
-  requestManagerAuthorization: (actionDesc: string, onAuthorized: () => Promise<void> | void) => void;
+  requestManagerAuthorization: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
@@ -602,18 +602,18 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                               style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                               onClick={() => {
                                 const purKey = p.id ?? p.inv ?? p.inv_no ?? p.po ?? p.po_no;
-                                requestManagerAuthorization(`Delete Purchase Inward #${p.inv || p.inv_no || p.po || p.po_no} (${p.dealer} - ₹${Number(p.amount || 0).toFixed(2)})`, async () => {
+                                requestManagerAuthorization(`Delete Purchase Inward #${p.inv || p.inv_no || p.po || p.po_no} (${p.dealer} - ₹${Number(p.amount || 0).toFixed(2)})`, async (pin?: string) => {
                                   if (purKey !== undefined) {
                                     erpStore.deletePurchase(purKey);
                                   }
                                   try {
                                     if (p.id) {
-                                      await deletePurchase(p.id);
+                                      await deletePurchase(p.id, pin);
                                     } else {
                                       const latest = await fetchPurchases();
                                       const found = latest.find((x) => x.invoice_no === (p.inv || p.inv_no));
                                       if (found && found.id) {
-                                        await deletePurchase(found.id);
+                                        await deletePurchase(found.id, pin);
                                       }
                                     }
                                     showToast(`✔ Purchase decanting #${p.inv || p.inv_no || p.po || p.po_no} deleted & tank stock reversed!`);

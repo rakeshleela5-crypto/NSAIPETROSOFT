@@ -9,6 +9,7 @@ interface BulkEditorModalProps {
   products?: LubeProductItem[];
   showToast?: (msg: string) => void;
   loadAllErpData?: () => Promise<void>;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
@@ -17,6 +18,7 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
   products = erpStore.getState().products,
   showToast,
   loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [gridData, setGridData] = useState<Array<{
     id: number;
@@ -82,20 +84,24 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
     }
   };
 
-  const handleDeleteProduct = async (id: number, name: string) => {
-    if (!window.confirm(`Delete product "${name}" from inventory master?`)) return;
-    try {
-      erpStore.deleteLubeProduct(id);
+  const handleDeleteProduct = (id: number, name: string) => {
+    const doDelete = async (pin?: string) => {
       try {
-        await deleteLubeProductApi(id);
-      } catch (e) {
-        console.warn('Backend product delete deferred:', e);
+        await deleteLubeProductApi(id, pin);
+        erpStore.deleteLubeProduct(id);
+        setGridData((prev) => prev.filter((p) => p.id !== id));
+        if (showToast) showToast(`✔ Product "${name}" deleted.`);
+        if (loadAllErpData) await loadAllErpData();
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Cannot delete product: ${err.message || 'Operation failed'}`);
       }
-      setGridData((prev) => prev.filter((p) => p.id !== id));
-      if (showToast) showToast(`✔ Product "${name}" deleted.`);
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete Product "${name}"`, doDelete);
+    } else {
+      if (!window.confirm(`Delete product "${name}" from inventory master?`)) return;
+      doDelete();
     }
   };
 

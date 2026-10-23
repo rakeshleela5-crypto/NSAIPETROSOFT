@@ -340,8 +340,9 @@ export async function createCreditSale(data: {
   return res.json();
 }
 
-export async function deleteCreditSale(saleId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}`, {
+export async function deleteCreditSale(saleId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/credit-sales/${saleId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -437,8 +438,9 @@ export async function updateCustomer(
   return res.json();
 }
 
-export async function deleteCustomer(customerId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}`, {
+export async function deleteCustomer(customerId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -632,8 +634,9 @@ export async function createPurchase(data: {
   return res.json();
 }
 
-export async function deletePurchase(purchaseId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/purchases/${purchaseId}`, {
+export async function deletePurchase(purchaseId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/purchases/${purchaseId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -713,8 +716,9 @@ export async function createExpense(data: {
   return res.json();
 }
 
-export async function deleteExpense(expenseId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/expenses/${expenseId}`, {
+export async function deleteExpense(expenseId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/expenses/${expenseId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -774,8 +778,9 @@ export async function createPaymentReceipt(data: {
   return res.json();
 }
 
-export async function deletePaymentReceipt(paymentId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/payments/${paymentId}`, {
+export async function deletePaymentReceipt(paymentId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/payments/${paymentId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1258,8 +1263,9 @@ export async function updateTankApi(
   return res.json();
 }
 
-export async function deleteTankApi(tankId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}`, {
+export async function deleteTankApi(tankId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1339,8 +1345,9 @@ export async function updateNozzleApi(
   return res.json();
 }
 
-export async function deleteNozzleApi(nozzleId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}`, {
+export async function deleteNozzleApi(nozzleId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1413,8 +1420,9 @@ export async function updateEmployeeApi(
   return res.json();
 }
 
-export async function deleteEmployeeApi(employeeId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/${employeeId}`, {
+export async function deleteEmployeeApi(employeeId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/${employeeId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1462,8 +1470,9 @@ export async function updateBankAccountApi(
   return res.json();
 }
 
-export async function deleteBankAccountApi(accountId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/bank-accounts/${accountId}`, {
+export async function deleteBankAccountApi(accountId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/bank-accounts/${accountId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1476,8 +1485,9 @@ export async function deleteBankAccountApi(accountId: number): Promise<any> {
 // ---------------------------------------------------------------------------
 // Card Settlement Void / Deletion
 // ---------------------------------------------------------------------------
-export async function deleteCardSettlementApi(settlementId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/card-settlements/${settlementId}`, {
+export async function deleteCardSettlementApi(settlementId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/card-settlements/${settlementId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1490,8 +1500,9 @@ export async function deleteCardSettlementApi(settlementId: number): Promise<any
 // ---------------------------------------------------------------------------
 // Tank Dip Entry Deletion
 // ---------------------------------------------------------------------------
-export async function deleteTankDipApi(dipId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/dips/${dipId}`, {
+export async function deleteTankDipApi(dipId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/dips/${dipId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1504,8 +1515,9 @@ export async function deleteTankDipApi(dipId: number): Promise<any> {
 // ---------------------------------------------------------------------------
 // Packaged Lube & DEF Product Deletion
 // ---------------------------------------------------------------------------
-export async function deleteLubeProductApi(productId: number): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes/${productId}`, {
+export async function deleteLubeProductApi(productId: number, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes/${productId}${pinParam}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -1573,9 +1585,10 @@ export async function deleteQuotationApi(quotationId: number, managerPin?: strin
 // ---------------------------------------------------------------------------
 // Customer Vehicle Deletion API
 // ---------------------------------------------------------------------------
-export async function deleteCustomerVehicleApi(customerId: number, vehicleNo: string): Promise<any> {
+export async function deleteCustomerVehicleApi(customerId: number, vehicleNo: string, managerPin?: string): Promise<any> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
   const res = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/pump/customers/${customerId}/vehicles/${encodeURIComponent(vehicleNo)}`,
+    `${API_BASE_URL}/api/v1/pump/customers/${customerId}/vehicles/${encodeURIComponent(vehicleNo)}${pinParam}`,
     { method: 'DELETE' }
   );
   if (!res.ok) {

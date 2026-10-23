@@ -9,15 +9,18 @@ from app.db.session import get_db
 from app.main import app
 from app.models.petrol_pump import (
     BankAccount,
+    CardSettlement,
     Customer,
     Employee,
     EmployeeShortageLedger,
+    Expense,
     FuelProduct,
     LubeProduct,
     LubeSaleEntry,
     Nozzle,
     RateHistory,
     Tank,
+    TankDipEntry,
     StationProfileSetting,
 )
 
@@ -48,6 +51,7 @@ async def test_parity_crud_endpoints():
     async with async_session() as db:
         acc1 = BankAccount(id=1, account_name="Cash on Hand", account_type="CASH", balance=100000.0)
         acc2 = BankAccount(id=2, account_name="SBI Current A/C", account_type="BANK", balance=50000.0)
+        acc3 = BankAccount(id=3, account_name="M SWIPE POS", account_type="POS", balance=0.0)
         prod = FuelProduct(id=1, code="HSD", name="High Speed Diesel", current_rate=92.5)
         rate_hist0 = RateHistory(id=1, product_id=1, rate=92.5, effective_date=date(2026, 1, 1))
         tank = Tank(id=1, tank_name="HSD Underground Tank 1", product_id=1, capacity_liters=20000.0, current_stock=12000.0)
@@ -56,7 +60,7 @@ async def test_parity_crud_endpoints():
         emp = Employee(id=1, name="Ramesh Attendant", code="EMP01", shortage_balance=500.0)
         lube = LubeProduct(id=1, code="SERVO-4T", name="Servo 4T Engine Oil", category="LUBE_OIL", mrp=360.0, sale_price=350.0, cost_price=280.0, current_stock_units=20, reorder_level=5)
 
-        db.add_all([acc1, acc2, prod, rate_hist0, tank, nozzle, profile, emp, lube])
+        db.add_all([acc1, acc2, acc3, prod, rate_hist0, tank, nozzle, profile, emp, lube])
         await db.commit()
 
     transport = ASGITransport(app=app)
@@ -141,8 +145,8 @@ async def test_parity_crud_endpoints():
         )
         assert veh_res.status_code == 200
 
-        # Delete vehicle from customer
-        del_veh_res = await client.delete(f"/api/v1/pump/customers/{cust_id}/vehicles/GJ05CD7777")
+        # Delete vehicle from customer with Manager PIN
+        del_veh_res = await client.delete(f"/api/v1/pump/customers/{cust_id}/vehicles/GJ05CD7777?manager_pin=1234")
         assert del_veh_res.status_code == 200
         assert "removed from customer" in del_veh_res.json()["message"]
 
@@ -343,5 +347,142 @@ async def test_parity_crud_endpoints():
         async with async_session() as db:
             emp_rec = await db.get(Employee, 1)
             assert emp_rec.shortage_balance == 500.0
+
+        # 11. Test Expense Voucher Creation & Rollback on Void
+        exp_res = await client.post(
+            "/api/v1/pump/expenses",
+            json={
+                "category": "ELECTRICITY BILL",
+                "amount": 1500.0,
+                "paid_to": "Torrent Power",
+                "narration": "Forecourt meter bill",
+            },
+        )
+        assert exp_res.status_code == 200, exp_res.text
+        exp_id = exp_res.json()["id"]
+
+        async with async_session() as db:
+            cash_acc = await db.get(BankAccount, 1)
+            assert cash_acc.balance == 98500.0
+
+        # Delete expense voucher with Manager PIN
+        del_exp_res = await client.delete(f"/api/v1/pump/expenses/{exp_id}?manager_pin=1234")
+        assert del_exp_res.status_code == 200, del_exp_res.text
+
+        async with async_session() as db:
+            cash_acc = await db.get(BankAccount, 1)
+            assert cash_acc.balance == 100000.0
+
+        # 12. Test Card Settlement Creation & Voiding with POS Account Balance Rollback
+        card_res = await client.post(
+            "/api/v1/pump/card-settlements",
+            json={
+                "machine_name": "M SWIPE",
+                "batch_no": "9901",
+                "slip_count": 5,
+                "amount": 4500.0,
+            },
+        )
+        assert card_res.status_code == 200, card_res.text
+        settle_id = card_res.json()["id"]
+
+        async with async_session() as db:
+            pos_acc = await db.get(BankAccount, 3)
+            assert pos_acc.balance == 4500.0
+
+        # Void card settlement batch with Manager PIN
+        del_card_res = await client.delete(f"/api/v1/pump/card-settlements/{settle_id}?manager_pin=1234")
+        assert del_card_res.status_code == 200, del_card_res.text
+
+        async with async_session() as db:
+            pos_acc = await db.get(BankAccount, 3)
+            assert pos_acc.balance == 0.0
+
+        # 13. Test Tank Physical Dip Creation & Deletion
+        dip_res = await client.post(
+            "/api/v1/pump/dips",
+            json={
+                "tank_id": 1,
+                "opening_dip": 180.0,
+                "opening_stock": 15500.0,
+                "closing_dip": 185.0,
+                "closing_stock": 16000.0,
+                "notes": "Daily morning dip reading",
+            },
+        )
+        assert dip_res.status_code == 200, dip_res.text
+        dip_id = dip_res.json()["id"]
+
+        del_dip_res = await client.delete(f"/api/v1/pump/dips/{dip_id}?manager_pin=1234")
+        assert del_dip_res.status_code == 200, del_dip_res.text
+
+        # 14. Test Bank Account Deletion Safety Guards
+        # Trying to delete primary Cash account (id=1) must fail with 400
+        del_primary_res = await client.delete("/api/v1/pump/bank-accounts/1?manager_pin=1234")
+        assert del_primary_res.status_code == 400
+
+        # Trying to delete Bank account with positive balance must fail with 400
+        del_funded_res = await client.delete("/api/v1/pump/bank-accounts/2?manager_pin=1234")
+        assert del_funded_res.status_code == 400
+
+        # Create a temporary zero-balance bank account and delete successfully
+        new_bank_res = await client.post(
+            "/api/v1/pump/bank-accounts",
+            json={"account_name": "TEST ESCROW", "account_type": "SAVINGS", "balance": 0.0},
+        )
+        assert new_bank_res.status_code == 200
+        new_bank_id = new_bank_res.json()["id"]
+
+        del_bank_res = await client.delete(f"/api/v1/pump/bank-accounts/{new_bank_id}?manager_pin=1234")
+        assert del_bank_res.status_code == 200
+
+        # 15. Test Customer Deletion Safety Guards
+        # Create a customer with active outstanding debt, must fail deletion with 400
+        debt_cust_res = await client.post(
+            "/api/v1/pump/customers",
+            json={"name": "IN_DEBT TRANSPORT CORP", "mobile": "9888877777", "credit_limit": 50000.0, "opening_balance": 15000.0},
+        )
+        assert debt_cust_res.status_code == 200
+        debt_cust_id = debt_cust_res.json()["id"]
+
+        del_active_cust = await client.delete(f"/api/v1/pump/customers/{debt_cust_id}?manager_pin=1234")
+        assert del_active_cust.status_code == 400
+
+        # Create zero-balance customer and delete with Manager PIN successfully
+        new_cust_res = await client.post(
+            "/api/v1/pump/customers",
+            json={"name": "TEMPORARY TRIAL LOGISTICS", "mobile": "9999900000", "credit_limit": 10000.0, "opening_balance": 0.0},
+        )
+        assert new_cust_res.status_code == 200
+        new_cust_id = new_cust_res.json()["id"]
+
+        del_cust_res = await client.delete(f"/api/v1/pump/customers/{new_cust_id}?manager_pin=1234")
+        assert del_cust_res.status_code == 200
+
+        # 16. Test Lube Product Deletion Safety Guards
+        # LubeProduct #1 has 20 units in stock, must fail with 400
+        del_stocked_lube = await client.delete("/api/v1/pump/lubes/1?manager_pin=1234")
+        assert del_stocked_lube.status_code == 400
+
+        # Create zero-stock lube product and delete with Manager PIN
+        new_lube_res = await client.post(
+            "/api/v1/pump/lubes",
+            json={
+                "item_code": "EMPTY-LUB-01",
+                "item_name": "EMPTY LUBE CANISTER",
+                "category": "BRAKE FLUID",
+                "pack_size": "250ml",
+                "mrp": 120.0,
+                "cost_price": 80.0,
+                "sale_price": 110.0,
+                "stock_qty": 0,
+            },
+        )
+        assert new_lube_res.status_code == 200
+        new_lube_id = new_lube_res.json()["id"]
+
+        del_empty_lube = await client.delete(f"/api/v1/pump/lubes/{new_lube_id}?manager_pin=1234")
+        assert del_empty_lube.status_code == 200
+
 
 
