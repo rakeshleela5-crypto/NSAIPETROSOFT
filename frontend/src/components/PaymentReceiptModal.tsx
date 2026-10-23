@@ -423,7 +423,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit | F2=Save | F1=New</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             <button
               type="button"
               className="win-btn-classic"

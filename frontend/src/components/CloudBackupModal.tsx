@@ -63,7 +63,7 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px' }}>
               <button
                 className="win-btn-classic win-btn-primary"
-                style={{ height: '36px', fontSize: '12px', fontWeight: 700, background: 'linear-gradient(180deg, #27ae60 0%, #1e8449 100%)', color: '#fff', border: '1px solid #145a32' }}
+                style={{ minHeight: '36px', fontSize: '12px', fontWeight: 700, background: 'linear-gradient(180deg, #27ae60 0%, #1e8449 100%)', color: '#fff', border: '1px solid #145a32' }}
                 onClick={onTriggerBackup}
                 disabled={isBackingUp}
               >
@@ -76,7 +76,7 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
                 rel="noreferrer"
                 className="win-btn-classic"
                 style={{
-                  height: '34px',
+                  minHeight: '36px',
                   fontSize: '11px',
                   fontWeight: 700,
                   background: 'linear-gradient(180deg, #1d6f42 0%, #155724 100%)',
@@ -104,7 +104,7 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
           <div>
             <div style={{ fontWeight: 700, fontSize: '12px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Available Database Archive Snapshots (.json.gz)</span>
-              <button className="win-btn-classic" style={{ fontSize: '10px', height: '18px' }} onClick={onRefreshList}>🔄 Refresh List</button>
+              <button className="win-btn-classic" style={{ fontSize: '11px', minHeight: '24px', padding: '2px 8px' }} onClick={onRefreshList}>🔄 Refresh List</button>
             </div>
             <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '200px', overflowY: 'auto' }}>
               <table className="win-datagrid">

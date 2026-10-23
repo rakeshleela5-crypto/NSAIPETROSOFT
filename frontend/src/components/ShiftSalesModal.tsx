@@ -380,10 +380,19 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                   value={`${salesReadings.reduce((acc, curr) => acc + curr.qty, 0).toFixed(2)} Liters`}
                 />
               </div>
-              <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                <button className="win-btn-classic" onClick={onOpenCreditDialog}>Credit Entry</button>
-                <button className="win-btn-classic" onClick={onOpenExpenseBook}>Expense Book</button>
-                <button className="win-btn-classic" onClick={onOpenDenomDialog}>Cash Settlement</button>
+              <div className="win-actions-row" style={{ marginTop: '6px' }}>
+                <button type="button" className="win-btn-classic" onClick={onOpenCreditDialog}>
+                  <span>💳</span>
+                  <span>Credit Entry</span>
+                </button>
+                <button type="button" className="win-btn-classic" onClick={onOpenExpenseBook}>
+                  <span>📒</span>
+                  <span>Expense Book</span>
+                </button>
+                <button type="button" className="win-btn-classic" onClick={onOpenDenomDialog}>
+                  <span>💵</span>
+                  <span>Cash Settlement</span>
+                </button>
               </div>
             </div>
           </div>
@@ -391,7 +400,7 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
 
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit | F2=Save | F1=New | CTRL+A=Add To List</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="win-actions-row">
             <button
               type="button"
               className="win-btn-classic"
@@ -403,10 +412,14 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
               )}
               title="Export nozzle meter readings to Microsoft Excel or CSV"
             >
-              📥 Export to Excel (CSV)
+              <span>📥</span>
+              <span>Export to Excel (CSV)</span>
             </button>
-            <button className="win-btn-classic win-btn-primary" onClick={onSaveShiftMeters}>Save (F2)</button>
-            <button className="win-btn-classic" onClick={onClose}>Close</button>
+            <button type="button" className="win-btn-classic win-btn-primary" onClick={onSaveShiftMeters}>
+              <span>💾</span>
+              <span>Save (F2)</span>
+            </button>
+            <button type="button" className="win-btn-classic" onClick={onClose}>Close</button>
           </div>
         </div>
       </div>

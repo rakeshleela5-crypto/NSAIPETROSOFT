@@ -77,7 +77,7 @@ export const SelectCustomerBillModal: React.FC<SelectCustomerBillModalProps> = (
             </table>
           </div>
 
-          <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <div className="win-actions-row" style={{ marginTop: '12px' }}>
             <button
               type="button"
               className="win-btn-classic win-btn-primary"
@@ -92,7 +92,8 @@ export const SelectCustomerBillModal: React.FC<SelectCustomerBillModalProps> = (
                 }
               }}
             >
-              📑 Open Statement of Accounts (F2)
+              <span>📑</span>
+              <span>Open Statement of Accounts (F2)</span>
             </button>
             <button type="button" className="win-btn-classic" onClick={onClose}>Close</button>
           </div>

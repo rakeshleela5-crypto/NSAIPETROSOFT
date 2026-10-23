@@ -305,7 +305,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
         <div className="win-dialog-body" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
           {/* Left: Input Form */}
           <div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
+            <div className="win-actions-row" style={{ marginBottom: '10px' }}>
               <button
                 type="button"
                 className={`win-btn-classic ${billMode === 'CASH' ? 'win-btn-primary' : ''}`}
@@ -486,14 +486,15 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
               />
             </div>
 
-            <div style={{ marginTop: '14px', display: 'flex', gap: '8px' }}>
+            <div className="win-actions-row" style={{ marginTop: '14px' }}>
               <button
                 type="button"
                 className="win-btn-classic win-btn-primary"
                 onClick={handleExecuteSaveAndPrint}
-                style={{ flex: 1, height: '34px', fontSize: '13px', fontWeight: 700 }}
+                style={{ flex: 1, fontSize: '13px', fontWeight: 700 }}
               >
-                ⚡ Save & Print 80mm Slip (F2)
+                <span>⚡</span>
+                <span>Save & Print 80mm Slip (F2)</span>
               </button>
             </div>
           </div>

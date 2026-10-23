@@ -154,24 +154,34 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
                   </div>
 
                   {/* Visual Progress Bar */}
-                  <div style={{ marginTop: '8px', height: '18px', background: '#e0e0e0', borderRadius: '3px', overflow: 'hidden', border: '1px solid #ccc' }}>
+                  <div style={{ marginTop: '8px', height: '22px', background: '#e0e0e0', borderRadius: '3px', overflow: 'hidden', border: '1px solid #ccc', position: 'relative' }}>
                     <div
                       style={{
                         height: '100%',
-                        width: `${Math.min(100, Math.max(5, ullage.fillPercent))}%`,
+                        width: `${Math.min(100, Math.max(0, ullage.fillPercent))}%`,
                         background: isMs ? 'linear-gradient(90deg, #ff7675, #d63031)' : 'linear-gradient(90deg, #74b9ff, #0984e3)',
-                        color: '#fff',
-                        fontSize: '10px',
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#000',
+                        fontSize: '11px',
                         fontWeight: 700,
-                        textAlign: 'center',
-                        lineHeight: '18px',
+                        whiteSpace: 'nowrap',
+                        textShadow: '0 0 2px #fff',
+                        pointerEvents: 'none',
                       }}
                     >
                       {ullage.fillPercent}% Fill
-                    </div>
+                    </span>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                  <div className="win-actions-row" style={{ marginTop: '10px' }}>
                     <button
                       type="button"
                       className="win-btn-classic"
@@ -226,7 +236,7 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+                <div className="win-actions-row" style={{ marginTop: '10px' }}>
                   <button type="button" className="win-btn-classic" onClick={() => setIsEditing(false)}>Cancel</button>
                   <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
                     💾 Save Tank Configuration

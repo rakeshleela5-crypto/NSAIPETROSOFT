@@ -77,14 +77,15 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', gap: '6px' }}>
+            <div className="win-actions-row">
               <button
                 type="button"
                 className="win-btn-classic"
                 onClick={handleExport}
                 style={{ background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontWeight: 700 }}
               >
-                📥 Export CSV / Excel
+                <span>📥</span>
+                <span>Export CSV / Excel</span>
               </button>
               <button
                 type="button"
@@ -92,7 +93,8 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
                 onClick={handlePrint}
                 style={{ fontWeight: 700 }}
               >
-                🖨️ Print Price Catalog
+                <span>🖨️</span>
+                <span>Print Price Catalog</span>
               </button>
             </div>
           </div>

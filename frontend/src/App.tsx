@@ -2296,7 +2296,7 @@ export default function App() {
               <div className="stock-panel">
                 <div className="stock-panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Stock Summary</span>
-                  <button className="win-btn-classic" style={{ fontSize: '10px', height: '18px' }} onClick={() => setActiveDialog('viewStock')}>Gauges ▾</button>
+                  <button className="win-btn-classic" style={{ fontSize: '11px', minHeight: '24px', padding: '2px 8px' }} onClick={() => setActiveDialog('viewStock')}>Gauges ▾</button>
                 </div>
                 <table className="stock-table">
                   <thead>
@@ -2313,10 +2313,11 @@ export default function App() {
                           <div className="progress-container">
                             <div
                               className="progress-bar-fill"
-                              style={{ width: `${Math.min(100, Math.max(10, t.percent))}%` }}
-                            >
+                              style={{ width: `${Math.min(100, Math.max(0, t.percent))}%` }}
+                            />
+                            <span className="progress-bar-text">
                               {t.current_stock.toLocaleString('en-IN')} L / {t.percent}%
-                            </div>
+                            </span>
                           </div>
                         </td>
                       </tr>
@@ -2341,7 +2342,7 @@ export default function App() {
                   <button
                     type="button"
                     className="win-btn-classic"
-                    style={{ marginLeft: 'auto', background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontSize: '10px', height: '20px', padding: '0 6px', fontWeight: 700 }}
+                    style={{ marginLeft: 'auto', background: '#e8f5e9', color: '#1b5e20', borderColor: '#81c784', fontSize: '11px', minHeight: '24px', padding: '2px 8px', fontWeight: 700 }}
                     onClick={() => exportToCsv(
                       `NSAIPETROSOFT_CustomerOutstanding_${new Date().toISOString().split('T')[0]}`,
                       ['Customer Code', 'Customer Name', 'City', 'Mobile', 'Credit Limit (INR)', 'Outstanding (INR)', 'Status'],
@@ -2382,7 +2383,7 @@ export default function App() {
                             <button
                               type="button"
                               className="win-btn-classic"
-                              style={{ height: '17px', padding: '0 3px', fontSize: '10px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                              style={{ minHeight: '22px', padding: '2px 6px', fontSize: '10.5px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
                               title={`Send instant WhatsApp balance reminder to ${c.name} (${c.mobile || 'No mobile'})`}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2999,8 +3000,8 @@ export default function App() {
                     type="button"
                     className="win-btn-classic"
                     style={{
-                      height: '26px',
-                      padding: '0 10px',
+                      minHeight: '30px',
+                      padding: '4px 10px',
                       fontSize: '11px',
                       fontWeight: mobileMenuTab === tab ? 700 : 500,
                       background: mobileMenuTab === tab ? '#0055ea' : undefined,
@@ -3052,7 +3053,7 @@ export default function App() {
               <button
                 type="button"
                 className="win-btn-classic"
-                style={{ height: '24px', padding: '0 14px', fontWeight: 600 }}
+                style={{ minHeight: '32px', padding: '4px 14px', fontWeight: 600 }}
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Close

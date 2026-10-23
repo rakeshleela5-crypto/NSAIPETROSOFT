@@ -39,7 +39,7 @@ export const HelpDeskModal: React.FC<HelpDeskModalProps> = ({ isOpen, onClose })
 
         <div className="win-dialog-body" style={{ lineHeight: '1.6' }}>
           {/* Tabs */}
-          <div style={{ display: 'flex', borderBottom: '2px solid #506f8c', marginBottom: '12px', background: '#e0dfdb', padding: '4px 8px 0 8px', gap: '4px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '2px solid #506f8c', marginBottom: '12px', background: '#e0dfdb', padding: '4px 8px 0 8px', gap: '4px' }}>
             <button
               type="button"
               style={{

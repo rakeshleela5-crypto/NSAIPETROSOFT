@@ -814,7 +814,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
 
               <div className="win-dialog-footer">
                 <span className="hotkeys-hint-red">Manager Authorization Required</span>
-                <div style={{ display: 'flex', gap: '6px' }}>
+                <div className="win-actions-row">
                   <button
                     type="submit"
                     className="win-btn-classic win-btn-primary"

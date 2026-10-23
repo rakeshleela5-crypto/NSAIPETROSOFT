@@ -117,8 +117,8 @@ export const SalesRegisterModal: React.FC<SalesRegisterModalProps> = ({
         </div>
 
         <div className="win-dialog-body">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+            <div className="win-actions-row">
               {(['ALL', 'CREDIT', 'DIGITAL', 'CASH'] as const).map((t) => (
                 <button
                   key={t}

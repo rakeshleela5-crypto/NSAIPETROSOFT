@@ -255,7 +255,7 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 bg-slate-950/50 px-6">
+        <div className="flex flex-wrap gap-1 border-b border-slate-800 bg-slate-950/50 px-4">
           <button
             onClick={() => setActiveTab('upi_qr')}
             className={`border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${

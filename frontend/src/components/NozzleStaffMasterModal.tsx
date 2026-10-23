@@ -266,12 +266,13 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                       <span className="win-label" style={{ width: '90px' }}>Active Rate ₹</span>
                       <input type="number" step="0.01" className="win-input" value={nozRate} onChange={(e) => setNozRate(parseFloat(e.target.value) || 0)} style={{ flex: 1, fontWeight: 700 }} />
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
+                    <div className="win-actions-row" style={{ marginTop: '12px' }}>
                       {editingNozzleId && (
                         <button type="button" className="win-btn-classic" onClick={() => { setEditingNozzleId(null); setNozName(''); }}>Cancel</button>
                       )}
                       <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
-                        💾 Save Nozzle
+                        <span>💾</span>
+                        <span>Save Nozzle</span>
                       </button>
                     </div>
                   </form>
@@ -325,9 +326,10 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                     <span className="win-label" style={{ width: '90px' }}>Mobile No</span>
                     <input type="text" className="win-input" placeholder="9879012345" value={staffMobile} onChange={(e) => setStaffMobile(e.target.value)} style={{ flex: 1 }} />
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                  <div className="win-actions-row" style={{ marginTop: '12px' }}>
                     <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
-                      💾 Register Staff Attendant
+                      <span>💾</span>
+                      <span>Register Staff Attendant</span>
                     </button>
                   </div>
                 </form>
@@ -433,9 +435,10 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                     <span className="win-label" style={{ width: '90px' }}>Reorder Level</span>
                     <input type="number" className="win-input" value={lubeReorder} onChange={(e) => setLubeReorder(parseInt(e.target.value, 10) || 0)} style={{ flex: 1 }} />
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                  <div className="win-actions-row" style={{ marginTop: '12px' }}>
                     <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
-                      💾 Save Product
+                      <span>💾</span>
+                      <span>Save Product</span>
                     </button>
                   </div>
                 </form>

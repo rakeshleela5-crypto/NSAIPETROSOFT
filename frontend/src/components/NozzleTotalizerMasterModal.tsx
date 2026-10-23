@@ -203,7 +203,7 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
 
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit | Totalizer Integrity Enforced</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="win-actions-row">
             <button className="win-btn-classic win-btn-primary" onClick={onOpenSalesDialog}>
               Go to Shift Sales Entry
             </button>
@@ -311,7 +311,7 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
 
               <div className="win-dialog-footer">
                 <span className="hotkeys-hint-red">PIN Protected</span>
-                <div style={{ display: 'flex', gap: '6px' }}>
+                <div className="win-actions-row">
                   <button
                     type="submit"
                     className="win-btn-classic win-btn-primary"

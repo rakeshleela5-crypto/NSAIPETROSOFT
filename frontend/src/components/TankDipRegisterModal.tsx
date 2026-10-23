@@ -263,14 +263,17 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-              <button type="submit" className="win-btn-classic win-btn-primary">Record Dip (F2)</button>
+            <div className="win-actions-row" style={{ marginTop: '10px' }}>
+              <button type="submit" className="win-btn-classic win-btn-primary">
+                <span>💾</span>
+                <span>Record Dip (F2)</span>
+              </button>
             </div>
           </form>
         </div>
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit | F2=Save</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="win-actions-row">
             <button
               type="button"
               className="win-btn-classic"

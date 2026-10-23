@@ -142,7 +142,7 @@ export const CardEntryModal: React.FC<CardEntryModalProps> = ({
         </div>
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="win-actions-row">
             <button
               type="button"
               className="win-btn-classic"

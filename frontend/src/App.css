@@ -154,8 +154,9 @@ body {
 .win-toolbar-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 2px 7px;
+  padding: 4px 8px;
   font-size: 11px;
   font-weight: 600;
   color: #111;
@@ -165,6 +166,9 @@ body {
   cursor: pointer;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
   transition: all 0.1s ease-in-out;
+  height: auto;
+  min-height: 26px;
+  box-sizing: border-box;
 }
 
 .win-toolbar-btn:hover {
@@ -262,7 +266,8 @@ body {
 }
 
 .gel-btn {
-  height: 52px;
+  height: auto;
+  min-height: 52px;
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -279,7 +284,9 @@ body {
               0 3px 5px rgba(0, 0, 0, 0.35);
   transition: transform 0.05s ease, filter 0.1s ease;
   line-height: 1.2;
-  padding: 4px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  word-break: break-word;
 }
 
 .gel-btn:hover {
@@ -545,21 +552,42 @@ body {
 .progress-container {
   width: 100%;
   height: 28px;
-  background-color: #ffffff;
+  background-color: #f1f5f9;
   border: 1px solid #2e7d32;
   position: relative;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  background: linear-gradient(180deg, #4caf50 0%, #2e7d32 100%);
+  overflow: hidden;
+  border-radius: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
-  font-size: 15px;
+}
+
+.progress-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  height: 100%;
+  background: linear-gradient(180deg, #4caf50 0%, #2e7d32 100%);
+  transition: width 0.3s ease;
+  z-index: 1;
+}
+
+.progress-bar-text,
+.progress-container .progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #111827;
+  font-size: 12.5px;
   font-weight: 700;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  text-shadow: 0 0 3px #ffffff, 0 0 2px #ffffff;
+  z-index: 2;
+  pointer-events: none;
+  padding: 0 4px;
 }
 
 /* -------------------------------------------------------------
@@ -680,10 +708,21 @@ body {
 .win-dialog-footer {
   background: #ece9d8;
   border-top: 1px solid #999;
-  padding: 6px 12px;
+  padding: 8px 12px;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
+}
+
+.win-dialog-footer > div,
+.win-actions-row,
+.win-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
 }
 
 .hotkeys-hint-red {
@@ -750,15 +789,35 @@ textarea:focus {
   outline: none;
 }
 
+/* -------------------------------------------------------------
+ * Universal Button System (Audit & Responsive Sizing)
+ * ------------------------------------------------------------- */
+button:not(.win-btn):not(.win-menu-item):not(.win-dropdown-item):not(.calc-btn):not(.crystal-tool-btn):not(.win-toolbar-btn),
+.win-btn-classic,
+.win-btn-primary,
+.win-btn-green,
+.btn {
+  height: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  cursor: pointer;
+}
+
 .win-btn-classic {
-  height: 24px;
-  padding: 0 12px;
   background: linear-gradient(180deg, #ffffff 0%, #ece9d8 100%);
   border: 1px solid #7f9db9;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
-  cursor: pointer;
-  border-radius: 2px;
+  border-radius: 3px;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
 }
 
@@ -775,6 +834,17 @@ textarea:focus {
 
 .win-btn-primary:hover {
   background: #2980b9;
+}
+
+/* Compact Table Action Buttons */
+.win-datagrid td button,
+table td button,
+.table td button {
+  min-height: 24px !important;
+  height: auto !important;
+  padding: 2px 6px !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
 }
 
 /* -------------------------------------------------------------
@@ -1239,12 +1309,14 @@ textarea:focus {
 }
 
 .crystal-toolbar {
-  height: 30px;
+  height: auto;
+  min-height: 32px;
   background: #ece9d8;
   border-bottom: 1px solid #999;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 0 8px;
+  padding: 4px 8px;
   gap: 6px;
   font-size: 11px;
   user-select: none;
@@ -1253,14 +1325,18 @@ textarea:focus {
 .crystal-tool-btn {
   background: transparent;
   border: 1px solid transparent;
-  padding: 2px 5px;
+  padding: 4px 8px;
   border-radius: 2px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  gap: 4px;
+  font-size: 11.5px;
   color: #333;
+  height: auto;
+  min-height: 28px;
+  box-sizing: border-box;
 }
 
 .crystal-tool-btn:hover {
@@ -1657,11 +1733,14 @@ textarea:focus {
     width: 95px !important;
     min-width: 95px !important;
     max-width: 110px !important;
-    height: 44px !important;
+    height: auto !important;
+    min-height: 44px !important;
     font-size: 11px !important;
-    padding: 2px 4px !important;
+    padding: 3px 5px !important;
     flex-shrink: 0 !important;
     line-height: 1.15 !important;
+    box-sizing: border-box !important;
+    word-break: break-word !important;
   }
 
   /* Main Dashboard Content Area */
@@ -1772,12 +1851,13 @@ textarea:focus {
   }
 
   .progress-container {
-    height: 18px !important;
+    height: 22px !important;
   }
 
-  .progress-bar-fill {
-    font-size: 10px !important;
-    padding-left: 4px !important;
+  .progress-bar-text,
+  .progress-container .progress-label {
+    font-size: 10.5px !important;
+    white-space: nowrap !important;
   }
 
   /* Customer Search & Outstanding Table */
@@ -1883,28 +1963,57 @@ textarea:focus {
     gap: 10px !important;
   }
 
-  .payment-receipt-actions {
-    display: grid !important;
-    grid-template-columns: repeat(2, 1fr) !important;
+  /* Universal Mobile Action Rows, Button Groups & Dialog Footers */
+  .win-dialog-footer {
+    flex-direction: column !important;
+    align-items: stretch !important;
     gap: 8px !important;
-    width: 100% !important;
+    padding: 8px !important;
   }
 
+  .win-dialog-footer .hotkeys-hint-red {
+    text-align: center !important;
+    margin-bottom: 4px !important;
+    font-size: 11px !important;
+  }
+
+  .win-actions-row,
+  .win-button-group,
+  .win-dialog-footer > div,
+  .payment-receipt-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    width: 100% !important;
+    align-items: stretch !important;
+  }
+
+  .win-actions-row > button,
+  .win-actions-row > .win-btn-classic,
+  .win-button-group > button,
+  .win-button-group > .win-btn-classic,
+  .win-dialog-footer > div > button,
+  .win-dialog-footer > div > .win-btn-classic,
   .payment-receipt-actions .win-btn-classic,
   .payment-receipt-btn {
+    flex: 1 1 calc(50% - 8px) !important;
+    min-width: 120px !important;
+    width: auto !important;
     height: auto !important;
     min-height: 36px !important;
-    padding: 8px 12px !important;
+    padding: 8px 10px !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     gap: 6px !important;
-    line-height: 1.2 !important;
+    line-height: 1.25 !important;
     text-align: center !important;
     width: 100% !important;
     box-sizing: border-box !important;
+    font-size: 11.5px !important;
   }
 }
+
 
 
 

@@ -166,15 +166,16 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
             </table>
           </div>
 
-          <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <div className="win-actions-row" style={{ marginTop: '14px' }}>
             <button type="button" className="win-btn-classic" onClick={onClose}>Discard</button>
             <button
               type="button"
               className="win-btn-classic win-btn-primary"
               onClick={handleCommitAll}
-              style={{ fontWeight: 700, padding: '6px 16px' }}
+              style={{ fontWeight: 700 }}
             >
-              💾 Commit All Changes
+              <span>💾</span>
+              <span>Commit All Changes</span>
             </button>
           </div>
         </div>

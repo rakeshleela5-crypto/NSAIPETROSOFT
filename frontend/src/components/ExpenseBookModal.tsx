@@ -147,11 +147,15 @@ export const ExpenseBookModal: React.FC<ExpenseBookModalProps> = ({
                 onChange={(e) => setExpNarration(e.target.value)}
               />
             </div>
-            <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-              <button type="submit" className="win-btn-classic win-btn-primary" style={{ flex: 1 }}>
-                Record Expense (F2)
+            <div className="win-actions-row" style={{ marginTop: '8px' }}>
+              <button type="submit" className="win-btn-classic win-btn-primary">
+                <span>💾</span>
+                <span>Record Expense (F2)</span>
               </button>
-              <button type="button" className="win-btn-classic" onClick={handlePrintExpenseVoucher}>🖨️ Print Voucher</button>
+              <button type="button" className="win-btn-classic" onClick={handlePrintExpenseVoucher}>
+                <span>🖨️</span>
+                <span>Print Voucher</span>
+              </button>
             </div>
           </form>
 
@@ -190,7 +194,7 @@ export const ExpenseBookModal: React.FC<ExpenseBookModalProps> = ({
         </div>
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit | F2=Save</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="win-actions-row">
             <button
               type="button"
               className="win-btn-classic"

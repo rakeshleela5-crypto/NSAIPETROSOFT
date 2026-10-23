@@ -410,10 +410,11 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                   </div>
                 </div>
 
-                <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <div className="win-actions-row" style={{ marginTop: '12px' }}>
                   <button type="button" className="win-btn-classic" onClick={() => setIsEditing(false)}>Cancel</button>
                   <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
-                    💾 Save Customer
+                    <span>💾</span>
+                    <span>Save Customer</span>
                   </button>
                 </div>
               </form>

@@ -78,7 +78,7 @@ export const BuildMisModal: React.FC<BuildMisModalProps> = ({
 
         <div className="win-dialog-body">
           {/* Header Action Bar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
             <span style={{ fontSize: '12px', fontWeight: 600 }}>
               Performance Intelligence Snapshot as of {getTodayErpDate()}
             </span>

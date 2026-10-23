@@ -314,10 +314,11 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
                   />
                 </div>
 
-                <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <div className="win-actions-row" style={{ marginTop: '12px' }}>
                   <button type="button" className="win-btn-classic" onClick={() => setIsCreating(false)}>Cancel</button>
                   <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
-                    💾 Save Quotation
+                    <span>💾</span>
+                    <span>Save Quotation</span>
                   </button>
                 </div>
               </form>

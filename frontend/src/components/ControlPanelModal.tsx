@@ -788,7 +788,7 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
+                <div className="win-actions-row" style={{ marginBottom: '14px' }}>
                   <button
                     type="button"
                     className="win-btn-classic"
@@ -885,7 +885,7 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                   <div style={{ fontWeight: 700, color: '#2e7d32', marginBottom: '6px', fontSize: '12px' }}>
                     📊 Multi-Format Export Utilities (Excel / CSV / BI-Ready JSON)
                   </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
+                  <div className="win-actions-row">
                     <button
                       type="button"
                       className="win-btn-classic"

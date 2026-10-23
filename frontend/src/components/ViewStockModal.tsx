@@ -166,6 +166,8 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
             }}
           >
             <div>

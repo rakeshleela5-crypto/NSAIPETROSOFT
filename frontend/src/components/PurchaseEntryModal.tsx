@@ -635,9 +635,9 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '8px' }}>
               <span style={{ fontSize: '11px', color: '#666' }}>Sample Hydrometer Density verified: {purSampleDensity} kg/m³</span>
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div className="win-actions-row">
                 <button
                   type="button"
                   className="win-btn-classic"
@@ -649,10 +649,17 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                   )}
                   title="Export tanker decanting purchases to Microsoft Excel or CSV"
                 >
-                  📥 Export to Excel (CSV)
+                  <span>📥</span>
+                  <span>Export to Excel (CSV)</span>
                 </button>
-                <button type="submit" className="win-btn-classic win-btn-primary">Save (F2)</button>
-                <button type="button" className="win-btn-classic" onClick={() => { setPurQtyKl(4.0); setPurInvoiceNo('3215' + Math.floor(100 + Math.random() * 900)); showToast('New Purchase Slip ready'); }}>Reset (F1)</button>
+                <button type="submit" className="win-btn-classic win-btn-primary">
+                  <span>💾</span>
+                  <span>Save (F2)</span>
+                </button>
+                <button type="button" className="win-btn-classic" onClick={() => { setPurQtyKl(4.0); setPurInvoiceNo('3215' + Math.floor(100 + Math.random() * 900)); showToast('New Purchase Slip ready'); }}>
+                  <span>🔄</span>
+                  <span>Reset (F1)</span>
+                </button>
                 <button type="button" className="win-btn-classic" onClick={onClose}>Close</button>
               </div>
             </div>

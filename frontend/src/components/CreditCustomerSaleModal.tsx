@@ -495,8 +495,11 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
-                <button type="submit" className="win-btn-classic win-btn-primary" style={{ flex: 1 }}>Save (F2)</button>
+              <div className="win-actions-row" style={{ marginTop: '10px' }}>
+                <button type="submit" className="win-btn-classic win-btn-primary">
+                  <span>💾</span>
+                  <span>Save (F2)</span>
+                </button>
                 <button
                   type="button"
                   className="win-btn-classic"
@@ -504,7 +507,8 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                   title="Save immediately without prompting print confirmation dialog (for high-speed fleet batch entry)"
                   onClick={() => onExecuteCreditSaleSave(false)}
                 >
-                  ⚡ Quick Save (No Prompt)
+                  <span>⚡</span>
+                  <span>Quick Save</span>
                 </button>
                 <button
                   type="button"
@@ -515,9 +519,13 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
                     showToast('New Credit Slip initiated');
                   }}
                 >
-                  New Entry
+                  <span>📄</span>
+                  <span>New Entry</span>
                 </button>
-                <button type="button" className="win-btn-classic" onClick={handlePrintSlip}>🖨️ Print Slip</button>
+                <button type="button" className="win-btn-classic" onClick={handlePrintSlip}>
+                  <span>🖨️</span>
+                  <span>Print Slip</span>
+                </button>
               </div>
 
               {/* Dedicated 80mm Thermal Receipt for Credit Fuel Dispense */}
@@ -646,7 +654,7 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
 
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit | F2=Save | F1=New</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="win-actions-row">
             <button
               type="button"
               className="win-btn-classic"

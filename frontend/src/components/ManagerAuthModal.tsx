@@ -103,14 +103,15 @@ export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #d4d0c8', paddingTop: '10px' }}>
+          <div className="win-actions-row" style={{ borderTop: '1px solid #d4d0c8', paddingTop: '10px' }}>
             <button
               type="submit"
               className="win-btn-classic win-btn-primary"
-              style={{ minWidth: '95px', fontWeight: 700 }}
+              style={{ fontWeight: 700 }}
               disabled={isVerifying}
             >
-              {isVerifying ? 'Verifying...' : 'Authorize (F2)'}
+              <span>🔑</span>
+              <span>{isVerifying ? 'Verifying...' : 'Authorize (F2)'}</span>
             </button>
             <button
               type="button"

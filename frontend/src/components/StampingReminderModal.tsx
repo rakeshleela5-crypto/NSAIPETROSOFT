@@ -70,7 +70,7 @@ export const StampingReminderModal: React.FC<StampingReminderModalProps> = ({
         </div>
         <div className="win-dialog-footer">
           <span className="hotkeys-hint-red">ESC=Exit</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             <button
               type="button"
               className="win-btn-classic"

@@ -288,11 +288,11 @@ export const ReportCriteriaModal: React.FC<ReportCriteriaModalProps> = ({
               </div>
             </div>
 
-            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 type="button"
                 className="win-btn-classic win-btn-primary"
-                style={{ height: '28px', fontSize: '12px', fontWeight: 700 }}
+                style={{ minHeight: '36px', fontSize: '12px', fontWeight: 700 }}
                 onClick={() => openCrystalReport(reportCriteriaRadio)}
               >
                 📊 Open Report (Crystal Viewer)
@@ -300,7 +300,7 @@ export const ReportCriteriaModal: React.FC<ReportCriteriaModalProps> = ({
               <button
                 type="button"
                 className="win-btn-classic"
-                style={{ height: '26px', fontSize: '11px' }}
+                style={{ minHeight: '36px', fontSize: '11px' }}
                 onClick={() => showToast(`✔ Email sent to dealer management for ${reportCriteriaRadio}!`)}
               >
                 ✉️ Send Email to Head Office

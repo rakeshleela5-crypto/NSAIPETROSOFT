@@ -232,10 +232,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
               </div>
             </div>
 
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <div className="win-actions-row" style={{ marginTop: '16px' }}>
               <button type="button" className="win-btn-classic" onClick={onClose}>Cancel</button>
               <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
-                💾 Save Product to Master
+                <span>💾</span>
+                <span>Save Product to Master</span>
               </button>
             </div>
           </form>
