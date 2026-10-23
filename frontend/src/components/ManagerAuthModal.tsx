@@ -4,7 +4,7 @@ import { verifyManagerPinApi } from '../api/client';
 export interface ManagerPinModalState {
   isOpen: boolean;
   actionTitle: string;
-  onAuthorized: () => void;
+  onAuthorized: (pin?: string) => void;
 }
 
 interface ManagerAuthModalProps {
@@ -37,11 +37,12 @@ export const ManagerAuthModal: React.FC<ManagerAuthModalProps> = ({
       // Primary: Verify cryptographically against PostgreSQL backend
       await verifyManagerPinApi(managerPinInput.trim(), modalState.actionTitle);
       const cb = modalState.onAuthorized;
+      const enteredPin = managerPinInput.trim();
       setManagerPinInput('');
       setManagerPinError('');
       setIsVerifying(false);
       onClose();
-      cb();
+      cb(enteredPin);
     } catch (err: any) {
       setIsVerifying(false);
       setManagerPinError(err.message || 'Access Denied: Incorrect Manager PIN.');

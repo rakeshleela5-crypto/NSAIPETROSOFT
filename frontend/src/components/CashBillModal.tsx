@@ -194,6 +194,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
             slip_count: 1,
             amount: totalAmount,
           });
+          erpStore.recordDigitalSale(totalAmount, cashMemoProduct, cashMemoLiters);
           try {
             await createCardSettlement({
               machine_name: 'PHONEPE / PAYTM QR',

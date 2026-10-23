@@ -242,6 +242,8 @@ export interface NozzleMeterItem {
 }
 
 export interface ShiftDetailsResponse {
+  id?: number;
+  shift_id?: number;
   so_number: string;
   date: string;
   shift_name: string;
@@ -384,6 +386,8 @@ export async function createCustomer(data: {
   gst_no?: string;
   pan_no?: string;
   credit_limit?: number;
+  current_outstanding?: number;
+  opening_balance?: number;
   bill_period?: string;
 }): Promise<any> {
   const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers`, {
@@ -416,6 +420,8 @@ export async function updateCustomer(
     gst_no?: string;
     pan_no?: string;
     credit_limit?: number;
+    current_outstanding?: number;
+    opening_balance?: number;
     bill_period?: string;
   }
 ): Promise<any> {
@@ -1176,6 +1182,264 @@ export async function fetchStampingRegisterApi(): Promise<any[]> {
 export async function fetchDensityRegisterApi(): Promise<any> {
   const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reports/density-register`);
   if (!res.ok) throw new Error(`Fetch density register failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Tanks CRUD APIs
+// ---------------------------------------------------------------------------
+export interface TankCrudItem {
+  id: number;
+  name: string;
+  tank_name: string;
+  product_id: number;
+  product: string;
+  product_name: string;
+  code: string;
+  product_code: string;
+  capacity: number;
+  capacity_liters: number;
+  current_stock: number;
+  current_dip_cm: number;
+  min_alert_level: number;
+  percent: number;
+  is_low: boolean;
+  connected_nozzles: string[];
+}
+
+export async function fetchTanksApi(): Promise<TankCrudItem[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks`);
+  if (!res.ok) throw new Error(`Fetch tanks failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTankApi(data: {
+  tank_name: string;
+  product_id?: number;
+  product_code?: string;
+  capacity_liters?: number;
+  current_stock?: number;
+  current_dip_cm?: number;
+  min_alert_level?: number;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Create tank failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateTankApi(
+  tankId: number,
+  data: {
+    tank_name?: string;
+    product_id?: number;
+    product_code?: string;
+    capacity_liters?: number;
+    current_stock?: number;
+    current_dip_cm?: number;
+    min_alert_level?: number;
+  }
+): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Update tank failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteTankApi(tankId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/tanks/${tankId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete tank failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Nozzles CRUD APIs
+// ---------------------------------------------------------------------------
+export interface NozzleCrudItem {
+  id: number;
+  name: string;
+  nozzle_name: string;
+  machine_name: string;
+  tank_id: number;
+  tank_name: string;
+  product_id: number;
+  product_name: string;
+  product_code: string;
+  current_meter: number;
+  rate: number;
+  vat_percent: number;
+  active: boolean;
+}
+
+export async function fetchNozzlesApi(): Promise<NozzleCrudItem[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles`);
+  if (!res.ok) throw new Error(`Fetch nozzles failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createNozzleApi(data: {
+  nozzle_name: string;
+  machine_name?: string;
+  tank_id: number;
+  product_id?: number;
+  product_code?: string;
+  current_meter?: number;
+  active?: boolean;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Create nozzle failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateNozzleApi(
+  nozzleId: number,
+  data: {
+    nozzle_name?: string;
+    machine_name?: string;
+    tank_id?: number;
+    product_id?: number;
+    product_code?: string;
+    current_meter?: number;
+    active?: boolean;
+  }
+): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Update nozzle failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteNozzleApi(nozzleId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/nozzles/${nozzleId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete nozzle failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Employees / Attendants CRUD APIs
+// ---------------------------------------------------------------------------
+export interface EmployeeCrudItem {
+  id: number;
+  code: string;
+  name: string;
+  phone?: string;
+  mobile?: string;
+  role: string;
+  active: boolean;
+  shortage_balance: number;
+}
+
+export async function fetchEmployeesApi(): Promise<EmployeeCrudItem[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees`);
+  if (!res.ok) throw new Error(`Fetch employees failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createEmployeeApi(data: {
+  name: string;
+  code?: string;
+  phone?: string;
+  mobile?: string;
+  role?: string;
+  active?: boolean;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Create employee failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateEmployeeApi(
+  employeeId: number,
+  data: {
+    name?: string;
+    code?: string;
+    phone?: string;
+    mobile?: string;
+    role?: string;
+    active?: boolean;
+  }
+): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/${employeeId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Update employee failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteEmployeeApi(employeeId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/${employeeId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete employee failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Finalize & Close Shift API (PostgreSQL Immutability Enforcement)
+// ---------------------------------------------------------------------------
+export async function closeShiftApi(
+  shiftId: number,
+  managerPin?: string
+): Promise<{ status: string; message: string; shift_id: number; shift_status: string }> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/shifts/${shiftId}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ manager_pin: managerPin || '1234' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Close shift failed: ${res.status}`);
+  }
   return res.json();
 }
 

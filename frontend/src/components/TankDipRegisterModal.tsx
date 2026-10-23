@@ -107,12 +107,6 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
   const isAbnormalShrinkage = varianceResult.status === 'CRITICAL_LOSS' || (varianceResult.diffLitres < -100);
 
   const handleFormSubmit = (e: React.FormEvent) => {
-    // Record into erpStore immediately
-    erpStore.recordDipReading({
-      tank_id: dipTankId,
-      dip_cm: dipCloseCm > 0 ? dipCloseCm : dipOpenCm,
-      physical_litres: dipCloseStock > 0 ? dipCloseStock : dipOpenStock,
-    });
     onSaveDip(e);
   };
 

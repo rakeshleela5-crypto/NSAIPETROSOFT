@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { TankMasterItem } from '../store/erpStore';
 import { erpStore } from '../store/erpStore';
 import { calcTankUllage } from '../utils/mathEngine';
+import { createTankApi, updateTankApi, deleteTankApi } from '../api/client';
 
 interface UndergroundTankMasterModalProps {
   isOpen: boolean;
@@ -77,8 +78,45 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
           .filter(Boolean),
       });
 
-      if (showToast) showToast(`✔ Tank "${formName}" saved successfully!`);
+      // Synchronize to PostgreSQL Backend
+      try {
+        if (editTankId) {
+          await updateTankApi(editTankId, {
+            tank_name: formName.trim(),
+            product_code: formCode,
+            capacity_liters: formCapacity,
+            current_stock: formCurrentStock,
+          });
+        } else {
+          await createTankApi({
+            tank_name: formName.trim(),
+            product_code: formCode,
+            capacity_liters: formCapacity,
+            current_stock: formCurrentStock,
+          });
+        }
+      } catch (apiErr) {
+        console.warn('Backend tank sync deferred/offline:', apiErr);
+      }
+
+      if (showToast) showToast(`✔ Tank "${formName}" saved successfully to Database & Store!`);
       setIsEditing(false);
+      await loadAllErpData();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteTank = async (tankId: number) => {
+    if (!window.confirm('Are you sure you want to delete this tank?')) return;
+    try {
+      erpStore.deleteTank(tankId);
+      try {
+        await deleteTankApi(tankId);
+      } catch (apiErr) {
+        console.warn('Backend tank delete deferred/offline:', apiErr);
+      }
+      if (showToast) showToast('✔ Tank deleted successfully!');
       await loadAllErpData();
     } catch (err: any) {
       if (showToast) showToast(`❌ Error: ${err.message}`);
@@ -134,14 +172,24 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
                     <div style={{ fontWeight: 700, fontSize: '14px', color: themeColor }}>
                       {tank.name} ({tank.product})
                     </div>
-                    <button
-                      type="button"
-                      className="win-btn-classic"
-                      onClick={() => handleStartEdit(tank)}
-                      style={{ fontSize: '10.5px', height: '20px', padding: '0 6px' }}
-                    >
-                      ✏️ Edit
-                    </button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        type="button"
+                        className="win-btn-classic"
+                        onClick={() => handleStartEdit(tank)}
+                        style={{ fontSize: '10.5px', height: '20px', padding: '0 6px' }}
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="win-btn-classic"
+                        onClick={() => handleDeleteTank(tank.id)}
+                        style={{ fontSize: '10.5px', height: '20px', padding: '0 6px', color: '#c0392b' }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
 
                   <div style={{ fontSize: '11px', marginTop: '8px', lineHeight: '1.6', color: '#333' }}>

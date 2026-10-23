@@ -313,7 +313,7 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
             {/* ============================================================== */}
             {/* 1. DSR REPORT (Daily Sales Register) */}
             {/* ============================================================== */}
-            {(repKey.includes('DSR') || repKey === 'DAILY SALES REGISTER') && (
+            {(repKey.includes('DSR') || repKey === 'DAILY SALES REGISTER' || repKey.includes('NOZZLE') || repKey.includes('SHIFT WISE') || repKey.includes('TANK STOCK') || repKey.includes('METER')) && (
               <div>
                 <div className="crystal-table-subhead">1. Forecourt Dispenser Meter Totalizers & Sales Register</div>
                 <table className="crystal-table">
@@ -825,7 +825,7 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
             {/* ============================================================== */}
             {/* 9. SHIFT CASHIER TALLY (DAY BOOK) */}
             {/* ============================================================== */}
-            {(repKey.includes('DAY BOOK') || repKey.includes('CASHIER TALLY')) && (
+            {(repKey.includes('DAY BOOK') || repKey.includes('CASHIER TALLY') || repKey.includes('CASH BOOK') || repKey.includes('BANK BOOK') || repKey.includes('EXPENSE')) && (
               <div>
                 <div className="crystal-table-subhead">Shift Cashier Day Book & Reconciliation Tally</div>
                 <table className="crystal-table">
@@ -971,7 +971,7 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
             {/* ============================================================== */}
             {/* 12. TD REPORT (Tank Decantation & Turnover Discounts) */}
             {/* ============================================================== */}
-            {(repKey.includes('TD REPORT') || repKey.includes('DECANTATION') || repKey === 'TD REPORT') && (
+            {(repKey.includes('TD REPORT') || repKey.includes('DECANTATION') || repKey.includes('PURCHASE')) && (
               <div>
                 <div className="crystal-table-subhead">TD Report: Tank Decantation Inward Receipts & Turnover Discounts</div>
                 <table className="crystal-table">
@@ -1013,6 +1013,123 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
                       <td>-</td>
                       <td className="text-right" style={{ color: '#0a246a' }}>
                         ₹ {state.purchases.reduce((s, p) => s + (p.final_amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Universal Fallback Statutory Register for any other MIS & Audit Reports */}
+            {(!repKey.includes('DSR') &&
+              repKey !== 'DAILY SALES REGISTER' &&
+              !repKey.includes('NOZZLE') &&
+              !repKey.includes('SHIFT WISE') &&
+              !repKey.includes('TANK STOCK') &&
+              !repKey.includes('METER') &&
+              !repKey.includes('VAT') &&
+              repKey !== 'STATE VAT RETURN SUMMARY' &&
+              !repKey.includes('DEALER PROFIT') &&
+              repKey !== 'PROFIT SUMMARY' &&
+              !repKey.includes('COMMISSION') &&
+              !repKey.includes('LFR') &&
+              !repKey.includes('TDS') &&
+              !repKey.includes('PROFIT LOSS') &&
+              repKey !== 'PROFIT & LOSS' &&
+              !repKey.includes('ACCOUNT') &&
+              !repKey.includes('STATEMENT') &&
+              !repKey.includes('CUSTOMER') &&
+              !repKey.includes('DAY BOOK') &&
+              !repKey.includes('CASHIER TALLY') &&
+              !repKey.includes('CASH BOOK') &&
+              !repKey.includes('BANK BOOK') &&
+              !repKey.includes('EXPENSE') &&
+              !repKey.includes('D-SALE') &&
+              repKey !== 'D-SALE REPORT' &&
+              !repKey.includes('AGING') &&
+              repKey !== 'ITEM AGING' &&
+              !repKey.includes('TD REPORT') &&
+              !repKey.includes('DECANTATION') &&
+              !repKey.includes('PURCHASE')) && (
+              <div>
+                <div className="crystal-table-subhead">
+                  {activeReportTitle} — Statutory Ledger & Audit Register
+                </div>
+                <table className="crystal-table">
+                  <thead>
+                    <tr>
+                      <th>Ref Date</th>
+                      <th>Reference No</th>
+                      <th>Account / Particulars</th>
+                      <th>Category / Head</th>
+                      <th className="text-right">Quantity (L/U)</th>
+                      <th className="text-right">Debit (₹)</th>
+                      <th className="text-right">Credit (₹)</th>
+                      <th className="text-right">Balance (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.creditBills.slice(0, 15).map((cb, idx) => (
+                      <tr key={`cb-${idx}`}>
+                        <td>{cb.date}</td>
+                        <td style={{ fontWeight: 700 }}>{cb.bill_no || cb.slip_no}</td>
+                        <td>{cb.customer_name} ({cb.vehicle_no || 'Fleet'})</td>
+                        <td>{cb.product_name || 'Fuel Sale'}</td>
+                        <td className="text-right">{Number(cb.qty || 0).toFixed(2)}</td>
+                        <td className="text-right">-</td>
+                        <td className="text-right" style={{ color: '#c0392b', fontWeight: 600 }}>
+                          ₹ {Number(cb.amount || cb.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-right">
+                          ₹ {Number(cb.amount || cb.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                    {state.expenses.slice(0, 10).map((exp, idx) => (
+                      <tr key={`exp-${idx}`}>
+                        <td>{toDate || getTodayIsoDate()}</td>
+                        <td style={{ fontWeight: 700 }}>EXP-{exp.id}</td>
+                        <td>{exp.narration || exp.paid_to || 'Operational Expense'}</td>
+                        <td>{exp.category}</td>
+                        <td className="text-right">-</td>
+                        <td className="text-right" style={{ color: '#27ae60', fontWeight: 600 }}>
+                          ₹ {Number(exp.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-right">-</td>
+                        <td className="text-right">
+                          ₹ {Number(exp.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                    {state.paymentReceipts.slice(0, 10).map((pr, idx) => (
+                      <tr key={`pr-${idx}`}>
+                        <td>{pr.date}</td>
+                        <td style={{ fontWeight: 700 }}>{pr.receipt_no}</td>
+                        <td>{pr.customer_name} - Dues Collection</td>
+                        <td>{pr.payment_mode} Receipt</td>
+                        <td className="text-right">-</td>
+                        <td className="text-right" style={{ color: '#27ae60', fontWeight: 600 }}>
+                          ₹ {Number(pr.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-right">-</td>
+                        <td className="text-right">
+                          ₹ {Number(pr.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#eee', fontWeight: 'bold' }}>
+                      <td colSpan={4}>Audit Ledger Certified Net Total:</td>
+                      <td className="text-right">{state.creditBills.reduce((s, c) => s + (Number(c.qty) || 0), 0).toFixed(2)} L</td>
+                      <td className="text-right" style={{ color: '#27ae60' }}>
+                        ₹ {(state.expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0) + state.paymentReceipts.reduce((s, p) => s + (Number(p.amount) || 0), 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="text-right" style={{ color: '#c0392b' }}>
+                        ₹ {state.creditBills.reduce((s, c) => s + (Number(c.amount || c.total) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="text-right" style={{ color: '#0a246a' }}>
+                        ₹ {Math.abs(state.creditBills.reduce((s, c) => s + (Number(c.amount || c.total) || 0), 0) - state.expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   </tfoot>

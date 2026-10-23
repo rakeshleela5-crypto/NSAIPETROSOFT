@@ -170,7 +170,7 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
   const handleExecutePayout = async () => {
     const amt = parseFloat(payoutAmount);
     if (isNaN(amt) || amt <= 0) {
-      alert('Invalid payout amount');
+      if (showToast) showToast('❌ Invalid payout amount');
       return;
     }
     const idempKey = `IDEMP_${Date.now()}_${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
@@ -203,7 +203,9 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
         }
       }
     } catch (err: any) {
-      alert(`Payout failed: ${err.message}`);
+      if (showToast) {
+        showToast(`❌ Payout failed: ${err.message}`);
+      }
     } finally {
       setPayoutLoading(false);
     }

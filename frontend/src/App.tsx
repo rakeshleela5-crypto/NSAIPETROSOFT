@@ -43,6 +43,7 @@ import {
   saveStationProfileApi,
   fetchCardSettlements,
   fetchLubesApi,
+  closeShiftApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
@@ -389,6 +390,7 @@ export default function App() {
   const [newBankBalance, setNewBankBalance] = useState<number>(0);
 
   // Station Shift & Control Panel State
+  const [currentShiftDatabaseId, setCurrentShiftDatabaseId] = useState<number>(1);
   const [shiftNumber, setShiftNumber] = useState<string>('00017');
   const [shiftName, setShiftName] = useState<string>('First');
   const [shiftStatus, setShiftStatus] = useState<string>('OPEN');
@@ -413,10 +415,10 @@ export default function App() {
   const [managerPinModal, setManagerPinModal] = useState<{
     isOpen: boolean;
     actionTitle: string;
-    onAuthorized: () => void;
+    onAuthorized: (pin?: string) => void;
   } | null>(null);
 
-  const requestManagerAuthorization = (actionTitle: string, onAuthorized: () => void) => {
+  const requestManagerAuthorization = (actionTitle: string, onAuthorized: (pin?: string) => void) => {
     setManagerPinModal({
       isOpen: true,
       actionTitle,
@@ -516,6 +518,9 @@ export default function App() {
         }
       }
       if (shiftData) {
+        if (shiftData.id || shiftData.shift_id) {
+          setCurrentShiftDatabaseId(shiftData.id || shiftData.shift_id || 1);
+        }
         if (shiftData.employees && shiftData.employees.length > 0) {
           setEmployeesList(shiftData.employees);
         }
@@ -766,6 +771,144 @@ export default function App() {
       setShiftNumber(s.activeShift.so_number.replace(/^SO-/, ''));
       setShiftName(s.activeShift.shift_name);
       setShiftStatus(s.activeShift.status.toUpperCase());
+
+      // Synchronize Expenses
+      if (s.expenses) {
+        setExpensesList(s.expenses);
+        setEmpExpensesList(
+          s.expenses.map((e: any) => ({
+            id: e.id,
+            category: e.category,
+            amount: Number(e.amount || 0),
+            narration: e.narration,
+            paid_to: e.paid_to,
+          }))
+        );
+      }
+
+      // Synchronize Payment Receipts
+      if (s.paymentReceipts) {
+        const normPayments = s.paymentReceipts.map((p: any) => ({
+          id: p.id,
+          receipt_no: p.receipt_no,
+          shift: p.shift || 'First',
+          date: p.date,
+          cust: p.customer_name || p.customer || p.cust,
+          customer_name: p.customer_name || p.customer || p.cust,
+          mobile: p.customer_mobile || p.mobile || '',
+          mode: p.payment_mode || p.mode || 'CASH',
+          amt: Number(p.amount ?? p.amt ?? 0),
+          amount: Number(p.amount ?? p.amt ?? 0),
+        }));
+        setPayReceiptsHistory(normPayments);
+        const cashReceivedFromDues = normPayments
+          .filter((p: any) => (p.mode || '').toUpperCase() === 'CASH')
+          .reduce((sum: number, p: any) => sum + p.amount, 0);
+        setEmpCreditReceived(cashReceivedFromDues);
+      }
+
+      // Synchronize Credit Bills
+      if (s.creditBills) {
+        const normCreditBills = s.creditBills.map((c: any) => ({
+          id: c.id,
+          date: c.date,
+          shift: c.shift || 'First',
+          slip: c.slip_no || c.slip,
+          slip_no: c.slip_no || c.slip,
+          bill: c.bill_no || c.bill,
+          bill_no: c.bill_no || c.bill,
+          cust: c.customer_name || c.cust,
+          customer_name: c.customer_name || c.cust,
+          mobile: c.customer_mobile || c.mobile || '',
+          vehicle: c.vehicle_no || c.vehicle,
+          vehicle_no: c.vehicle_no || c.vehicle,
+          product: c.product_name || c.product || 'Fuel',
+          qty: Number(c.qty || 0),
+          rate: Number(c.rate || 0),
+          amount: Number(c.amount ?? c.total ?? 0),
+          total: Number(c.amount ?? c.total ?? 0),
+        }));
+        setCreditBillsList(normCreditBills);
+        const totalShiftCredit = normCreditBills.reduce((acc: number, c: any) => acc + (c.total || 0), 0);
+        setEmpCreditSaleAmount(totalShiftCredit);
+      }
+
+      // Synchronize Card Settlements
+      if (s.cardSettlements) {
+        const normCards = s.cardSettlements.map((cs: any) => ({
+          id: cs.id,
+          date: cs.date,
+          machine: cs.machine_name || cs.machine || 'EDC Machine',
+          machine_name: cs.machine_name || cs.machine || 'EDC Machine',
+          batch: cs.batch_no || cs.batch || '001',
+          batch_no: cs.batch_no || cs.batch || '001',
+          slips: Number(cs.slip_count ?? cs.slips ?? 1),
+          slip_count: Number(cs.slip_count ?? cs.slips ?? 1),
+          amount: Number(cs.amount || 0),
+          status: cs.status || 'SETTLED',
+        }));
+        setCardSettlements(normCards);
+        setEmpCardSwipes(normCards.map((cs) => ({
+          name: cs.machine_name,
+          amount: cs.amount,
+          slips: cs.slip_count,
+        })));
+      }
+
+      // Synchronize Purchases
+      if (s.purchases) {
+        setPurPoHistory(
+          s.purchases.map((p: any) => ({
+            id: p.id,
+            po: p.invoice_no,
+            date: p.date,
+            inv: p.invoice_no,
+            dealer: p.dealer_name,
+            amount: p.final_amount,
+          }))
+        );
+      }
+
+      // Synchronize Tank Dips
+      if (s.dips) {
+        setDipsList(s.dips);
+      }
+
+      // Synchronize Nozzle Readings
+      if (s.nozzles && s.nozzles.length > 0) {
+        const readings = s.nozzles.map((n: any) => {
+          const qty = calculateNetMeterQty(n.opening_meter, n.closing_meter, n.testing || 0);
+          const amount = Math.round(qty * n.rate * 100) / 100;
+          const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
+          return {
+            emp: s.employees?.[0]?.name || 'Duty Staff',
+            nozzle: n.name || n.nozzle_name,
+            item: n.product_name || n.product,
+            open: n.opening_meter,
+            close: n.closing_meter,
+            test: n.testing || 0,
+            qty: qty,
+            rate: n.rate,
+            amount: amount,
+            vat: vat,
+            lube: 0,
+            nozzle_id: n.id || n.nozzle_id,
+          };
+        });
+        setSalesReadings(readings);
+        setEmpNozzleReadings(
+          readings.map((r: any) => ({
+            nozzle: r.nozzle,
+            op: r.open,
+            close: r.close,
+            test: r.test,
+            sale: r.qty,
+            rate: r.rate,
+            amount: r.amount,
+          }))
+        );
+      }
+
       setStoreTick((t) => t + 1);
     });
 
@@ -846,9 +989,16 @@ export default function App() {
       setSelectedStatement(data);
     } catch {
       const c = customers.find((x) => x.id === custId) || dashboard?.customers.find((x) => x.id === custId);
-      const custBills = creditBillsList.filter((b) => b.cust === c?.name);
+      const custBills = creditBillsList.filter((b) => b.cust === c?.name || b.customer_name === c?.name);
       const totalPurch = custBills.reduce((acc, b) => acc + (b.total || 0), 0);
       const currentOutstanding = (c as any)?.current_outstanding ?? (c as any)?.outstanding ?? 0;
+      const custPayments = payReceiptsHistory.filter(
+        (p) => (p.cust && p.cust.toUpperCase() === (c?.name || '').toUpperCase()) ||
+               (p.customer_name && p.customer_name.toUpperCase() === (c?.name || '').toUpperCase())
+      );
+      const totalPaidPeriod = custPayments.reduce((sum, p) => sum + Number(p.amount ?? p.amt ?? 0), 0);
+      const previousDues = Math.max(0, currentOutstanding + totalPaidPeriod - totalPurch);
+
       setSelectedStatement({
         customer: {
           id: custId,
@@ -871,8 +1021,8 @@ export default function App() {
           total_purchase: totalPurch,
           total_other_lube: 0.0,
           total_tax_amount: 0.0,
-          previous_dues: Math.max(0, currentOutstanding - totalPurch),
-          total_paid_period: 0.0,
+          previous_dues: previousDues,
+          total_paid_period: totalPaidPeriod,
           net_payables: currentOutstanding,
           terms: [
             `(1) Subject To ${stationProfile.city} Jurisdiction`,
@@ -1750,7 +1900,7 @@ export default function App() {
 
   // Station Control Actions
   const handleCloseShift = () => {
-    requestManagerAuthorization(`Close Shift ${shiftName} & Lock Dispensers`, async () => {
+    requestManagerAuthorization(`Close Shift ${shiftName} & Lock Dispensers`, async (pin) => {
       setShiftStatus('CLOSED');
       setDispenserLocked(true);
       erpStore.hydrateFromBackend({
@@ -1761,6 +1911,11 @@ export default function App() {
           dispenser_locked: true,
         },
       });
+      try {
+        await closeShiftApi(currentShiftDatabaseId, pin || '1234');
+      } catch (cErr) {
+        console.warn('Backend shift close sync note:', cErr);
+      }
       showToast(`✔ Shift ${shiftName} CLOSED. Dispenser meters locked!`);
       try {
         const res = await triggerCreateBackup();

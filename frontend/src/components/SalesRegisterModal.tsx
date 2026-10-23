@@ -28,6 +28,13 @@ export const SalesRegisterModal: React.FC<SalesRegisterModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Calculate Net Cash from gross meter sales minus credit & digital settlements
+  const totalCreditAmount = creditBills.reduce((acc, c) => acc + Number(c.amount ?? c.total ?? 0), 0);
+  const totalDigitalAmount = cardSettlements.reduce((acc, s) => acc + Number(s.amount || 0), 0);
+  const totalGrossMeterSales = salesReadings.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+  const netCashAvailable = Math.max(0, totalGrossMeterSales - totalCreditAmount - totalDigitalAmount);
+  const cashRatio = totalGrossMeterSales > 0 ? (netCashAvailable / totalGrossMeterSales) : 1;
+
   // Aggregate unified transaction list
   const unifiedTransactions: Array<{
     id: string | number;
@@ -60,17 +67,21 @@ export const SalesRegisterModal: React.FC<SalesRegisterModalProps> = ({
       amount: Number(s.amount || 0),
       status: 'SETTLED',
     })),
-    // Shift Meter Readings (Cash Sales)
-    ...salesReadings.map((r, i) => ({
-      id: `NOZ-${i}`,
-      date: getTodayErpDate(),
-      type: 'CASH' as const,
-      particulars: `${r.nozzle} (${r.item}) Meter Sales`,
-      reference: `MTR-${r.close}`,
-      litres: r.qty,
-      amount: r.amount,
-      status: 'CLOSED',
-    })),
+    // Shift Meter Readings (Net Cash Sales portion)
+    ...salesReadings.map((r, i) => {
+      const netCashForNozzle = Math.round(Number(r.amount || 0) * cashRatio * 100) / 100;
+      const netLitresForNozzle = Math.round(Number(r.qty || 0) * cashRatio * 100) / 100;
+      return {
+        id: `NOZ-${i}`,
+        date: getTodayErpDate(),
+        type: 'CASH' as const,
+        particulars: `${r.nozzle} (${r.item}) Cash Sales`,
+        reference: `MTR-${r.close}`,
+        litres: netLitresForNozzle,
+        amount: netCashForNozzle,
+        status: 'CLOSED',
+      };
+    }),
   ];
 
   const filtered = unifiedTransactions.filter((tx) => {

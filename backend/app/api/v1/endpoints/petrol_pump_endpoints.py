@@ -506,6 +506,8 @@ async def get_current_shift(db: AsyncSession = Depends(get_db)):
         })
 
     return {
+        "id": latest_shift.id if latest_shift else 1,
+        "shift_id": latest_shift.id if latest_shift else 1,
         "so_number": latest_shift.so_number if latest_shift else "SO-00018",
         "date": str(latest_shift.date) if latest_shift else str(today_ist()),
         "shift_name": latest_shift.shift_name if latest_shift else "First",
@@ -1412,6 +1414,8 @@ class CustomerCreate(BaseModel):
     gst_no: Optional[str] = None
     pan_no: Optional[str] = None
     credit_limit: float = 0.0
+    current_outstanding: Optional[float] = 0.0
+    opening_balance: Optional[float] = 0.0
     bill_period: str = "30 day"
 
 
@@ -1450,6 +1454,7 @@ async def list_customers(db: AsyncSession = Depends(get_db)):
 async def create_customer(data: CustomerCreate, db: AsyncSession = Depends(get_db)):
     count_res = await db.execute(select(func.count(Customer.id)))
     code = f"{(count_res.scalar() or 0) + 1}"
+    initial_outstanding = float(data.current_outstanding if data.current_outstanding is not None else (data.opening_balance or 0.0))
     cust = Customer(
         code=code,
         name=data.name.strip(),
@@ -1460,11 +1465,12 @@ async def create_customer(data: CustomerCreate, db: AsyncSession = Depends(get_d
         gst_no=data.gst_no,
         pan_no=data.pan_no,
         credit_limit=data.credit_limit,
+        current_outstanding=initial_outstanding,
         bill_period=data.bill_period,
     )
     db.add(cust)
     await db.commit()
-    return {"message": "Customer created successfully", "id": cust.id, "code": cust.code, "name": cust.name}
+    return {"message": "Customer created successfully", "id": cust.id, "code": cust.code, "name": cust.name, "current_outstanding": cust.current_outstanding}
 
 
 @router.post("/vehicles", summary="Add Vehicle to Customer")
@@ -1492,6 +1498,8 @@ class CustomerUpdate(BaseModel):
     gst_no: Optional[str] = None
     pan_no: Optional[str] = None
     credit_limit: Optional[float] = None
+    current_outstanding: Optional[float] = None
+    opening_balance: Optional[float] = None
     bill_period: Optional[str] = None
 
 
@@ -1516,6 +1524,10 @@ async def update_customer(customer_id: int, data: CustomerUpdate, db: AsyncSessi
         cust.pan_no = data.pan_no.strip()
     if data.credit_limit is not None:
         cust.credit_limit = data.credit_limit
+    if data.current_outstanding is not None:
+        cust.current_outstanding = float(data.current_outstanding)
+    elif data.opening_balance is not None:
+        cust.current_outstanding = float(data.opening_balance)
     if data.bill_period is not None:
         cust.bill_period = data.bill_period
     await db.commit()
@@ -3174,6 +3186,336 @@ async def save_tank_strapping_chart(
         "message": f"Successfully updated {len(payload.points)} calibrated strapping points for {tank.tank_name}",
         "tank_id": tank.id,
     }
+
+
+# -------------------------------------------------------------
+# 19b. Underground Storage Tanks CRUD API
+# -------------------------------------------------------------
+class TankCreate(BaseModel):
+    tank_name: str
+    product_id: Optional[int] = None
+    product_code: Optional[str] = None
+    capacity_liters: float = 20000.0
+    current_stock: float = 0.0
+    current_dip_cm: float = 0.0
+    min_alert_level: float = 3000.0
+
+
+class TankUpdate(BaseModel):
+    tank_name: Optional[str] = None
+    product_id: Optional[int] = None
+    product_code: Optional[str] = None
+    capacity_liters: Optional[float] = None
+    current_stock: Optional[float] = None
+    current_dip_cm: Optional[float] = None
+    min_alert_level: Optional[float] = None
+
+
+@router.get("/tanks", summary="List Underground Storage Tanks")
+async def list_tanks(db: AsyncSession = Depends(get_db)):
+    stmt = select(Tank).options(selectinload(Tank.product), selectinload(Tank.nozzles)).order_by(Tank.id.asc())
+    res = await db.execute(stmt)
+    tanks = res.scalars().all()
+    return [
+        {
+            "id": t.id,
+            "name": t.tank_name,
+            "tank_name": t.tank_name,
+            "product_id": t.product_id,
+            "product": t.product.name if t.product else "Fuel",
+            "product_name": t.product.name if t.product else "Fuel",
+            "code": t.product.code if t.product else "MS",
+            "product_code": t.product.code if t.product else "MS",
+            "capacity": t.capacity_liters,
+            "capacity_liters": t.capacity_liters,
+            "current_stock": t.current_stock,
+            "current_dip_cm": t.current_dip_cm,
+            "min_alert_level": t.min_alert_level,
+            "percent": round((t.current_stock / t.capacity_liters) * 100, 1) if t.capacity_liters else 0.0,
+            "is_low": t.current_stock <= t.min_alert_level,
+            "connected_nozzles": [n.nozzle_name for n in t.nozzles],
+        }
+        for t in tanks
+    ]
+
+
+@router.post("/tanks", summary="Create Underground Storage Tank")
+async def create_tank(payload: TankCreate, db: AsyncSession = Depends(get_db)):
+    prod = None
+    if payload.product_id:
+        prod = await db.get(FuelProduct, payload.product_id)
+    if not prod and payload.product_code:
+        p_res = await db.execute(select(FuelProduct).where(FuelProduct.code.ilike(payload.product_code.strip())))
+        prod = p_res.scalar_one_or_none()
+    if not prod:
+        p_res = await db.execute(select(FuelProduct).order_by(FuelProduct.id.asc()).limit(1))
+        prod = p_res.scalar_one_or_none()
+    if not prod:
+        prod = FuelProduct(code="MS", name="Motor Spirit (Petrol)", current_rate=102.65, unit="Ltr")
+        db.add(prod)
+        await db.flush()
+
+    tank = Tank(
+        tank_name=payload.tank_name.strip(),
+        product_id=prod.id,
+        capacity_liters=payload.capacity_liters,
+        current_stock=payload.current_stock,
+        current_dip_cm=payload.current_dip_cm,
+        min_alert_level=payload.min_alert_level,
+    )
+    db.add(tank)
+    await db.commit()
+    await db.refresh(tank)
+    return {
+        "status": "success",
+        "message": f"Tank '{tank.tank_name}' created successfully",
+        "id": tank.id,
+        "name": tank.tank_name,
+        "capacity_liters": tank.capacity_liters,
+        "current_stock": tank.current_stock,
+    }
+
+
+@router.put("/tanks/{tank_id}", summary="Update Underground Storage Tank")
+async def update_tank(tank_id: int, payload: TankUpdate, db: AsyncSession = Depends(get_db)):
+    tank = await db.get(Tank, tank_id)
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
+    if payload.tank_name is not None:
+        tank.tank_name = payload.tank_name.strip()
+    if payload.capacity_liters is not None:
+        tank.capacity_liters = payload.capacity_liters
+    if payload.current_stock is not None:
+        tank.current_stock = payload.current_stock
+    if payload.current_dip_cm is not None:
+        tank.current_dip_cm = payload.current_dip_cm
+    if payload.min_alert_level is not None:
+        tank.min_alert_level = payload.min_alert_level
+    if payload.product_id is not None:
+        tank.product_id = payload.product_id
+    elif payload.product_code is not None:
+        p_res = await db.execute(select(FuelProduct).where(FuelProduct.code.ilike(payload.product_code.strip())))
+        prod = p_res.scalar_one_or_none()
+        if prod:
+            tank.product_id = prod.id
+    await db.commit()
+    return {"status": "success", "message": f"Tank '{tank.tank_name}' updated successfully", "id": tank.id}
+
+
+@router.delete("/tanks/{tank_id}", summary="Delete Underground Storage Tank")
+async def delete_tank(tank_id: int, db: AsyncSession = Depends(get_db)):
+    tank = await db.get(Tank, tank_id)
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
+    await db.execute(delete(TankCalibrationChart).where(TankCalibrationChart.tank_id == tank_id))
+    await db.delete(tank)
+    await db.commit()
+    return {"status": "success", "message": f"Tank #{tank_id} deleted successfully"}
+
+
+# -------------------------------------------------------------
+# 19c. Dispenser Nozzles CRUD API
+# -------------------------------------------------------------
+class NozzleCreate(BaseModel):
+    nozzle_name: str
+    machine_name: str = "MPD 1"
+    tank_id: int
+    product_id: Optional[int] = None
+    product_code: Optional[str] = None
+    current_meter: float = 0.0
+    active: bool = True
+
+
+class NozzleUpdate(BaseModel):
+    nozzle_name: Optional[str] = None
+    machine_name: Optional[str] = None
+    tank_id: Optional[int] = None
+    product_id: Optional[int] = None
+    product_code: Optional[str] = None
+    current_meter: Optional[float] = None
+    active: Optional[bool] = None
+
+
+@router.get("/nozzles", summary="List Dispenser Nozzles")
+async def list_nozzles(db: AsyncSession = Depends(get_db)):
+    stmt = select(Nozzle).options(selectinload(Nozzle.tank), selectinload(Nozzle.product)).order_by(Nozzle.id.asc())
+    res = await db.execute(stmt)
+    nozzles = res.scalars().all()
+    return [
+        {
+            "id": n.id,
+            "name": n.nozzle_name,
+            "nozzle_name": n.nozzle_name,
+            "machine_name": n.machine_name,
+            "tank_id": n.tank_id,
+            "tank_name": n.tank.tank_name if n.tank else "",
+            "product_id": n.product_id,
+            "product_name": n.product.name if n.product else "Fuel",
+            "product_code": n.product.code if n.product else "MS",
+            "current_meter": n.current_meter,
+            "rate": n.product.current_rate if n.product else 90.0,
+            "vat_percent": n.product.vat_percent if n.product else 13.7,
+            "active": n.active,
+        }
+        for n in nozzles
+    ]
+
+
+@router.post("/nozzles", summary="Create Dispenser Nozzle")
+async def create_nozzle(payload: NozzleCreate, db: AsyncSession = Depends(get_db)):
+    tank = await db.get(Tank, payload.tank_id)
+    if not tank:
+        raise HTTPException(status_code=404, detail="Connected tank not found")
+
+    prod_id = payload.product_id or tank.product_id
+    nozzle = Nozzle(
+        nozzle_name=payload.nozzle_name.strip(),
+        machine_name=payload.machine_name.strip(),
+        tank_id=tank.id,
+        product_id=prod_id,
+        current_meter=payload.current_meter,
+        active=payload.active,
+    )
+    db.add(nozzle)
+    await db.commit()
+    await db.refresh(nozzle)
+    return {
+        "status": "success",
+        "message": f"Nozzle '{nozzle.nozzle_name}' created successfully",
+        "id": nozzle.id,
+        "name": nozzle.nozzle_name,
+        "machine_name": nozzle.machine_name,
+        "tank_id": nozzle.tank_id,
+        "current_meter": nozzle.current_meter,
+    }
+
+
+@router.put("/nozzles/{nozzle_id}", summary="Update Dispenser Nozzle")
+async def update_nozzle(nozzle_id: int, payload: NozzleUpdate, db: AsyncSession = Depends(get_db)):
+    nozzle = await db.get(Nozzle, nozzle_id)
+    if not nozzle:
+        raise HTTPException(status_code=404, detail="Nozzle not found")
+    if payload.nozzle_name is not None:
+        nozzle.nozzle_name = payload.nozzle_name.strip()
+    if payload.machine_name is not None:
+        nozzle.machine_name = payload.machine_name.strip()
+    if payload.tank_id is not None:
+        nozzle.tank_id = payload.tank_id
+    if payload.product_id is not None:
+        nozzle.product_id = payload.product_id
+    if payload.current_meter is not None:
+        nozzle.current_meter = payload.current_meter
+    if payload.active is not None:
+        nozzle.active = payload.active
+    await db.commit()
+    return {"status": "success", "message": f"Nozzle '{nozzle.nozzle_name}' updated successfully", "id": nozzle.id}
+
+
+@router.delete("/nozzles/{nozzle_id}", summary="Delete Dispenser Nozzle")
+async def delete_nozzle(nozzle_id: int, db: AsyncSession = Depends(get_db)):
+    nozzle = await db.get(Nozzle, nozzle_id)
+    if not nozzle:
+        raise HTTPException(status_code=404, detail="Nozzle not found")
+    await db.delete(nozzle)
+    await db.commit()
+    return {"status": "success", "message": f"Nozzle #{nozzle_id} deleted successfully"}
+
+
+# -------------------------------------------------------------
+# 19d. Employees / Attendants CRUD API
+# -------------------------------------------------------------
+class EmployeeCreate(BaseModel):
+    name: str
+    code: Optional[str] = None
+    phone: Optional[str] = None
+    mobile: Optional[str] = None
+    role: str = "Attendant"
+    active: bool = True
+
+
+class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    phone: Optional[str] = None
+    mobile: Optional[str] = None
+    role: Optional[str] = None
+    active: Optional[bool] = None
+
+
+@router.get("/employees", summary="List Attendants & Staff")
+async def list_employees(db: AsyncSession = Depends(get_db)):
+    stmt = select(Employee).order_by(Employee.id.asc())
+    res = await db.execute(stmt)
+    employees = res.scalars().all()
+    return [
+        {
+            "id": e.id,
+            "code": e.code,
+            "name": e.name,
+            "phone": e.phone,
+            "mobile": e.phone,
+            "role": e.role,
+            "active": e.active,
+            "shortage_balance": e.shortage_balance,
+        }
+        for e in employees
+    ]
+
+
+@router.post("/employees", summary="Create Attendant or Staff")
+async def create_employee(payload: EmployeeCreate, db: AsyncSession = Depends(get_db)):
+    count_res = await db.execute(select(func.count(Employee.id)))
+    count = (count_res.scalar() or 0) + 1
+    code = payload.code.strip() if payload.code else f"EMP{count:03d}"
+    phone = payload.phone or payload.mobile
+    emp = Employee(
+        name=payload.name.strip().upper(),
+        code=code,
+        phone=phone.strip() if phone else None,
+        role=payload.role or "Attendant",
+        active=payload.active,
+    )
+    db.add(emp)
+    await db.commit()
+    await db.refresh(emp)
+    return {
+        "status": "success",
+        "message": f"Employee '{emp.name}' created successfully",
+        "id": emp.id,
+        "name": emp.name,
+        "code": emp.code,
+        "phone": emp.phone,
+        "role": emp.role,
+    }
+
+
+@router.put("/employees/{employee_id}", summary="Update Attendant or Staff")
+async def update_employee(employee_id: int, payload: EmployeeUpdate, db: AsyncSession = Depends(get_db)):
+    emp = await db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if payload.name is not None:
+        emp.name = payload.name.strip().upper()
+    if payload.code is not None:
+        emp.code = payload.code.strip()
+    if payload.phone is not None or payload.mobile is not None:
+        emp.phone = (payload.phone or payload.mobile or "").strip() or None
+    if payload.role is not None:
+        emp.role = payload.role
+    if payload.active is not None:
+        emp.active = payload.active
+    await db.commit()
+    return {"status": "success", "message": f"Employee '{emp.name}' updated successfully", "id": emp.id}
+
+
+@router.delete("/employees/{employee_id}", summary="Delete Attendant or Staff")
+async def delete_employee(employee_id: int, db: AsyncSession = Depends(get_db)):
+    emp = await db.get(Employee, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    await db.delete(emp)
+    await db.commit()
+    return {"status": "success", "message": f"Employee #{employee_id} deleted successfully"}
 
 
 # -------------------------------------------------------------

@@ -150,6 +150,8 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
             gst_no: formGstin.trim().toUpperCase() || undefined,
             pan_no: formPan.trim().toUpperCase() || undefined,
             credit_limit: formCreditLimit,
+            current_outstanding: formOpeningBal,
+            opening_balance: formOpeningBal,
             bill_period: formBillPeriod,
           });
           persistedCustId = res.id;

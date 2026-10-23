@@ -1794,6 +1794,36 @@ class ErpStore {
     return newEmp;
   }
 
+  public deleteTank(id: number): boolean {
+    const idx = this.state.tanks.findIndex((t) => t.id === id);
+    if (idx !== -1) {
+      this.state.tanks.splice(idx, 1);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
+  public deleteNozzle(id: number): boolean {
+    const idx = this.state.nozzles.findIndex((n) => n.id === id);
+    if (idx !== -1) {
+      this.state.nozzles.splice(idx, 1);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
+  public deleteEmployee(id: number): boolean {
+    const idx = this.state.employees.findIndex((e) => e.id === id);
+    if (idx !== -1) {
+      this.state.employees.splice(idx, 1);
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
   public recordCashSale(amount: number, productCode?: string, litres?: number): void {
     if (amount <= 0) return;
     const roundedAmt = roundCurrency(amount);
@@ -1801,6 +1831,18 @@ class ErpStore {
     if (cashAcc) {
       cashAcc.balance = addCurrency(cashAcc.balance, roundedAmt);
     }
+    if (productCode && litres && litres > 0) {
+      const tank = this.state.tanks.find((t) => t.code === productCode) || this.state.tanks[0];
+      if (tank) {
+        tank.current_stock = Math.max(0, subCurrency(tank.current_stock, litres));
+        tank.book_stock = Math.max(0, subCurrency(tank.book_stock, litres));
+      }
+    }
+    this.notify();
+  }
+
+  public recordDigitalSale(amount: number, productCode?: string, litres?: number): void {
+    if (amount <= 0) return;
     if (productCode && litres && litres > 0) {
       const tank = this.state.tanks.find((t) => t.code === productCode) || this.state.tanks[0];
       if (tank) {

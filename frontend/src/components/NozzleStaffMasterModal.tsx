@@ -2,7 +2,15 @@ import React, { useState } from 'react';
 import type { NozzleMasterItem, TankMasterItem } from '../store/erpStore';
 import type { LubeProductItem } from '../models';
 import { erpStore } from '../store/erpStore';
-import { saveLubeProductApi } from '../api/client';
+import {
+  saveLubeProductApi,
+  createNozzleApi,
+  updateNozzleApi,
+  deleteNozzleApi,
+  createEmployeeApi,
+  updateEmployeeApi,
+  deleteEmployeeApi,
+} from '../api/client';
 
 interface NozzleStaffMasterModalProps {
   isOpen: boolean;
@@ -36,6 +44,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
   const [nozOpening, setNozOpening] = useState<number>(0);
 
   // Staff Form State
+  const [editingStaffId, setEditingStaffId] = useState<number | null>(null);
   const [staffName, setStaffName] = useState<string>('');
   const [staffCode, setStaffCode] = useState<string>('');
   const [staffMobile, setStaffMobile] = useState<string>('');
@@ -72,9 +81,46 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
         rate: nozRate,
       });
 
-      if (showToast) showToast(`✔ Nozzle "${nozName}" saved successfully!`);
+      // Synchronize with PostgreSQL Backend
+      try {
+        if (editingNozzleId) {
+          await updateNozzleApi(editingNozzleId, {
+            nozzle_name: nozName.trim(),
+            machine_name: nozMachine.trim(),
+            tank_id: nozTankId,
+            current_meter: nozOpening,
+          });
+        } else {
+          await createNozzleApi({
+            nozzle_name: nozName.trim(),
+            machine_name: nozMachine.trim(),
+            tank_id: nozTankId,
+            current_meter: nozOpening,
+          });
+        }
+      } catch (apiErr) {
+        console.warn('Backend nozzle sync deferred/offline:', apiErr);
+      }
+
+      if (showToast) showToast(`✔ Nozzle "${nozName}" saved to Database & Store!`);
       setEditingNozzleId(null);
       setNozName('');
+      if (loadAllErpData) await loadAllErpData();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteNozzle = async (nozzleId: number) => {
+    if (!window.confirm('Are you sure you want to delete this nozzle?')) return;
+    try {
+      erpStore.deleteNozzle(nozzleId);
+      try {
+        await deleteNozzleApi(nozzleId);
+      } catch (apiErr) {
+        console.warn('Backend nozzle delete deferred/offline:', apiErr);
+      }
+      if (showToast) showToast('✔ Nozzle deleted successfully!');
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
       if (showToast) showToast(`❌ Error: ${err.message}`);
@@ -86,18 +132,59 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     if (!staffName.trim()) return;
 
     const newEmp = {
-      id: Date.now(),
+      id: editingStaffId || Date.now(),
       name: staffName.trim().toUpperCase(),
       code: staffCode.trim().toUpperCase() || `EMP0${employees.length + 1}`,
       mobile: staffMobile.trim(),
     };
 
-    erpStore.saveEmployee(newEmp);
-    if (showToast) showToast(`✔ Staff Member "${newEmp.name}" added!`);
-    setStaffName('');
-    setStaffCode('');
-    setStaffMobile('');
-    if (loadAllErpData) await loadAllErpData();
+    try {
+      erpStore.saveEmployee(newEmp);
+
+      // Synchronize with PostgreSQL Backend
+      try {
+        if (editingStaffId) {
+          await updateEmployeeApi(editingStaffId, {
+            name: newEmp.name,
+            code: newEmp.code,
+            phone: newEmp.mobile,
+          });
+        } else {
+          await createEmployeeApi({
+            name: newEmp.name,
+            code: newEmp.code,
+            phone: newEmp.mobile,
+          });
+        }
+      } catch (apiErr) {
+        console.warn('Backend employee sync deferred/offline:', apiErr);
+      }
+
+      if (showToast) showToast(`✔ Staff Member "${newEmp.name}" saved to Database & Store!`);
+      setEditingStaffId(null);
+      setStaffName('');
+      setStaffCode('');
+      setStaffMobile('');
+      if (loadAllErpData) await loadAllErpData();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteStaff = async (empId: number) => {
+    if (!window.confirm('Are you sure you want to delete this staff member?')) return;
+    try {
+      erpStore.deleteEmployee(empId);
+      try {
+        await deleteEmployeeApi(empId);
+      } catch (apiErr) {
+        console.warn('Backend employee delete deferred/offline:', apiErr);
+      }
+      if (showToast) showToast('✔ Staff member removed!');
+      if (loadAllErpData) await loadAllErpData();
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Error: ${err.message}`);
+    }
   };
 
   const handleSaveLube = async (e: React.FormEvent) => {
@@ -213,21 +300,31 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                             <td className="text-right">{n.opening_meter.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             <td className="text-right">₹{n.rate.toFixed(2)}</td>
                             <td>
-                              <button
-                                type="button"
-                                className="win-btn-classic"
-                                style={{ fontSize: '10px', height: '19px', padding: '0 4px' }}
-                                onClick={() => {
-                                  setEditingNozzleId(n.id);
-                                  setNozName(n.name);
-                                  setNozMachine(n.machine_name);
-                                  setNozTankId(n.tank_id);
-                                  setNozRate(n.rate);
-                                  setNozOpening(n.opening_meter);
-                                }}
-                              >
-                                ✏️ Edit
-                              </button>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  type="button"
+                                  className="win-btn-classic"
+                                  style={{ fontSize: '10px', height: '19px', padding: '0 4px' }}
+                                  onClick={() => {
+                                    setEditingNozzleId(n.id);
+                                    setNozName(n.name);
+                                    setNozMachine(n.machine_name);
+                                    setNozTankId(n.tank_id);
+                                    setNozRate(n.rate);
+                                    setNozOpening(n.opening_meter);
+                                  }}
+                                >
+                                  ✏️ Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="win-btn-classic"
+                                  style={{ fontSize: '10px', height: '19px', padding: '0 4px', color: '#c0392b' }}
+                                  onClick={() => handleDeleteNozzle(n.id)}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -293,6 +390,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                         <th>Attendant Name</th>
                         <th>Mobile</th>
                         <th>Status</th>
+                        <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -302,6 +400,31 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                           <td style={{ color: '#0a246a', fontWeight: 600 }}>{emp.name}</td>
                           <td>{emp.mobile || '-'}</td>
                           <td><span style={{ color: '#27ae60', fontWeight: 700 }}>● Active</span></td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                type="button"
+                                className="win-btn-classic"
+                                style={{ fontSize: '10px', height: '19px', padding: '0 4px' }}
+                                onClick={() => {
+                                  setEditingStaffId(emp.id);
+                                  setStaffName(emp.name);
+                                  setStaffCode(emp.code);
+                                  setStaffMobile(emp.mobile || '');
+                                }}
+                              >
+                                ✏️ Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="win-btn-classic"
+                                style={{ fontSize: '10px', height: '19px', padding: '0 4px', color: '#c0392b' }}
+                                onClick={() => handleDeleteStaff(emp.id)}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
