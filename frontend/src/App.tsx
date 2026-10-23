@@ -225,6 +225,11 @@ export default function App() {
   // Menubar Dropdown State
   const [openDropdown, setOpenDropdown] = useState<'masters' | 'dataEntry' | 'reports' | null>(null);
 
+  // Mobile Menu Drawer State
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [mobileMenuTab, setMobileMenuTab] = useState<'all' | 'masters' | 'entry' | 'reports' | 'tools'>('all');
+  const [mobileMenuSearch, setMobileMenuSearch] = useState<string>('');
+
   // Active Dialog State
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
 
@@ -1815,6 +1820,66 @@ export default function App() {
   );
   const accountsList = dashboard?.accounts || [];
 
+  const mobileMenuItems = [
+    // Masters
+    { cat: 'masters', icon: '🏷️', title: 'Fuel Rate Master', hotkey: 'F2', action: openRateMaster },
+    { cat: 'masters', icon: '👥', title: 'Customer Fleet', hotkey: '', action: openCustomerMaster },
+    { cat: 'masters', icon: '⛽', title: 'Underground Tanks', hotkey: '', action: () => setActiveDialog('tankMaster') },
+    { cat: 'masters', icon: '🚰', title: 'Nozzle & Staff (DSM)', hotkey: '', action: () => setActiveDialog('nozzleStaffMaster') },
+    { cat: 'masters', icon: '🚰', title: 'Nozzle Totalizers', hotkey: '', action: () => setActiveDialog('nozzleMaster') },
+    { cat: 'masters', icon: '🏦', title: 'Bank Accounts & Ledgers', hotkey: '', action: () => setActiveDialog('bankMaster') },
+    { cat: 'masters', icon: '📦', title: 'Add Product (Lubes/DEF)', hotkey: '', action: () => setActiveDialog('addProduct') },
+    { cat: 'masters', icon: '📊', title: 'Bulk Inventory & Price', hotkey: '', action: () => setActiveDialog('bulkEditor') },
+    { cat: 'masters', icon: '🏷️', title: 'Price List Catalog', hotkey: '', action: () => setActiveDialog('priceList') },
+
+    // Data Entry
+    { cat: 'entry', icon: '⛽', title: 'Sales Entry (Nozzles)', hotkey: 'F1', action: openSalesDialog },
+    { cat: 'entry', icon: '📋', title: 'Credit Customer Sale', hotkey: 'F3', action: openCreditDialog },
+    { cat: 'entry', icon: '💰', title: 'Payment Receipt', hotkey: 'F4', action: openPaymentDialog },
+    { cat: 'entry', icon: '📝', title: 'Expense Book', hotkey: 'F5', action: openExpenseBook },
+    { cat: 'entry', icon: '🔄', title: 'Transfer Entry', hotkey: 'F6', action: () => setActiveDialog('transfer') },
+    { cat: 'entry', icon: '🚛', title: 'Purchase Entry', hotkey: 'F7', action: openPurchaseMaster },
+    { cat: 'entry', icon: '📐', title: 'DIP Register', hotkey: 'F8', action: () => openDipDialog() },
+    { cat: 'entry', icon: '💳', title: 'Card / UPI POS Entry', hotkey: '', action: () => setActiveDialog('cardEntry') },
+    { cat: 'entry', icon: '🧾', title: 'Sale POS (Cash Memo)', hotkey: 'F2', action: openCashMemo },
+    { cat: 'entry', icon: '📑', title: 'Estimate & Quotation', hotkey: '', action: () => setActiveDialog('estimate') },
+    { cat: 'entry', icon: '👨‍💼', title: 'Employee Settlement', hotkey: '', action: openEmployeeSettlement },
+    { cat: 'entry', icon: '💵', title: 'Cashier Denominations', hotkey: '', action: () => setActiveDialog('denom') },
+    { cat: 'entry', icon: '📖', title: 'Day Book Cashier Tally', hotkey: '', action: () => setActiveDialog('dayBookReport') },
+
+    // Reports
+    { cat: 'reports', icon: '⚙️', title: 'All 44 Reports Criteria', hotkey: '', action: () => setActiveDialog('reports') },
+    { cat: 'reports', icon: '📊', title: 'DSR (Daily Sales)', hotkey: '', action: () => openCrystalReport('DSR') },
+    { cat: 'reports', icon: '🧾', title: 'VAT Return (Form 201)', hotkey: '', action: () => openCrystalReport('VAT SUMMARY') },
+    { cat: 'reports', icon: '📈', title: 'Dealer Profit Summary', hotkey: '', action: () => openCrystalReport('PROFIT SUMMARY') },
+    { cat: 'reports', icon: '💰', title: 'Dealer Commission', hotkey: '', action: () => openCrystalReport('DEALER COMMISION REPORT') },
+    { cat: 'reports', icon: '📑', title: 'Purchase LFR Summary', hotkey: '', action: () => openCrystalReport('PURCHASE LFR SUMMARY') },
+    { cat: 'reports', icon: '🏛️', title: 'TDS Deduction Summary', hotkey: '', action: () => openCrystalReport('TDS SUMMARY') },
+    { cat: 'reports', icon: '⚖️', title: 'Profit & Loss Summary', hotkey: '', action: () => openCrystalReport('PROFIT LOSS SUMMARY') },
+    { cat: 'reports', icon: '📋', title: 'Customer Statement', hotkey: '', action: () => setActiveDialog('selectCustomerBill') },
+    { cat: 'reports', icon: '📖', title: 'Shift Cashier Tally', hotkey: '', action: () => openCrystalReport('SHIFT CASHIER TALLY') },
+    { cat: 'reports', icon: '⛽', title: 'D-Sale Throughput', hotkey: '', action: () => openCrystalReport('D-SALE REPORT') },
+    { cat: 'reports', icon: '📦', title: 'Item Aging (Lubes)', hotkey: '', action: () => openCrystalReport('ITEM AGING') },
+    { cat: 'reports', icon: '🚛', title: 'TD Report (Decanting)', hotkey: '', action: () => openCrystalReport('TD REPORT') },
+    { cat: 'reports', icon: '📋', title: 'Sales Register', hotkey: '', action: () => setActiveDialog('salesRegister') },
+    { cat: 'reports', icon: '📈', title: 'Build MIS Dashboard', hotkey: '', action: () => setActiveDialog('buildMis') },
+
+    // Tools & Cloud
+    { cat: 'tools', icon: '⛽', title: 'View Stock Gauges', hotkey: '', action: () => setActiveDialog('viewStock') },
+    { cat: 'tools', icon: '⚙️', title: 'Control Panel', hotkey: '', action: () => setActiveDialog('controlPanel') },
+    { cat: 'tools', icon: '🧮', title: 'Calculator', hotkey: '', action: () => setActiveDialog('calc') },
+    { cat: 'tools', icon: '⚡', title: 'Decentro API Banking', hotkey: '', action: () => setActiveDialog('decentroBanking') },
+    { cat: 'tools', icon: '☁️', title: 'Cloudflare R2 Backups', hotkey: '', action: openBackupDialog },
+    { cat: 'tools', icon: '⚖️', title: 'Stamping Reminder', hotkey: '', action: openStampingCalendar },
+    { cat: 'tools', icon: '❓', title: 'Help Desk', hotkey: '', action: () => setActiveDialog('help') },
+  ];
+
+  const filteredMobileMenuItems = mobileMenuItems.filter((item) => {
+    const matchesTab = mobileMenuTab === 'all' || item.cat === mobileMenuTab;
+    const matchesSearch = !mobileMenuSearch || item.title.toLowerCase().includes(mobileMenuSearch.toLowerCase());
+    return matchesTab && matchesSearch;
+  });
+
   return (
     <div className="win-desktop-shell">
       {/* Toast Notification */}
@@ -1849,6 +1914,18 @@ export default function App() {
        * 2. Classic ERP Menu Bar with Active Dropdowns
        * ------------------------------------------------------------- */}
       <div className="win-menubar">
+        {/* Mobile All-in-One Menu Button (Hidden on Desktop, Visible on Mobile) */}
+        <button
+          className="win-menu-item win-mobile-menu-trigger"
+          onClick={() => {
+            setMobileMenuOpen(true);
+            setOpenDropdown(null);
+          }}
+          title="Open All ERP Menus & Reports for Mobile"
+        >
+          ☰ All Menus & Reports
+        </button>
+
         {/* Masters Menu */}
         <div className="win-menu-dropdown-wrapper">
           <button
@@ -2878,6 +2955,112 @@ export default function App() {
         showToast={showToast}
         loadAllErpData={loadAllErpData}
       />
+
+      {/* -------------------------------------------------------------
+       * Mobile Navigation Drawer Modal
+       * ------------------------------------------------------------- */}
+      {mobileMenuOpen && (
+        <div className="win-modal-overlay" onClick={() => setMobileMenuOpen(false)}>
+          <div
+            className="win-form-dialog mobile-menu-dialog"
+            style={{ width: '96vw', maxWidth: '520px', maxHeight: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="win-dialog-titlebar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>📱</span>
+                <span>ERP Navigation & All 44 Reports</span>
+              </div>
+              <button
+                className="win-btn win-btn-close"
+                onClick={() => setMobileMenuOpen(false)}
+                title="Close Menu"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="win-dialog-body" style={{ padding: '10px' }}>
+              <div style={{ marginBottom: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Quick Search Masters, Entry, or 44 Reports..."
+                  value={mobileMenuSearch}
+                  onChange={(e) => setMobileMenuSearch(e.target.value)}
+                  style={{ width: '100%', height: '32px', fontSize: '13px', padding: '0 8px', borderRadius: '3px' }}
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '8px', scrollbarWidth: 'none' }}>
+                {(['all', 'masters', 'entry', 'reports', 'tools'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className="win-btn-classic"
+                    style={{
+                      height: '26px',
+                      padding: '0 10px',
+                      fontSize: '11px',
+                      fontWeight: mobileMenuTab === tab ? 700 : 500,
+                      background: mobileMenuTab === tab ? '#0055ea' : undefined,
+                      color: mobileMenuTab === tab ? '#ffffff' : undefined,
+                      borderColor: mobileMenuTab === tab ? '#003bb3' : undefined,
+                      borderRadius: '3px',
+                      flexShrink: 0,
+                    }}
+                    onClick={() => setMobileMenuTab(tab)}
+                  >
+                    {tab === 'all' && '🌐 All Features'}
+                    {tab === 'masters' && '🏷️ Masters'}
+                    {tab === 'entry' && '⛽ Data Entry'}
+                    {tab === 'reports' && '📊 Reports'}
+                    {tab === 'tools' && '⚡ Tools & Cloud'}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', maxHeight: '55vh', overflowY: 'auto' }}>
+                {filteredMobileMenuItems.map((item, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className="mobile-menu-card-btn"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      item.action();
+                    }}
+                  >
+                    <span style={{ fontSize: '20px', marginBottom: '2px' }}>{item.icon}</span>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#111', textAlign: 'center', lineHeight: 1.2 }}>
+                      {item.title}
+                    </span>
+                    {item.hotkey && (
+                      <span style={{ fontSize: '10px', color: '#666', background: '#ece9d8', padding: '1px 4px', borderRadius: '2px', marginTop: '3px' }}>
+                        {item.hotkey}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="win-dialog-footer" style={{ justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '11px', color: '#666' }}>
+                Showing {filteredMobileMenuItems.length} option(s)
+              </span>
+              <button
+                type="button"
+                className="win-btn-classic"
+                style={{ height: '24px', padding: '0 14px', fontWeight: 600 }}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </Suspense>
 
     </div>
