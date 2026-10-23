@@ -51,6 +51,7 @@ import {
   deleteTransferApi,
   fetchQuotationsApi,
   fetchCashBillsApi,
+  fetchLubeSalesApi,
   deleteRateHistoryApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
@@ -488,6 +489,7 @@ export default function App() {
         transfersData,
         quotationsData,
         cashBillsData,
+        lubeSalesData,
       ] = await Promise.all([
         fetchDashboard().catch(() => null),
         fetchCurrentShift().catch(() => null),
@@ -512,6 +514,7 @@ export default function App() {
         fetchTransfersApi().catch(() => []),
         fetchQuotationsApi().catch(() => []),
         fetchCashBillsApi().catch(() => []),
+        fetchLubeSalesApi().catch(() => []),
       ]);
 
       if (transfersData) {
@@ -747,6 +750,7 @@ export default function App() {
         transfers: transfersData && transfersData.length > 0 ? transfersData : undefined,
         quotations: quotationsData && quotationsData.length > 0 ? quotationsData : undefined,
         cashBills: cashBillsData && cashBillsData.length > 0 ? cashBillsData : undefined,
+        lubeSales: lubeSalesData && lubeSalesData.length > 0 ? lubeSalesData : undefined,
       });
     } catch (err: any) {
       console.warn('Live ERP synchronization error:', err);
@@ -3126,6 +3130,8 @@ export default function App() {
         products={erpStore.getState().products}
         kpis={kpis}
         onOpenDipDialog={() => openDipDialog()}
+        showToast={showToast}
+        loadAllErpData={loadAllErpData}
       />
 
       <NozzleStaffMasterModal

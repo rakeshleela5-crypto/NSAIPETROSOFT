@@ -5,6 +5,7 @@ import {
   triggerCreateBackup,
   settleEmployeeShortageApi,
   fetchEmployeeShortagesApi,
+  deleteEmployeeShortageApi,
 } from '../api/client';
 import { calculateNetMeterQty } from '../utils/petroUtils';
 import { enqueueOfflineRecord } from '../utils/offlineQueue';
@@ -792,18 +793,46 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                           <th className="text-right">Amount</th>
                           <th>Status</th>
                           <th>Notes</th>
+                          <th style={{ width: '45px', textAlign: 'center' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {shortageLogs.map((log, idx) => (
                           <tr key={idx}>
                             <td>{log.date}</td>
-                            <td>{log.entry_type || log.type}</td>
-                            <td className="text-right" style={{ fontWeight: 600, color: (log.entry_type || log.type) === 'SHORTAGE' ? '#c62828' : '#2e7d32' }}>
+                            <td>{log.entry_type || log.type || log.gap_type}</td>
+                            <td className="text-right" style={{ fontWeight: 600, color: (log.entry_type || log.type || log.gap_type) === 'SHORTAGE' ? '#c62828' : '#2e7d32' }}>
                               ₹ {Number(log.amount || 0).toFixed(2)}
                             </td>
                             <td>{log.status || 'Settled'}</td>
                             <td>{log.notes || '-'}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              {log.id && (
+                                <button
+                                  type="button"
+                                  className="win-btn-classic"
+                                  style={{ height: '18px', padding: '0 4px', fontSize: '9px', color: '#c0392b', fontWeight: 700 }}
+                                  onClick={async () => {
+                                    const pin = window.prompt('Enter Manager PIN to void this shortage record:');
+                                    if (!pin) return;
+                                    try {
+                                      await deleteEmployeeShortageApi(log.id, pin);
+                                      showToast('✔ Shortage record voided and balance rolled back!');
+                                      if (currentEmp?.id) {
+                                        const res = await fetchEmployeeShortagesApi(currentEmp.id);
+                                        setShortageLogs(res?.ledger || res || []);
+                                      }
+                                      await loadAllErpData();
+                                    } catch (err: any) {
+                                      showToast(`❌ Void Failed: ${err.message}`);
+                                    }
+                                  }}
+                                  title="Void this shortage entry"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

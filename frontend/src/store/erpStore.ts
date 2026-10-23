@@ -161,6 +161,23 @@ export interface QuotationItem {
   status: 'DRAFT' | 'ISSUED' | 'CONVERTED' | 'CANCELLED';
 }
 
+export interface LubeSaleItem {
+  id: number;
+  shift_id?: number;
+  lube_product_id: number;
+  product_name?: string;
+  product_code?: string;
+  qty_units: number;
+  rate: number;
+  total_amount: number;
+  date: string;
+  payment_mode: string;
+  hsn_code?: string;
+  taxable_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+}
+
 export interface ErpStoreState {
   version: number;
   lastUpdated: string;
@@ -190,6 +207,7 @@ export interface ErpStoreState {
   transfers: TransferEntryRecord[];
   quotations: QuotationItem[];
   cashBills: RetailCashBillItem[];
+  lubeSales: LubeSaleItem[];
 }
 
 // Purge any residual legacy localStorage cache from previous software iterations
@@ -618,6 +636,7 @@ export const DEFAULT_INITIAL_STATE: ErpStoreState = {
       status: 'PAID',
     },
   ],
+  lubeSales: [],
 };
 
 class ErpStore {
@@ -691,6 +710,7 @@ class ErpStore {
     transfers?: any[];
     quotations?: any[];
     cashBills?: any[];
+    lubeSales?: any[];
   }): void {
     if (payload.stationProfile) {
       this.state.stationProfile = { ...this.state.stationProfile, ...payload.stationProfile };
@@ -944,6 +964,24 @@ class ErpStore {
         driver_name: b.driver_name,
         status: b.status || 'PAID',
         created_at: b.created_at,
+      }));
+    }
+    if (payload.lubeSales && payload.lubeSales.length > 0) {
+      this.state.lubeSales = payload.lubeSales.map((s: any) => ({
+        id: Number(s.id),
+        shift_id: s.shift_id ? Number(s.shift_id) : undefined,
+        lube_product_id: Number(s.lube_product_id),
+        product_name: s.product_name || 'Lube Item',
+        product_code: s.product_code || 'LUBE',
+        qty_units: Number(s.qty_units || 1),
+        rate: Number(s.rate || 0),
+        total_amount: Number(s.total_amount || 0),
+        date: s.date || this.state.activeShift.date,
+        payment_mode: s.payment_mode || 'CASH',
+        hsn_code: s.hsn_code || '2710',
+        taxable_amount: Number(s.taxable_amount || 0),
+        cgst_amount: Number(s.cgst_amount || 0),
+        sgst_amount: Number(s.sgst_amount || 0),
       }));
     }
     this.notify();
@@ -2177,6 +2215,73 @@ class ErpStore {
     return true;
   }
 
+  public recordLubeSale(sale: Partial<LubeSaleItem>): LubeSaleItem {
+    const prod = this.state.products.find((p) => p.id === sale.lube_product_id);
+    const rate = Number(sale.rate || prod?.sale_price || 0);
+    const qty = Number(sale.qty_units || 1);
+    const totalAmount = roundCurrency(qty * rate);
+
+    const newSale: LubeSaleItem = {
+      id: sale.id || Date.now(),
+      shift_id: sale.shift_id,
+      lube_product_id: Number(sale.lube_product_id),
+      product_name: sale.product_name || prod?.name || 'Lube Item',
+      product_code: sale.product_code || prod?.code || 'LUBE',
+      qty_units: qty,
+      rate: rate,
+      total_amount: totalAmount,
+      date: sale.date || this.state.activeShift.date,
+      payment_mode: sale.payment_mode || 'CASH',
+      hsn_code: sale.hsn_code || prod?.hsn_code || '2710',
+      taxable_amount: sale.taxable_amount || roundCurrency(totalAmount / 1.18),
+      cgst_amount: sale.cgst_amount || roundCurrency((totalAmount - (totalAmount / 1.18)) / 2),
+      sgst_amount: sale.sgst_amount || roundCurrency((totalAmount - (totalAmount / 1.18)) / 2),
+    };
+
+    // Deduct stock units from products
+    if (prod) {
+      prod.current_stock_units = Math.max(0, (prod.current_stock_units || 0) - qty);
+      prod.is_low_stock = prod.current_stock_units <= (prod.reorder_level || 5);
+    }
+
+    // If CASH, increase Cash On Hand
+    if (newSale.payment_mode === 'CASH') {
+      const cashAcc = this.state.bankAccounts.find((a) => a.type === 'CASH') || this.state.bankAccounts[0];
+      if (cashAcc) {
+        cashAcc.balance = addCurrency(cashAcc.balance, totalAmount);
+      }
+    }
+
+    this.state.lubeSales.unshift(newSale);
+    this.notify();
+    return newSale;
+  }
+
+  public deleteLubeSale(saleId: number): boolean {
+    const idx = this.state.lubeSales.findIndex((s) => s.id === saleId);
+    if (idx === -1) return false;
+    const sale = this.state.lubeSales[idx];
+
+    // Restore stock units
+    const prod = this.state.products.find((p) => p.id === sale.lube_product_id);
+    if (prod) {
+      prod.current_stock_units = (prod.current_stock_units || 0) + sale.qty_units;
+      prod.is_low_stock = prod.current_stock_units <= (prod.reorder_level || 5);
+    }
+
+    // Revert cash balance
+    if (sale.payment_mode === 'CASH') {
+      const cashAcc = this.state.bankAccounts.find((a) => a.type === 'CASH') || this.state.bankAccounts[0];
+      if (cashAcc) {
+        cashAcc.balance = Math.max(0, subCurrency(cashAcc.balance, sale.total_amount));
+      }
+    }
+
+    this.state.lubeSales.splice(idx, 1);
+    this.notify();
+    return true;
+  }
+
   // -------------------------------------------------------------------------
   // CONTROL PANEL: BACKUP, RESTORE, CLEANING
   // -------------------------------------------------------------------------
@@ -2233,6 +2338,7 @@ class ErpStore {
       this.state.transfers = [];
       this.state.quotations = [];
       this.state.cashBills = [];
+      this.state.lubeSales = [];
       // Reset customer outstanding
       this.state.customers.forEach((c) => {
         c.current_outstanding = 0;

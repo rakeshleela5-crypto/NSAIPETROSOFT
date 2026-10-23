@@ -10,7 +10,11 @@ from app.main import app
 from app.models.petrol_pump import (
     BankAccount,
     Customer,
+    Employee,
+    EmployeeShortageLedger,
     FuelProduct,
+    LubeProduct,
+    LubeSaleEntry,
     Nozzle,
     RateHistory,
     Tank,
@@ -49,8 +53,10 @@ async def test_parity_crud_endpoints():
         tank = Tank(id=1, tank_name="HSD Underground Tank 1", product_id=1, capacity_liters=20000.0, current_stock=12000.0)
         nozzle = Nozzle(id=1, nozzle_name="Nozzle 1 (HSD)", machine_name="MPD 1", tank_id=1, product_id=1, current_meter=5000.0)
         profile = StationProfileSetting(id=1, station_name="TEST DEALER OUTLET", manager_pin="1234")
+        emp = Employee(id=1, name="Ramesh Attendant", code="EMP01", shortage_balance=500.0)
+        lube = LubeProduct(id=1, code="SERVO-4T", name="Servo 4T Engine Oil", category="LUBE_OIL", mrp=360.0, sale_price=350.0, cost_price=280.0, current_stock_units=20, reorder_level=5)
 
-        db.add_all([acc1, acc2, prod, rate_hist0, tank, nozzle, profile])
+        db.add_all([acc1, acc2, prod, rate_hist0, tank, nozzle, profile, emp, lube])
         await db.commit()
 
     transport = ASGITransport(app=app)
@@ -271,4 +277,71 @@ async def test_parity_crud_endpoints():
         # Delete strapping point
         del_pt_res = await client.delete(f"/api/v1/pump/tanks/strapping-chart/{pt_id}?manager_pin=1234")
         assert del_pt_res.status_code == 200
+
+        # 9. Test Packaged Lube Sale, Cash Increment, Listing, and Voiding with Stock & Cash Rollback
+        lube_res = await client.post(
+            "/api/v1/pump/lubes/sale",
+            json={
+                "lube_product_id": 1,
+                "qty_units": 2,
+                "rate": 350.0,
+                "payment_mode": "CASH",
+            },
+        )
+        assert lube_res.status_code == 200, lube_res.text
+        lube_data = lube_res.json()
+        assert lube_data["total_amount"] == 700.0
+        assert lube_data["remaining_stock_units"] == 18
+        lube_sale_id = lube_data["id"]
+
+        # Verify Cash on Hand increased
+        async with async_session() as db:
+            cash_acc = await db.get(BankAccount, 1)
+            assert cash_acc.balance == 100700.0
+
+        # Verify lube sales listing
+        sales_list_res = await client.get("/api/v1/pump/lubes/sales")
+        assert sales_list_res.status_code == 200
+        lube_sales = sales_list_res.json()
+        assert any(s["id"] == lube_sale_id and s["total_amount"] == 700.0 for s in lube_sales)
+
+        # Void lube sale and verify stock restored to 20 and Cash on Hand restored to 100000.0
+        del_lube_res = await client.delete(f"/api/v1/pump/lubes/sales/{lube_sale_id}?manager_pin=1234")
+        assert del_lube_res.status_code == 200, del_lube_res.text
+
+        async with async_session() as db:
+            lube_prod = await db.get(LubeProduct, 1)
+            assert lube_prod.current_stock_units == 20
+            cash_acc = await db.get(BankAccount, 1)
+            assert cash_acc.balance == 100000.0
+
+        # 10. Test Employee Shortage Recovery and Voiding with Balance Rollback
+        rec_res = await client.post(
+            "/api/v1/pump/employees/1/settle-shortage",
+            json={
+                "amount": 200.0,
+                "settlement_type": "CASH_RECOVERY",
+                "notes": "Cash recovery from Ramesh",
+                "manager_pin": "1234",
+            },
+        )
+        assert rec_res.status_code == 200, rec_res.text
+        assert rec_res.json()["remaining_shortage_balance"] == 300.0
+
+        # Verify shortage history
+        shortages_res = await client.get("/api/v1/pump/employees/1/shortages")
+        assert shortages_res.status_code == 200
+        shortage_history = shortages_res.json()["ledger"]
+        assert len(shortage_history) >= 1
+        rec_entry_id = shortage_history[0]["id"]
+
+        # Void recovery and verify employee balance restores to 500.0
+        del_shortage_res = await client.delete(f"/api/v1/pump/employees/shortages/{rec_entry_id}?manager_pin=1234")
+        assert del_shortage_res.status_code == 200, del_shortage_res.text
+        assert del_shortage_res.json()["new_shortage_balance"] == 500.0
+
+        async with async_session() as db:
+            emp_rec = await db.get(Employee, 1)
+            assert emp_rec.shortage_balance == 500.0
+
 

@@ -82,6 +82,28 @@ export const SalesRegisterModal: React.FC<SalesRegisterModalProps> = ({
         status: 'CLOSED',
       };
     }),
+    // Retail Walk-in POS Cash Bills
+    ...erpStore.getState().cashBills.map((b) => ({
+      id: `POS-CASH-${b.id}`,
+      date: b.date,
+      type: 'CASH' as const,
+      particulars: `Walk-in Memo (${b.vehicle_no}) - ${b.product_name}`,
+      reference: b.bill_no,
+      litres: b.qty,
+      amount: Number(b.amount || 0),
+      status: b.status || 'PAID',
+    })),
+    // Packaged Lubricants & DEF Sales
+    ...erpStore.getState().lubeSales.map((l) => ({
+      id: `LUBE-${l.id}`,
+      date: l.date,
+      type: (l.payment_mode === 'CREDIT' ? 'CREDIT' : l.payment_mode === 'UPI' ? 'DIGITAL' : 'CASH') as 'CREDIT' | 'DIGITAL' | 'CASH',
+      particulars: `Lube / Packed: ${l.product_name || 'Item'} (${l.qty_units} Pk)`,
+      reference: `LUB-${l.id}`,
+      litres: l.qty_units,
+      amount: Number(l.total_amount || 0),
+      status: 'SOLD',
+    })),
   ];
 
   const filtered = unifiedTransactions.filter((tx) => {

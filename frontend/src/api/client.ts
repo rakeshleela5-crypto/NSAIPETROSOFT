@@ -1742,3 +1742,43 @@ export async function deleteStrappingPointApi(pointId: number, managerPin?: stri
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Packaged Lube & DEF Sales API
+// ---------------------------------------------------------------------------
+export async function fetchLubeSalesApi(limit: number = 100): Promise<any[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes/sales?limit=${limit}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Fetch lube sales failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteLubeSaleApi(saleId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/lubes/sales/${saleId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/lubes/sales/${saleId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Void lube sale failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Employee Shortage Ledger Deletion API
+// ---------------------------------------------------------------------------
+export async function deleteEmployeeShortageApi(shortageId: number, managerPin?: string): Promise<any> {
+  const url = managerPin
+    ? `${API_BASE_URL}/api/v1/pump/employees/shortages/${shortageId}?manager_pin=${encodeURIComponent(managerPin)}`
+    : `${API_BASE_URL}/api/v1/pump/employees/shortages/${shortageId}`;
+  const res = await fetchWithTimeout(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Void employee shortage failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+

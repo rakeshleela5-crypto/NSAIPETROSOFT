@@ -2085,6 +2085,53 @@ async def get_employee_shortages(employee_id: int, db: AsyncSession = Depends(ge
     }
 
 
+@router.delete("/employees/shortages/{shortage_id}", summary="Delete / Void Employee Shortage Entry")
+async def delete_employee_shortage(
+    shortage_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to void shortage entries.",
+        )
+    entry = await db.get(EmployeeShortageLedger, shortage_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Shortage entry not found")
+
+    emp = await db.get(Employee, entry.employee_id)
+    if emp:
+        # If entry was a newly registered SHORTAGE (which increased shortage_balance), voiding it reduces the debt
+        if entry.gap_type == "SHORTAGE" or entry.status == "PENDING":
+            sub_amt = abs(float(entry.amount or 0.0))
+            emp.shortage_balance = max(0.0, round(float(emp.shortage_balance or 0.0) - sub_amt, 2))
+        # If entry was a RECOVERY (which decreased shortage_balance), voiding it restores the debt
+        elif entry.gap_type == "RECOVERY" or (entry.amount and entry.amount < 0) or entry.status in ("SETTLED", "RECOVERED_CASH", "PAYROLL_DEDUCTION", "CASH_RECOVERY", "SALARY_DEDUCTION", "CASH"):
+            restore_amt = abs(float(entry.amount or 0.0))
+            emp.shortage_balance = round(float(emp.shortage_balance or 0.0) + restore_amt, 2)
+            # Reverse cash collection if settled via cash
+            if "CASH" in (entry.status or "").upper():
+                cash_res = await db.execute(select(BankAccount).where(BankAccount.account_type == "CASH").limit(1))
+                cash_acc = cash_res.scalars().first()
+                if not cash_acc:
+                    cash_acc = await db.get(BankAccount, 1)
+                if cash_acc:
+                    cash_acc.balance = max(0.0, round(cash_acc.balance - restore_amt, 2))
+
+    await db.delete(entry)
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Shortage ledger entry #{shortage_id} voided successfully.",
+        "id": shortage_id,
+        "employee_id": emp.id if emp else None,
+        "new_shortage_balance": emp.shortage_balance if emp else 0.0,
+    }
+
+
 @router.get("/settlements", summary="List Shift Settlements History")
 async def list_settlements(db: AsyncSession = Depends(get_db)):
     res = await db.execute(
@@ -4044,6 +4091,15 @@ async def record_lube_sale(payload: LubeSaleRequest, db: AsyncSession = Depends(
     # Deduct discrete package units from stock
     lube.current_stock_units -= payload.qty_units
 
+    # If CASH, update Primary Cash On Hand bank account balance
+    if payload.payment_mode.upper() == "CASH":
+        cash_res = await db.execute(select(BankAccount).where(BankAccount.account_type == "CASH").limit(1))
+        cash_acc = cash_res.scalars().first()
+        if not cash_acc:
+            cash_acc = await db.get(BankAccount, 1)
+        if cash_acc:
+            cash_acc.balance = round(cash_acc.balance + total_amount, 2)
+
     sale_entry = LubeSaleEntry(
         shift_id=payload.shift_id,
         lube_product_id=lube.id,
@@ -4060,9 +4116,11 @@ async def record_lube_sale(payload: LubeSaleRequest, db: AsyncSession = Depends(
     )
     db.add(sale_entry)
     await db.commit()
+    await db.refresh(sale_entry)
 
     return {
         "status": "success",
+        "id": sale_entry.id,
         "message": f"Sold {payload.qty_units} unit(s) of '{lube.name}' for ₹{total_amount:.2f} (Taxable: ₹{taxable_amount:.2f}, GST: ₹{total_gst:.2f})",
         "remaining_stock_units": lube.current_stock_units,
         "total_amount": total_amount,
@@ -4070,6 +4128,83 @@ async def record_lube_sale(payload: LubeSaleRequest, db: AsyncSession = Depends(
         "cgst_amount": cgst_amount,
         "sgst_amount": sgst_amount,
         "hsn_code": hsn,
+    }
+
+
+@router.get("/lubes/sales", summary="List Packaged Lubricants & DEF Sales Register")
+async def list_lube_sales(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(LubeSaleEntry)
+        .options(selectinload(LubeSaleEntry.lube_product))
+        .order_by(desc(LubeSaleEntry.id))
+        .limit(limit)
+    )
+    res = await db.execute(stmt)
+    entries = res.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "shift_id": s.shift_id,
+            "lube_product_id": s.lube_product_id,
+            "product_name": s.lube_product.name if s.lube_product else "Lube Item",
+            "product_code": s.lube_product.code if s.lube_product else "LUBE",
+            "qty_units": s.qty_units,
+            "rate": s.rate,
+            "total_amount": s.total_amount,
+            "hsn_code": s.hsn_code,
+            "gst_percent": s.gst_percent,
+            "taxable_amount": s.taxable_amount,
+            "cgst_amount": s.cgst_amount,
+            "sgst_amount": s.sgst_amount,
+            "date": str(s.date),
+            "payment_mode": s.payment_mode,
+        }
+        for s in entries
+    ]
+
+
+@router.delete("/lubes/sales/{sale_id}", summary="Delete / Void Lube Sale with Stock & Cash Rollback")
+async def delete_lube_sale(
+    sale_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to void lube sales.",
+        )
+    sale = await db.get(LubeSaleEntry, sale_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Lube sale record not found")
+
+    # Restore stock units
+    lube = await db.get(LubeProduct, sale.lube_product_id)
+    if lube:
+        lube.current_stock_units += sale.qty_units
+
+    # Revert cash balance if CASH
+    if sale.payment_mode.upper() == "CASH":
+        cash_res = await db.execute(select(BankAccount).where(BankAccount.account_type == "CASH").limit(1))
+        cash_acc = cash_res.scalars().first()
+        if not cash_acc:
+            cash_acc = await db.get(BankAccount, 1)
+        if cash_acc:
+            cash_acc.balance = max(0.0, round(cash_acc.balance - sale.total_amount, 2))
+
+    p_name = lube.name if lube else "Lube"
+    qty = sale.qty_units
+    await db.delete(sale)
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Voided sale of {qty} unit(s) of '{p_name}'. Stock and cash balances rolled back.",
+        "id": sale_id,
     }
 
 

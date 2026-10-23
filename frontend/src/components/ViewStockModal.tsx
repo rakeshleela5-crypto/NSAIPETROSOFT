@@ -1,6 +1,8 @@
 import React from 'react';
 import type { DashboardKPIs, LubeProductItem } from '../models';
 import type { TankMasterItem } from '../store/erpStore';
+import { erpStore } from '../store/erpStore';
+import { recordLubeSaleApi } from '../api/client';
 import { calcTankUllage } from '../utils/mathEngine';
 
 interface ViewStockModalProps {
@@ -10,6 +12,8 @@ interface ViewStockModalProps {
   products: LubeProductItem[];
   kpis: DashboardKPIs;
   onOpenDipDialog: (tankId?: number) => void;
+  showToast?: (msg: string) => void;
+  loadAllErpData?: () => Promise<void>;
 }
 
 export const ViewStockModal: React.FC<ViewStockModalProps> = ({
@@ -19,6 +23,8 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
   products,
   kpis,
   onOpenDipDialog,
+  showToast,
+  loadAllErpData,
 }) => {
   if (!isOpen) return null;
 
@@ -118,6 +124,7 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
                     <th className="text-right">Units In Stock</th>
                     <th className="text-right">Stock Valuation (₹)</th>
                     <th>Status</th>
+                    <th style={{ width: '70px', textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -147,6 +154,46 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
                           >
                             {p.is_low_stock ? 'REORDER' : 'IN STOCK'}
                           </span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            className="win-btn-classic"
+                            style={{ height: '20px', padding: '0 6px', fontSize: '10px', fontWeight: 700, color: '#1b5e20' }}
+                            disabled={(p.current_stock_units || 0) <= 0}
+                            onClick={async () => {
+                              const qtyStr = window.prompt(`Enter quantity of "${p.name}" to sell (Max: ${p.current_stock_units}):`, '1');
+                              if (!qtyStr) return;
+                              const qty = parseInt(qtyStr, 10);
+                              if (isNaN(qty) || qty <= 0 || qty > (p.current_stock_units || 0)) {
+                                if (showToast) showToast('⚠ Invalid quantity entered');
+                                return;
+                              }
+                              try {
+                                erpStore.recordLubeSale({
+                                  lube_product_id: p.id,
+                                  product_name: p.name,
+                                  product_code: p.code,
+                                  qty_units: qty,
+                                  rate: p.sale_price,
+                                  payment_mode: 'CASH',
+                                });
+                                await recordLubeSaleApi({
+                                  lube_product_id: p.id,
+                                  qty_units: qty,
+                                  rate: p.sale_price,
+                                  payment_mode: 'CASH',
+                                });
+                                if (showToast) showToast(`✔ Sold ${qty} unit(s) of "${p.name}"! Cash on Hand & inventory updated.`);
+                                if (loadAllErpData) await loadAllErpData();
+                              } catch (err: any) {
+                                if (showToast) showToast(`❌ Sale failed: ${err.message}`);
+                              }
+                            }}
+                            title="Sell packaged units from counter"
+                          >
+                            🛒 Sell
+                          </button>
                         </td>
                       </tr>
                     );

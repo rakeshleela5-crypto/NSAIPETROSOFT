@@ -556,8 +556,18 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                 onChange={(e) => setCashMemoProduct(e.target.value)}
                 style={{ flex: 1, fontWeight: 700 }}
               >
-                <option value="MS">Motor Spirit (Petrol MS) - ₹102.65</option>
-                <option value="HSD">High Speed Diesel (HSD) - ₹94.50</option>
+                {ratesList && ratesList.length > 0 ? (
+                  ratesList.map((r) => (
+                    <option key={r.id} value={r.code}>
+                      {r.name} ({r.code}) - ₹{Number(r.rate).toFixed(2)}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="MS">Motor Spirit (Petrol MS) - ₹102.65</option>
+                    <option value="HSD">High Speed Diesel (HSD) - ₹94.50</option>
+                  </>
+                )}
               </select>
             </div>
 
