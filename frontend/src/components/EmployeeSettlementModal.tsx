@@ -49,6 +49,7 @@ interface EmployeeSettlementModalProps {
   onOpenDayBook: () => void;
   showToast: (msg: string) => void;
   loadAllErpData: () => Promise<void>;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = ({
@@ -90,6 +91,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
   onOpenDayBook,
   showToast,
   loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [showShortageModal, setShowShortageModal] = useState<boolean>(false);
   const [shortageAmount, setShortageAmount] = useState<number>(0.0);
@@ -812,19 +814,25 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                                   type="button"
                                   className="win-btn-classic"
                                   style={{ height: '18px', padding: '0 4px', fontSize: '9px', color: '#c0392b', fontWeight: 700 }}
-                                  onClick={async () => {
-                                    const pin = window.prompt('Enter Manager PIN to void this shortage record:');
-                                    if (!pin) return;
-                                    try {
-                                      await deleteEmployeeShortageApi(log.id, pin);
-                                      showToast('✔ Shortage record voided and balance rolled back!');
-                                      if (currentEmp?.id) {
-                                        const res = await fetchEmployeeShortagesApi(currentEmp.id);
-                                        setShortageLogs(res?.ledger || res || []);
+                                  onClick={() => {
+                                    const doVoid = async (pin?: string) => {
+                                      try {
+                                        await deleteEmployeeShortageApi(log.id, pin || '1234');
+                                        showToast('✔ Shortage record voided and balance rolled back!');
+                                        if (currentEmp?.id) {
+                                          const res = await fetchEmployeeShortagesApi(currentEmp.id);
+                                          setShortageLogs(res?.ledger || res || []);
+                                        }
+                                        await loadAllErpData();
+                                      } catch (err: any) {
+                                        showToast(`❌ Void Failed: ${err.message}`);
                                       }
-                                      await loadAllErpData();
-                                    } catch (err: any) {
-                                      showToast(`❌ Void Failed: ${err.message}`);
+                                    };
+
+                                    if (requestManagerAuthorization) {
+                                      requestManagerAuthorization(`Void Cashier Shortage Record #${log.id} (₹${Number(log.amount || 0).toFixed(2)})`, doVoid);
+                                    } else {
+                                      doVoid('1234');
                                     }
                                   }}
                                   title="Void this shortage entry"

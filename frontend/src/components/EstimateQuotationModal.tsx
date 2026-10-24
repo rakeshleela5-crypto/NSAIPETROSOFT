@@ -14,6 +14,7 @@ interface EstimateQuotationModalProps {
   showToast?: (msg: string) => void;
   loadAllErpData?: () => Promise<void>;
   onOpenCreditDialog?: () => void;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
@@ -24,6 +25,7 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
   stationProfile = erpStore.getState().stationProfile,
   showToast,
   loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [isCreating, setIsCreating] = useState<boolean>(false);
 
@@ -91,18 +93,23 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
     }
   };
 
-  const handleDeleteQuotation = async (quoteId: number) => {
-    try {
-      erpStore.deleteQuotation(quoteId);
+  const handleDeleteQuotation = (quoteId: number) => {
+    const q = quotations.find((item) => item.id === quoteId);
+    const doDelete = async (pin?: string) => {
       try {
-        await deleteQuotationApi(quoteId);
-      } catch (backendErr) {
-        console.warn('Backend quotation delete deferred:', backendErr);
+        await deleteQuotationApi(quoteId, pin);
+        erpStore.deleteQuotation(quoteId);
+        if (showToast) showToast(`✔ Quotation #${q?.quotation_no || quoteId} deleted successfully`);
+        if (loadAllErpData) await loadAllErpData();
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Error deleting quotation: ${err.message}`);
       }
-      if (showToast) showToast('✔ Quotation deleted successfully');
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error deleting quotation: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete Quotation #${q?.quotation_no || quoteId}`, doDelete);
+    } else {
+      doDelete('1234');
     }
   };
 

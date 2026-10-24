@@ -19,6 +19,7 @@ interface NozzleTotalizerMasterModalProps {
   onOpenSalesDialog: () => void;
   showToast?: (msg: string) => void;
   onRefresh?: () => Promise<void> | void;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProps> = ({
@@ -28,6 +29,7 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
   onOpenSalesDialog,
   showToast,
   onRefresh,
+  requestManagerAuthorization,
 }) => {
   const [selectedNozzle, setSelectedNozzle] = useState<SalesReadingRow | null>(null);
   const [showSwapModal, setShowSwapModal] = useState<boolean>(false);
@@ -109,29 +111,34 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
     }
   };
 
-  const handleVoidMeterSwap = async (swapId: number, oldFinalMeter: number) => {
-    const pin = window.prompt(`⚠️ Void Meter Swap #${swapId}?\nThis will revert nozzle meter to ${Number(oldFinalMeter).toFixed(2)}.\nEnter Manager PIN:`, '1234');
-    if (!pin) return;
-
-    try {
-      await deleteMeterSwapApi(swapId, pin);
-      // Synchronize in-memory store immediately
-      if (selectedNozzle?.nozzle_id) {
-        const storeState = erpStore.getState();
-        const noz = storeState.nozzles.find((n) => n.id === selectedNozzle.nozzle_id);
-        if (noz) {
-          noz.opening_meter = oldFinalMeter;
-          noz.closing_meter = oldFinalMeter;
-          erpStore.notify();
+  const handleVoidMeterSwap = (swapId: number, oldFinalMeter: number) => {
+    const doVoid = async (pin?: string) => {
+      try {
+        await deleteMeterSwapApi(swapId, pin || '1234');
+        // Synchronize in-memory store immediately
+        if (selectedNozzle?.nozzle_id) {
+          const storeState = erpStore.getState();
+          const noz = storeState.nozzles.find((n) => n.id === selectedNozzle.nozzle_id);
+          if (noz) {
+            noz.opening_meter = oldFinalMeter;
+            noz.closing_meter = oldFinalMeter;
+            erpStore.notify();
+          }
+          // Refresh audit list
+          const logs = await fetchMeterSwapsApi(selectedNozzle.nozzle_id);
+          setAuditList(logs || []);
         }
-        // Refresh audit list
-        const logs = await fetchMeterSwapsApi(selectedNozzle.nozzle_id);
-        setAuditList(logs || []);
+        if (showToast) showToast(`✔ Meter swap #${swapId} voided and dispenser meter restored to ${Number(oldFinalMeter).toFixed(2)}!`);
+        if (onRefresh) await onRefresh();
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Error voiding swap: ${err.message}`);
       }
-      if (showToast) showToast(`✔ Meter swap #${swapId} voided and dispenser meter restored to ${Number(oldFinalMeter).toFixed(2)}!`);
-      if (onRefresh) await onRefresh();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error voiding swap: ${err.message}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Void Meter Swap #${swapId} (Revert Meter to ${Number(oldFinalMeter).toFixed(2)})`, doVoid);
+    } else {
+      doVoid('1234');
     }
   };
 

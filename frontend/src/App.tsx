@@ -1734,16 +1734,16 @@ export default function App() {
   const handleDeleteExpense = (id: number) => {
     const expItem = expensesList.find((x) => x.id === id);
     requestManagerAuthorization(`Delete Expense Voucher #${id} (${expItem?.category || 'General'} - ₹${Number(expItem?.amount || 0).toFixed(2)})`, async (pin?: string) => {
-      erpStore.deleteExpense(id);
       try {
         await deleteExpense(id, pin);
+        erpStore.deleteExpense(id);
+        setExpensesList((prev) => prev.filter((x) => x.id !== id));
+        setEmpExpensesList((prev) => prev.filter((x) => x.id !== id));
+        showToast(`✔ Expense voucher #${id} deleted & cashier liability restored!`);
+        await loadAllErpData();
       } catch (e: any) {
-        console.warn('Backend expense delete deferred or offline:', e);
+        showToast(`❌ Cannot delete expense: ${e.message || 'Operation failed'}`);
       }
-      setExpensesList((prev) => prev.filter((x) => x.id !== id));
-      setEmpExpensesList((prev) => prev.filter((x) => x.id !== id));
-      showToast(`✔ Expense voucher #${id} deleted & cashier liability restored!`);
-      await loadAllErpData();
     });
   };
 
@@ -1784,13 +1784,13 @@ export default function App() {
 
   const handleDeleteTransfer = (transferId: number) => {
     requestManagerAuthorization(`Void & Revert Contra Transfer #${transferId}`, async (pin) => {
-      erpStore.deleteTransfer(transferId);
       try {
         await deleteTransferApi(transferId, pin);
+        erpStore.deleteTransfer(transferId);
         showToast(`✔ Contra transfer #${transferId} reverted successfully!`);
         await loadAllErpData();
       } catch (err: any) {
-        showToast(`⚠ Revert failed: ${err.message}`);
+        showToast(`❌ Revert failed: ${err.message}`);
       }
     });
   };
@@ -1846,15 +1846,15 @@ export default function App() {
 
   const handleDeleteDip = (id: number) => {
     requestManagerAuthorization(`Delete Tank Dip Reading #${id}`, async (pin?: string) => {
-      erpStore.deleteDipReading(id);
       try {
         await deleteTankDipApi(id, pin);
+        erpStore.deleteDipReading(id);
+        setDipsList((prev) => prev.filter((d: any) => d.id !== id));
+        showToast(`✔ Tank dip entry #${id} deleted.`);
+        await loadAllErpData();
       } catch (e: any) {
-        console.warn('Backend dip delete deferred:', e);
+        showToast(`❌ Cannot delete tank dip: ${e.message || 'Operation failed'}`);
       }
-      setDipsList((prev) => prev.filter((d: any) => d.id !== id));
-      showToast(`✔ Tank dip entry #${id} deleted.`);
-      await loadAllErpData();
     });
   };
 
@@ -1991,17 +1991,17 @@ export default function App() {
 
   const handleDeleteCardSettlement = (idOrBatch: string | number, machineName: string, amount: number) => {
     requestManagerAuthorization(`Void EDC Batch Settlement (${machineName} - ₹${amount.toFixed(2)})`, async (pin?: string) => {
-      erpStore.deleteCardSettlement(idOrBatch);
-      if (typeof idOrBatch === 'number') {
-        try {
+      try {
+        if (typeof idOrBatch === 'number') {
           await deleteCardSettlementApi(idOrBatch, pin);
-        } catch (e: any) {
-          console.warn('Backend card settlement delete deferred:', e);
         }
+        erpStore.deleteCardSettlement(idOrBatch);
+        setCardSettlements((prev) => prev.filter((c: any) => (c.id !== idOrBatch && c.batch !== idOrBatch && c.batch_no !== idOrBatch)));
+        showToast(`✔ EDC Settlement (${machineName} - ₹${amount.toFixed(2)}) voided.`);
+        await loadAllErpData();
+      } catch (e: any) {
+        showToast(`❌ Cannot void EDC settlement: ${e.message || 'Operation failed'}`);
       }
-      setCardSettlements((prev) => prev.filter((c: any) => (c.id !== idOrBatch && c.batch !== idOrBatch && c.batch_no !== idOrBatch)));
-      showToast(`✔ EDC Settlement (${machineName} - ₹${amount.toFixed(2)}) voided.`);
-      await loadAllErpData();
     });
   };
 
@@ -2779,7 +2779,6 @@ export default function App() {
         setCreditIndentNo={setCreditIndentNo}
         onDeleteCreditBill={(b) => {
           requestManagerAuthorization(`Delete Credit Bill #${b.bill} (${b.cust} - ₹${b.total})`, async (pin?: string) => {
-            erpStore.deleteCreditBill(b.id || b.bill || b.slip);
             try {
               if (b.id) {
                 await deleteCreditSale(b.id, pin);
@@ -2790,10 +2789,11 @@ export default function App() {
                   await deleteCreditSale(found.id, pin);
                 }
               }
+              erpStore.deleteCreditBill(b.id || b.bill || b.slip);
               showToast(`✔ Credit bill #${b.bill} deleted & ledger reversed!`);
               await loadAllErpData();
             } catch (err: any) {
-              showToast(`⚠ Error deleting credit sale: ${err.message || 'Database error'}`);
+              showToast(`❌ Error deleting credit sale: ${err.message || 'Database error'}`);
             }
           });
         }}
@@ -3007,6 +3007,7 @@ export default function App() {
         onOpenDayBook={() => setActiveDialog('dayBookReport')}
         showToast={showToast}
         loadAllErpData={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <DayBookReportModal
@@ -3065,6 +3066,7 @@ export default function App() {
         onOpenSalesDialog={() => setActiveDialog('sales')}
         showToast={showToast}
         onRefresh={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <BankAccountsMasterModal
@@ -3124,6 +3126,7 @@ export default function App() {
         stationProfile={stationProfile}
         showToast={showToast}
         loadAllErpData={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <ViewStockModal
@@ -3184,6 +3187,7 @@ export default function App() {
         showToast={showToast}
         loadAllErpData={loadAllErpData}
         onOpenCreditDialog={openCreditDialog}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <SalesRegisterModal

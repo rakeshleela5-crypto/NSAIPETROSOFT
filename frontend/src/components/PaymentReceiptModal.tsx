@@ -366,7 +366,6 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                             style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                             onClick={() => {
                               requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${custName} - ₹${amountVal.toFixed(2)})`, async (pin?: string) => {
-                                erpStore.deletePaymentReceipt(h.id || h.receipt_no || (i + 1));
                                 try {
                                   if (h.id) {
                                     await deletePaymentReceipt(h.id, pin);
@@ -377,10 +376,11 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                                       await deletePaymentReceipt(found.id, pin);
                                     }
                                   }
+                                  erpStore.deletePaymentReceipt(h.id || h.receipt_no || (i + 1));
                                   showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
                                   await loadAllErpData();
                                 } catch (err: any) {
-                                  showToast(`⚠ Error deleting payment receipt: ${err.message || 'Database error'}`);
+                                  showToast(`❌ Error deleting payment receipt: ${err.message || 'Database error'}`);
                                 }
                               });
                             }}

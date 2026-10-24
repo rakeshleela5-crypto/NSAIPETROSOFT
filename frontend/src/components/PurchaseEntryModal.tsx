@@ -603,9 +603,6 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                               onClick={() => {
                                 const purKey = p.id ?? p.inv ?? p.inv_no ?? p.po ?? p.po_no;
                                 requestManagerAuthorization(`Delete Purchase Inward #${p.inv || p.inv_no || p.po || p.po_no} (${p.dealer} - ₹${Number(p.amount || 0).toFixed(2)})`, async (pin?: string) => {
-                                  if (purKey !== undefined) {
-                                    erpStore.deletePurchase(purKey);
-                                  }
                                   try {
                                     if (p.id) {
                                       await deletePurchase(p.id, pin);
@@ -616,10 +613,13 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                                         await deletePurchase(found.id, pin);
                                       }
                                     }
+                                    if (purKey !== undefined) {
+                                      erpStore.deletePurchase(purKey);
+                                    }
                                     showToast(`✔ Purchase decanting #${p.inv || p.inv_no || p.po || p.po_no} deleted & tank stock reversed!`);
                                     await loadAllErpData();
                                   } catch (err: any) {
-                                    showToast(`⚠ Error deleting purchase: ${err.message || 'Database error'}`);
+                                    showToast(`❌ Error deleting purchase: ${err.message || 'Database error'}`);
                                   }
                                 });
                               }}

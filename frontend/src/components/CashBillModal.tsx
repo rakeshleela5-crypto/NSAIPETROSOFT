@@ -22,6 +22,7 @@ interface CashBillModalProps {
   stationProfile: StationProfile;
   showToast: (msg: string) => void;
   loadAllErpData: () => Promise<void>;
+  requestManagerAuthorization?: (actionDesc: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 export const CashBillModal: React.FC<CashBillModalProps> = ({
@@ -32,6 +33,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
   stationProfile,
   showToast,
   loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [billMode, setBillMode] = useState<'CASH' | 'CREDIT' | 'UPI' | 'SPLIT'>('CASH');
   const [cashMemoBillNo, setCashMemoBillNo] = useState<string>(`POS-${Date.now().toString().slice(-4)}`);
@@ -305,21 +307,22 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
     showToast(`🖨️ Reprinted Retail Memo #${bill.bill_no}`);
   };
 
-  const handleVoidBill = async (billId: number, billNo: string, amount: number) => {
-    const pin = window.prompt(`⚠️ Void Cash Memo #${billNo} (₹${amount.toFixed(2)})?\nEnter Manager Authorization PIN:`, '1234');
-    if (!pin) return;
-
-    try {
-      erpStore.deleteCashBill(billId);
+  const handleVoidBill = (billId: number, billNo: string, amount: number) => {
+    const doVoid = async (pin?: string) => {
       try {
         await deleteCashBillApi(billId, pin);
-      } catch (e: any) {
-        console.warn('Backend cash bill void deferred/offline:', e);
+        erpStore.deleteCashBill(billId);
+        showToast(`✔ Retail Cash Memo #${billNo} voided and fuel/cash rolled back!`);
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(`❌ Void error: ${err.message || 'Authorization failed'}`);
       }
-      showToast(`✔ Retail Cash Memo #${billNo} voided and fuel/cash rolled back!`);
-      await loadAllErpData();
-    } catch (err: any) {
-      showToast(`❌ Void error: ${err.message || 'Authorization failed'}`);
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Void Retail Cash Memo #${billNo} (₹${amount.toFixed(2)})`, doVoid);
+    } else {
+      doVoid('1234');
     }
   };
 

@@ -99,16 +99,18 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
 
   const handleRemoveVehicle = async (vehNo: string) => {
     const doRemove = async (pin?: string) => {
-      setVehicleList(vehicleList.filter((v) => v.vehicle_no !== vehNo));
       if (editCustId) {
-        erpStore.removeCustomerVehicle(editCustId, vehNo);
         try {
           await deleteCustomerVehicleApi(editCustId, vehNo, pin);
+          setVehicleList((prev) => prev.filter((v) => v.vehicle_no !== vehNo));
+          erpStore.removeCustomerVehicle(editCustId, vehNo);
           showToast(`✔ Vehicle ${vehNo} removed from fleet`);
           await loadAllErpData();
         } catch (err: any) {
-          console.warn('Backend delete vehicle deferred or offline:', err);
+          showToast(`❌ Cannot remove vehicle: ${err.message || 'Operation failed'}`);
         }
+      } else {
+        setVehicleList((prev) => prev.filter((v) => v.vehicle_no !== vehNo));
       }
     };
 

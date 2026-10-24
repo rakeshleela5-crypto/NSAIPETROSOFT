@@ -82,15 +82,21 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
     }
   };
 
-  const handleDeleteStrappingPoint = async (ptId: number, dip: number) => {
-    const pin = window.prompt(`⚠️ Delete Strapping Point #${ptId} (${dip} cm)?\nEnter Manager PIN:`, '1234');
-    if (!pin) return;
-    try {
-      await deleteStrappingPointApi(ptId, pin);
-      if (showToast) showToast(`✔ Strapping point ${dip}cm deleted.`);
-      await loadStrappingPoints(selectedChartTankId);
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error deleting strapping point: ${err.message}`);
+  const handleDeleteStrappingPoint = (ptId: number, dip: number) => {
+    const doDelete = async (pin?: string) => {
+      try {
+        await deleteStrappingPointApi(ptId, pin || '1234');
+        if (showToast) showToast(`✔ Strapping point ${dip}cm deleted.`);
+        await loadStrappingPoints(selectedChartTankId);
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Error deleting strapping point: ${err.message}`);
+      }
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Delete W&M Tank Strapping Point #${ptId} (${dip} cm)`, doDelete);
+    } else {
+      doDelete('1234');
     }
   };
 
