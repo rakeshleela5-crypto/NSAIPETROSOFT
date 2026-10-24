@@ -669,11 +669,11 @@ body {
 .win-modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 3000;
 }
 
 .win-form-dialog {
@@ -688,15 +688,79 @@ body {
 }
 
 .win-dialog-titlebar {
-  height: 26px;
+  min-height: 28px;
+  height: auto;
   background: linear-gradient(180deg, #0a246a 0%, #a6caf0 100%);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 6px;
+  padding: 3px 6px;
   color: #ffffff;
   font-weight: 700;
   font-size: 12px;
+  gap: 8px;
+  user-select: none;
+}
+
+.win-dialog-titlebar-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win-dialog-titlebar .win-btn,
+.win-dialog-titlebar .win-btn-close {
+  flex-shrink: 0;
+  width: 26px;
+  height: 20px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* POS Dialog Responsive Layout Classes */
+.win-pos-dialog-body {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+}
+
+.win-pos-modes-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.win-pos-modes-row button {
+  flex: 1;
+}
+
+.win-quick-litre-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 10px 95px;
+  flex-wrap: wrap;
+}
+
+.win-quick-litre-btn {
+  min-height: 24px !important;
+  height: 24px !important;
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+.win-pos-hotkey-badge {
+  font-size: 10.5px;
+  opacity: 0.9;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .win-dialog-body {
@@ -1892,6 +1956,7 @@ table td button,
     align-items: flex-start !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
+    z-index: 3000 !important;
   }
 
   .win-form-dialog {
@@ -1908,6 +1973,37 @@ table td button,
     overflow-x: auto !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* POS Modal Mobile Responsive Layout */
+  .win-pos-dialog-body {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .win-pos-modes-row button {
+    flex: 1 1 calc(50% - 6px) !important;
+    min-height: 32px !important;
+    padding: 4px 6px !important;
+    font-size: 11px !important;
+  }
+
+  .win-quick-litre-row {
+    margin: 4px 0 8px 0 !important;
+    gap: 4px !important;
+    width: 100% !important;
+  }
+
+  .win-quick-litre-btn {
+    flex: 1 !important;
+    text-align: center !important;
+    font-size: 11px !important;
+    padding: 3px 0 !important;
+  }
+
+  .win-pos-hotkey-badge {
+    display: none !important;
   }
 
   .win-dialog-footer {

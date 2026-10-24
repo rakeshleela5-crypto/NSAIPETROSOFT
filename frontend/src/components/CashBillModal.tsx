@@ -424,17 +424,18 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
     <div className="win-modal-overlay">
       <div className="win-form-dialog" style={{ width: '840px', maxHeight: '92vh', overflowY: 'auto' }}>
         <div className="win-dialog-titlebar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="win-dialog-titlebar-content">
             <span>⛽</span>
-            <span>Sale POS — Fast Retail Billing & Thermal Receipt [F2=Print, F4=Cash, F8=Credit]</span>
+            <span style={{ fontWeight: 700 }}>Sale POS — Fast Retail Billing & Thermal Receipt</span>
+            <span className="win-pos-hotkey-badge">[F2=Print, F4=Cash, F8=Credit]</span>
           </div>
-          <button className="win-btn" onClick={onClose}>✕</button>
+          <button className="win-btn win-btn-close" onClick={onClose} title="Close (ESC)">✕</button>
         </div>
 
-        <div className="win-dialog-body" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
+        <div className="win-dialog-body win-pos-dialog-body">
           {/* Left: Input Form */}
           <div>
-            <div className="win-actions-row" style={{ marginBottom: '10px' }}>
+            <div className="win-actions-row win-pos-modes-row" style={{ marginBottom: '10px' }}>
               <button
                 type="button"
                 className={`win-btn-classic ${billMode === 'CASH' ? 'win-btn-primary' : ''}`}
@@ -599,14 +600,13 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
             </div>
 
             {/* Quick volume preset chips */}
-            <div style={{ display: 'flex', gap: '4px', margin: '6px 0 10px 95px' }}>
+            <div className="win-quick-litre-row">
               {[5, 10, 20, 50, 100].map((lit) => (
                 <button
                   key={lit}
                   type="button"
-                  className="win-btn-classic"
+                  className="win-btn-classic win-quick-litre-btn"
                   onClick={() => setCashMemoLiters(lit)}
-                  style={{ fontSize: '10.5px', padding: '2px 6px' }}
                 >
                   {lit} L
                 </button>
@@ -704,7 +704,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                 📥 Export CSV
               </button>
             </div>
-            <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '120px', overflowY: 'auto' }}>
+            <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '140px', overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table className="win-datagrid">
                 <thead>
                   <tr>

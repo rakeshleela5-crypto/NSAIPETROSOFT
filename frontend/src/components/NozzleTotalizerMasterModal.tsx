@@ -247,7 +247,7 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
 
       {/* SUB-MODAL 1: Hardware Meter Swap / Replacement */}
       {showSwapModal && selectedNozzle && (
-        <div className="win-modal-overlay" style={{ zIndex: 1100 }}>
+        <div className="win-modal-overlay" style={{ zIndex: 3500 }}>
           <div className="win-form-dialog" style={{ width: '480px' }}>
             <div className="win-dialog-titlebar">
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -368,7 +368,7 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
 
       {/* SUB-MODAL 2: Audit Log of Meter Swaps */}
       {showAuditModal && selectedNozzle && (
-        <div className="win-modal-overlay" style={{ zIndex: 1100 }}>
+        <div className="win-modal-overlay" style={{ zIndex: 3500 }}>
           <div className="win-form-dialog" style={{ width: '640px' }}>
             <div className="win-dialog-titlebar">
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

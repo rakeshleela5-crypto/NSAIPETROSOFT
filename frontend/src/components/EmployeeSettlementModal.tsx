@@ -724,7 +724,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
 
       {/* SUB-MODAL: Employee Shortage Settlement & Advance Ledger */}
       {showShortageModal && currentEmp && (
-        <div className="win-modal-overlay" style={{ zIndex: 1100 }}>
+        <div className="win-modal-overlay" style={{ zIndex: 3500 }}>
           <div className="win-form-dialog" style={{ width: '560px' }}>
             <div className="win-dialog-titlebar">
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
