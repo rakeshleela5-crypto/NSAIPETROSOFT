@@ -230,39 +230,40 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 font-sans backdrop-blur-sm">
-      <div className="flex h-[90vh] max-h-[720px] w-full max-w-4xl flex-col rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600/20 text-blue-400 font-bold border border-blue-500/30">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 font-sans backdrop-blur-sm decentro-modal-overlay">
+      <div className="decentro-modal-dialog flex h-[90vh] max-h-[720px] w-full max-w-4xl flex-col rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-2xl overflow-hidden">
+        {/* Header - Close button is first button to ensure test compatibility */}
+        <div className="decentro-modal-header flex items-center justify-between border-b border-slate-800 bg-slate-950 px-6 py-4">
+          <div className="decentro-modal-title-wrap flex items-center gap-3">
+            <div className="decentro-modal-icon flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600/20 text-blue-400 font-bold border border-blue-500/30">
               ⚡
             </div>
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                Decentro API Banking (V2)
-                <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
+              <h2 className="decentro-modal-title text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                <span>Decentro API Banking (V2)</span>
+                <span className="decentro-badge-zero-pg rounded bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
                   Zero-PG Direct BaaS
                 </span>
               </h2>
-              <p className="text-xs text-slate-400">Forecourt Dynamic UPI, B2B Virtual Accounts, OMC Payouts & Registry KYC</p>
+              <p className="decentro-modal-subtitle text-xs text-slate-400">Forecourt Dynamic UPI, B2B Virtual Accounts, OMC Payouts & Registry KYC</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            className="decentro-close-btn rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            title="Close Banking Dialog"
           >
             ✕
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex flex-wrap gap-1 border-b border-slate-800 bg-slate-950/50 px-4">
+        <div className="decentro-tab-bar flex flex-wrap gap-1 border-b border-slate-800 bg-slate-950/50 px-4">
           <button
             onClick={() => setActiveTab('upi_qr')}
-            className={`border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
+            className={`decentro-tab-btn border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
               activeTab === 'upi_qr'
-                ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+                ? 'active border-blue-500 text-blue-400 bg-blue-500/5'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -270,9 +271,9 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('virtual_accounts')}
-            className={`border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
+            className={`decentro-tab-btn border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
               activeTab === 'virtual_accounts'
-                ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+                ? 'active border-blue-500 text-blue-400 bg-blue-500/5'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -280,9 +281,9 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('payouts')}
-            className={`border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
+            className={`decentro-tab-btn border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
               activeTab === 'payouts'
-                ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+                ? 'active border-blue-500 text-blue-400 bg-blue-500/5'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -290,9 +291,9 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('gstin')}
-            className={`border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
+            className={`decentro-tab-btn border-b-2 py-3 px-4 text-xs font-bold transition flex items-center gap-2 ${
               activeTab === 'gstin'
-                ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+                ? 'active border-blue-500 text-blue-400 bg-blue-500/5'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -301,37 +302,38 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="decentro-content-area flex-1 overflow-y-auto p-6">
           {/* TAB 1: DYNAMIC UPI QR */}
           {activeTab === 'upi_qr' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+            <div className="decentro-grid-2 grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
               {/* Left Column: Form */}
-              <div className="space-y-4 rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider text-slate-300">
+              <div className="decentro-card space-y-4 rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+                <h3 className="decentro-card-title text-sm font-bold text-white uppercase tracking-wider text-slate-300">
                   Dispenser / Lane QR Details
                 </h3>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Fuel Dispense Amount (INR)</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-slate-400 font-bold">₹</span>
+                <div className="decentro-field">
+                  <label className="decentro-label block text-xs font-medium text-slate-400 mb-1">Fuel Dispense Amount (INR)</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '10px', top: '8px', color: '#94a3b8', fontWeight: 700 }}>₹</span>
                     <input
                       type="number"
                       value={upiAmount}
                       onChange={(e) => setUpiAmount(e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 pl-8 pr-3 text-lg font-bold text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-input"
+                      style={{ paddingLeft: '28px', fontSize: '16px', fontWeight: 700 }}
                       placeholder="0.00"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Forecourt Lane / Island</label>
+                    <label className="decentro-label">Forecourt Lane / Island</label>
                     <select
                       value={upiLane}
                       onChange={(e) => setUpiLane(e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-select"
                     >
                       <option value="LANE-1">LANE 1 (MS Nozzle 1)</option>
                       <option value="LANE-2">LANE 2 (HSD Nozzle 2)</option>
@@ -342,19 +344,19 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Fuel Bill / Slip No</label>
+                    <label className="decentro-label">Fuel Bill / Slip No</label>
                     <input
                       type="text"
                       value={upiBillNo}
                       onChange={(e) => setUpiBillNo(e.target.value)}
                       placeholder="e.g. BILL-1049"
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-input"
                     />
                   </div>
                 </div>
 
                 {qrError && (
-                  <div className="rounded bg-rose-500/10 border border-rose-500/20 p-2.5 text-xs text-rose-400">
+                  <div style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.3)', borderRadius: '6px', padding: '10px', color: '#fb7185', fontSize: '11px', marginBottom: '12px' }}>
                     {qrError}
                   </div>
                 )}
@@ -362,87 +364,92 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                 <button
                   onClick={handleGenerateQr}
                   disabled={qrLoading}
-                  className="w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="decentro-btn-primary"
                 >
                   {qrLoading ? 'Generating Decentro QR...' : '⚡ Generate Dynamic UPI QR'}
                 </button>
 
-                <p className="text-[11px] text-slate-500 leading-relaxed">
+                <p style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5, marginTop: '12px' }}>
                   Generates an NPCI-compliant unique dynamic QR bound to this transaction. Attendant's screen turns green in real-time the instant the customer scans and approves payment.
                 </p>
               </div>
 
               {/* Right Column: Dynamic Screen */}
               <div
-                className={`flex flex-col items-center justify-center rounded-lg border p-6 transition-all duration-300 ${
-                  paymentConfirmed
-                    ? 'border-emerald-500 bg-emerald-950/40 shadow-2xl shadow-emerald-500/20'
-                    : 'border-slate-800 bg-slate-950/60'
-                }`}
+                className="decentro-card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderColor: paymentConfirmed ? '#10b981' : '#1e293b',
+                  background: paymentConfirmed ? 'rgba(6, 78, 59, 0.4)' : 'rgba(2, 6, 23, 0.6)',
+                  boxShadow: paymentConfirmed ? '0 0 25px rgba(16, 185, 129, 0.25)' : 'none',
+                  minHeight: '280px',
+                }}
               >
                 {paymentConfirmed ? (
-                  <div className="text-center space-y-4 animate-in fade-in duration-300">
-                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-white text-4xl shadow-xl shadow-emerald-500/40">
+                  <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#10b981', color: '#fff', fontSize: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>
                       ✓
                     </div>
                     <div>
-                      <h4 className="text-2xl font-black text-emerald-400 tracking-tight">PAYMENT RECEIVED</h4>
-                      <p className="text-xl font-bold text-white mt-1">₹{parseFloat(upiAmount).toFixed(2)}</p>
+                      <h4 style={{ fontSize: '20px', fontWeight: 900, color: '#34d399', margin: 0 }}>PAYMENT RECEIVED</h4>
+                      <p style={{ fontSize: '18px', fontWeight: 700, color: '#fff', margin: '4px 0 0 0' }}>₹{parseFloat(upiAmount).toFixed(2)}</p>
                     </div>
-                    <div className="rounded-md bg-emerald-900/40 border border-emerald-500/30 p-3 text-xs text-emerald-300">
-                      <p className="font-mono font-bold">UTR: {confirmedUtr}</p>
-                      <p className="text-[10px] text-emerald-400/80 mt-1">Reconciled to Cashier Shift & Bank Ledger</p>
+                    <div style={{ background: 'rgba(6, 78, 59, 0.5)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '6px', padding: '10px', fontSize: '11px', color: '#6ee7b7' }}>
+                      <p style={{ fontFamily: 'monospace', fontWeight: 700, margin: 0 }}>UTR: {confirmedUtr}</p>
+                      <p style={{ fontSize: '10px', color: 'rgba(110, 231, 183, 0.8)', margin: '4px 0 0 0' }}>Reconciled to Cashier Shift & Bank Ledger</p>
                     </div>
                     <button
                       onClick={() => {
                         setPaymentConfirmed(false);
                         setCurrentQr(null);
                       }}
-                      className="rounded bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 transition"
+                      className="decentro-btn-success"
                     >
                       Next Customer Dispense
                     </button>
                   </div>
                 ) : currentQr ? (
-                  <div className="text-center space-y-3">
-                    <div className="inline-block rounded-xl bg-white p-3 shadow-xl">
+                  <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
                       {currentQr.qr_code_base64?.startsWith('data:') ? (
                         <img
                           src={currentQr.qr_code_base64}
                           alt="Dynamic UPI QR"
-                          className="h-48 w-48 object-contain"
+                          style={{ width: '180px', height: '180px', objectFit: 'contain', display: 'block' }}
                         />
                       ) : (
                         <img
                           src={`data:image/svg+xml;base64,${currentQr.qr_code_base64}`}
                           alt="Dynamic UPI QR"
-                          className="h-48 w-48 object-contain"
+                          style={{ width: '180px', height: '180px', objectFit: 'contain', display: 'block' }}
                         />
                       )}
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-white">₹{currentQr.amount.toFixed(2)}</p>
-                      <p className="text-xs text-slate-400 font-mono">Ref: {currentQr.reference_id}</p>
+                      <p style={{ fontSize: '16px', fontWeight: 700, color: '#fff', margin: 0 }}>₹{currentQr.amount.toFixed(2)}</p>
+                      <p style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'monospace', margin: '2px 0 0 0' }}>Ref: {currentQr.reference_id}</p>
                     </div>
-                    <div className="flex items-center justify-center gap-2 text-xs text-amber-400">
-                      <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#fbbf24' }}>
+                      <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#fbbf24' }}></span>
                       Listening for customer scan via BaaS SSE...
                     </div>
-                    {/* Simulated Test Pay Button */}
                     <button
                       onClick={() => {
                         handlePaymentSuccess(`YESBR5${Date.now().toString().slice(-8)}`);
                       }}
-                      className="text-[11px] text-slate-500 hover:text-slate-300 underline"
+                      style={{ fontSize: '11px', color: '#64748b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
                     >
                       [Simulate Customer PhonePe/GPay Approval]
                     </button>
                   </div>
                 ) : (
-                  <div className="text-center text-slate-500">
-                    <div className="text-4xl mb-2">📲</div>
-                    <p className="text-sm font-medium">Enter amount & click Generate</p>
-                    <p className="text-xs text-slate-600 mt-1">Live QR will render here for customer</p>
+                  <div style={{ textAlign: 'center', color: '#64748b' }}>
+                    <div style={{ fontSize: '36px', marginBottom: '8px' }}>📲</div>
+                    <p style={{ fontSize: '13px', fontWeight: 600, color: '#94a3b8', margin: 0 }}>Enter amount & click Generate</p>
+                    <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>Live QR will render here for customer</p>
                   </div>
                 )}
               </div>
@@ -451,18 +458,18 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
 
           {/* TAB 2: VIRTUAL ACCOUNTS */}
           {activeTab === 'virtual_accounts' && (
-            <div className="space-y-6">
-              <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider text-slate-300 mb-3">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="decentro-card">
+                <h3 className="decentro-card-title">
                   Fleet Khata Dedicated Virtual Account Provisioning
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Select Fleet Customer</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end' }}>
+                  <div>
+                    <label className="decentro-label">Select Fleet Customer</label>
                     <select
                       value={selectedCustomerId}
                       onChange={(e) => setSelectedCustomerId(Number(e.target.value))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-select"
                     >
                       {customers.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -474,55 +481,56 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                   <button
                     onClick={handleProvisionVa}
                     disabled={vaLoading}
-                    className="rounded-lg bg-blue-600 py-2.5 px-4 text-xs font-bold text-white hover:bg-blue-500 transition disabled:opacity-50"
+                    className="decentro-btn-primary"
+                    style={{ width: 'auto', padding: '8px 16px', height: '36px' }}
                   >
                     {vaLoading ? 'Provisioning...' : '🏛️ Provision Dedicated VAN'}
                   </button>
                 </div>
 
                 {vaMessage && (
-                  <div className="mt-3 rounded bg-blue-500/10 border border-blue-500/20 p-2.5 text-xs text-blue-300">
+                  <div style={{ marginTop: '12px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '6px', padding: '10px', fontSize: '11px', color: '#93c5fd' }}>
                     {vaMessage}
                   </div>
                 )}
               </div>
 
               {/* Sample Virtual Account Card */}
-              <div className="rounded-xl border border-slate-800 bg-gradient-to-r from-slate-900 to-slate-950 p-6 shadow-lg">
-                <div className="flex justify-between items-start mb-4">
+              <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #020617 100%)', border: '1px solid #334155', borderRadius: '12px', padding: '20px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                   <div>
-                    <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                    <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', color: '#64748b', textTransform: 'uppercase' }}>
                       Decentro Virtual Escrow Partner
                     </span>
-                    <h4 className="text-base font-bold text-white">YES BANK NODAL CMS</h4>
+                    <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#fff', margin: '4px 0 0 0' }}>YES BANK NODAL CMS</h4>
                   </div>
-                  <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
+                  <span className="decentro-badge-zero-pg">
                     ACTIVE
                   </span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', fontSize: '11px' }}>
                   <div>
-                    <span className="text-slate-500 block">Assigned Account No (VAN)</span>
-                    <span className="font-mono font-bold text-white text-sm">
+                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Assigned Account No (VAN)</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff', fontSize: '13px' }}>
                       {vaDetails?.account_number || `NSAI${selectedCustomerId ? String(selectedCustomerId).padStart(6, '0') : '000001'}`}
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Bank IFSC Code</span>
-                    <span className="font-mono font-bold text-white text-sm">YESB0CMSNOC</span>
+                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Bank IFSC Code</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff', fontSize: '13px' }}>YESB0CMSNOC</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Virtual UPI ID</span>
-                    <span className="font-mono font-bold text-white text-sm">
+                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Virtual UPI ID</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff', fontSize: '13px' }}>
                       nsai{selectedCustomerId ? String(selectedCustomerId).padStart(6, '0') : '000001'}@yesbank
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">Reconciliation Protocol</span>
-                    <span className="font-bold text-emerald-400 text-sm">FIFO Indent Clearing</span>
+                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Reconciliation Protocol</span>
+                    <span style={{ fontWeight: 700, color: '#34d399', fontSize: '13px' }}>FIFO Indent Clearing</span>
                   </div>
                 </div>
-                <p className="mt-4 text-[11px] text-slate-500 border-t border-slate-800 pt-3">
+                <p style={{ marginTop: '16px', fontSize: '11px', color: '#64748b', borderTop: '1px solid #1e293b', paddingTop: '12px', lineHeight: 1.5, margin: '16px 0 0 0' }}>
                   Fleet drivers and finance teams transfer funds directly via RTGS/NEFT to this assigned VAN. When received, the system automatically allocates payment to the oldest unpaid fuel slips.
                 </p>
               </div>
@@ -531,19 +539,19 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
 
           {/* TAB 3: OMC & SUPPLIER PAYOUTS */}
           {activeTab === 'payouts' && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4 space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider text-slate-300">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="decentro-card">
+                <h3 className="decentro-card-title">
                   OMC & Fuel Tanker Disbursement
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Beneficiary OMC / Vendor</label>
+                    <label className="decentro-label">Beneficiary OMC / Vendor</label>
                     <select
                       value={vendorName}
                       onChange={(e) => setVendorName(e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-select"
                     >
                       <option value="BHARAT PETROLEUM CORPORATION LTD">BHARAT PETROLEUM CORPORATION LTD (BPCL)</option>
                       <option value="INDIAN OIL CORPORATION LTD">INDIAN OIL CORPORATION LTD (IOCL)</option>
@@ -554,11 +562,11 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Transfer Type</label>
+                    <label className="decentro-label">Transfer Type</label>
                     <select
                       value={payoutTransferType}
                       onChange={(e) => setPayoutTransferType(e.target.value as any)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-select"
                     >
                       <option value="RTGS">RTGS (High Value / Instant Settlement)</option>
                       <option value="NEFT">NEFT (Standard Batch)</option>
@@ -567,42 +575,45 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Beneficiary Account Number</label>
+                    <label className="decentro-label">Beneficiary Account Number</label>
                     <input
                       type="text"
                       value={payoutAccount}
                       onChange={(e) => setPayoutAccount(e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs font-mono text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-input"
+                      style={{ fontFamily: 'monospace' }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Beneficiary IFSC</label>
+                    <label className="decentro-label">Beneficiary IFSC</label>
                     <input
                       type="text"
                       value={payoutIfsc}
                       onChange={(e) => setPayoutIfsc(e.target.value.toUpperCase())}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs font-mono text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-input"
+                      style={{ fontFamily: 'monospace' }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Disbursement Amount (INR)</label>
+                    <label className="decentro-label">Disbursement Amount (INR)</label>
                     <input
                       type="number"
                       value={payoutAmount}
                       onChange={(e) => setPayoutAmount(e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-sm font-bold text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-input"
+                      style={{ fontWeight: 700 }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Purpose / Indent Narration</label>
+                    <label className="decentro-label">Purpose / Indent Narration</label>
                     <input
                       type="text"
                       value={payoutPurpose}
                       onChange={(e) => setPayoutPurpose(e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-input"
                     />
                   </div>
                 </div>
@@ -610,18 +621,19 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                 <button
                   onClick={handleExecutePayout}
                   disabled={payoutLoading}
-                  className="rounded-lg bg-emerald-600 py-2.5 px-6 text-xs font-bold text-white hover:bg-emerald-500 transition disabled:opacity-50"
+                  className="decentro-btn-success"
+                  style={{ width: '100%', padding: '10px', fontSize: '13px' }}
                 >
                   {payoutLoading ? 'Executing Payout...' : '💸 Authorize & Disburse Bank Transfer'}
                 </button>
               </div>
 
               {payoutResult && (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-4 text-xs space-y-2">
-                  <p className="font-bold text-emerald-400">✓ Payout Disbursed Successfully!</p>
-                  <p className="text-white">Vendor: <span className="font-semibold">{payoutResult.vendor_name}</span></p>
-                  <p className="text-white font-mono">Bank Reference (UTR): <span className="font-bold text-emerald-300">{payoutResult.bank_reference_number}</span></p>
-                  <p className="text-slate-400">Amount: ₹{payoutResult.amount.toFixed(2)} via {payoutResult.transfer_type}</p>
+                <div style={{ background: 'rgba(6, 78, 59, 0.4)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '8px', padding: '14px', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <p style={{ fontWeight: 700, color: '#34d399', margin: 0 }}>✓ Payout Disbursed Successfully!</p>
+                  <p style={{ color: '#fff', margin: 0 }}>Vendor: <strong>{payoutResult.vendor_name}</strong></p>
+                  <p style={{ color: '#fff', fontFamily: 'monospace', margin: 0 }}>Bank Reference (UTR): <strong style={{ color: '#6ee7b7' }}>{payoutResult.bank_reference_number}</strong></p>
+                  <p style={{ color: '#94a3b8', margin: 0 }}>Amount: ₹{payoutResult.amount.toFixed(2)} via {payoutResult.transfer_type}</p>
                 </div>
               )}
             </div>
@@ -629,30 +641,31 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
 
           {/* TAB 4: GSTIN KYC REGISTRY */}
           {activeTab === 'gstin' && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4 space-y-3">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider text-slate-300">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="decentro-card">
+                <h3 className="decentro-card-title">
                   Decentro KYC V2 Public Registry Verification
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-medium text-slate-400 mb-1">15-Digit GSTIN</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr auto', gap: '12px', alignItems: 'end', marginBottom: '12px' }}>
+                  <div>
+                    <label className="decentro-label">15-Digit GSTIN</label>
                     <input
                       type="text"
                       value={gstinInput}
                       onChange={(e) => setGstinInput(e.target.value.toUpperCase())}
                       placeholder="e.g. 24AAACB2233M1Z5"
                       maxLength={15}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-sm font-mono font-bold text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-input"
+                      style={{ fontFamily: 'monospace', fontWeight: 700 }}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Link Fleet Customer</label>
+                    <label className="decentro-label">Link Fleet Customer</label>
                     <select
                       value={gstinKycCustomer}
                       onChange={(e) => setGstinKycCustomer(Number(e.target.value))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 py-2 px-3 text-xs text-white focus:border-blue-500 focus:outline-none"
+                      className="decentro-select"
                     >
                       <option value={0}>None (Lookup Only)</option>
                       {customers.map((c) => (
@@ -665,62 +678,63 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                   <button
                     onClick={handleVerifyGstin}
                     disabled={gstinLoading}
-                    className="rounded-lg bg-blue-600 py-2.5 px-4 text-xs font-bold text-white hover:bg-blue-500 transition disabled:opacity-50"
+                    className="decentro-btn-primary"
+                    style={{ width: 'auto', padding: '8px 16px', height: '36px' }}
                   >
                     {gstinLoading ? 'Verifying...' : '🔍 Validate on Registry'}
                   </button>
                 </div>
 
                 {gstinError && (
-                  <div className="rounded bg-rose-500/10 border border-rose-500/20 p-2.5 text-xs text-rose-400">
+                  <div style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.3)', borderRadius: '6px', padding: '10px', color: '#fb7185', fontSize: '11px' }}>
                     {gstinError}
                   </div>
                 )}
               </div>
 
               {gstinResult && (
-                <div className="rounded-xl border border-slate-800 bg-slate-950 p-6 space-y-4 text-xs">
-                  <div className="flex justify-between items-start border-b border-slate-800 pb-3">
+                <div style={{ background: '#020617', border: '1px solid #1e293b', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '11.5px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #1e293b', paddingBottom: '12px' }}>
                     <div>
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider">Official Legal Entity</span>
-                      <h4 className="text-base font-bold text-white">{gstinResult.legal_name}</h4>
+                      <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Official Legal Entity</span>
+                      <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#fff', margin: '4px 0 0 0' }}>{gstinResult.legal_name}</h4>
                       {gstinResult.trade_name && (
-                        <p className="text-xs text-slate-400">Trade: {gstinResult.trade_name}</p>
+                        <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0 0' }}>Trade: {gstinResult.trade_name}</p>
                       )}
                     </div>
-                    <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
+                    <span className="decentro-badge-zero-pg">
                       {gstinResult.registration_status}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px' }}>
                     <div>
-                      <span className="text-slate-500 block">GSTIN</span>
-                      <span className="font-mono font-bold text-white">{gstinResult.gstin}</span>
+                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>GSTIN</span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff' }}>{gstinResult.gstin}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 block">Taxpayer Type</span>
-                      <span className="text-white font-medium">{gstinResult.taxpayer_type || 'Regular'}</span>
+                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Taxpayer Type</span>
+                      <span style={{ color: '#fff', fontWeight: 600 }}>{gstinResult.taxpayer_type || 'Regular'}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 block">State Jurisdiction</span>
-                      <span className="text-white font-medium">{gstinResult.state_jurisdiction} ({gstinResult.state_code})</span>
+                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>State Jurisdiction</span>
+                      <span style={{ color: '#fff', fontWeight: 600 }}>{gstinResult.state_jurisdiction} ({gstinResult.state_code})</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 block">Constitution</span>
-                      <span className="text-white font-medium">{gstinResult.constitution_of_business || 'Private Limited'}</span>
+                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Constitution</span>
+                      <span style={{ color: '#fff', fontWeight: 600 }}>{gstinResult.constitution_of_business || 'Private Limited'}</span>
                     </div>
                   </div>
 
                   {gstinResult.address && (
-                    <div className="border-t border-slate-800 pt-3">
-                      <span className="text-slate-500 block mb-0.5">Principal Place of Business</span>
-                      <p className="text-slate-300 leading-relaxed">{gstinResult.address}</p>
+                    <div style={{ borderTop: '1px solid #1e293b', paddingTop: '10px' }}>
+                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Principal Place of Business</span>
+                      <p style={{ color: '#cbd5e1', lineHeight: 1.5, margin: 0 }}>{gstinResult.address}</p>
                     </div>
                   )}
 
                   {gstinResult.customer_updated && (
-                    <div className="rounded bg-emerald-500/10 border border-emerald-500/20 p-2 text-emerald-400 text-xs flex items-center gap-2">
+                    <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '6px', padding: '10px', color: '#34d399', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>✓</span> Fleet Customer Profile has been auto-populated with verified GSTIN, PAN, and address!
                     </div>
                   )}

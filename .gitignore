@@ -50,3 +50,5 @@ downloads/
 *.webm
 scratch/
 .agents/
+test-results/
+playwright-report/
