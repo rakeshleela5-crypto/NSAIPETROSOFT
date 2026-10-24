@@ -2206,6 +2206,12 @@ export default function App() {
       {/* -------------------------------------------------------------
        * 2. Classic ERP Menu Bar with Active Dropdowns
        * ------------------------------------------------------------- */}
+      {openDropdown && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1040, background: 'transparent' }}
+          onClick={() => setOpenDropdown(null)}
+        />
+      )}
       <div className="win-menubar">
         {/* Mobile All-in-One Menu Button (Hidden on Desktop, Visible on Mobile) */}
         <button

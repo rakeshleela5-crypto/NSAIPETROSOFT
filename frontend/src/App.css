@@ -107,17 +107,18 @@ body {
 
 /* Classic Menu Bar */
 .win-menubar {
-  height: 24px;
+  height: 26px;
   background: #ffffff;
   border-bottom: 1px solid #dcdcdc;
   display: flex;
   align-items: center;
   padding: 0 4px;
   gap: 4px;
-  overflow-x: auto;
   white-space: nowrap;
   flex-wrap: nowrap;
-  scrollbar-width: thin;
+  position: relative;
+  z-index: 1050;
+  overflow: visible; /* Prevents dropdown menus from being clipped */
 }
 
 .win-menu-item {
@@ -853,6 +854,7 @@ table td button,
 .win-menu-dropdown-wrapper {
   position: relative;
   display: inline-block;
+  z-index: 1051;
 }
 
 .win-dropdown-menu {
@@ -860,11 +862,12 @@ table td button,
   top: 100%;
   left: 0;
   background: #ffffff;
-  border: 1px solid #7f9db9;
-  box-shadow: 2px 4px 8px rgba(0, 0, 0, 0.25);
-  min-width: 190px;
-  z-index: 500;
-  padding: 2px 0;
+  border: 1px solid #0055ea;
+  border-radius: 0 0 3px 3px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
+  min-width: 220px;
+  z-index: 9999 !important;
+  padding: 3px 0;
 }
 
 .win-dropdown-item {
