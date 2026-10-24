@@ -369,7 +369,7 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                   {qrLoading ? 'Generating Decentro QR...' : '⚡ Generate Dynamic UPI QR'}
                 </button>
 
-                <p style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5, marginTop: '12px' }}>
+                <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5, marginTop: '12px' }}>
                   Generates an NPCI-compliant unique dynamic QR bound to this transaction. Attendant's screen turns green in real-time the instant the customer scans and approves payment.
                 </p>
               </div>
@@ -429,10 +429,10 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                       )}
                     </div>
                     <div>
-                      <p style={{ fontSize: '16px', fontWeight: 700, color: '#fff', margin: 0 }}>₹{currentQr.amount.toFixed(2)}</p>
-                      <p style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'monospace', margin: '2px 0 0 0' }}>Ref: {currentQr.reference_id}</p>
+                      <p style={{ fontSize: '17px', fontWeight: 800, color: '#fff', margin: 0 }}>₹{currentQr.amount.toFixed(2)}</p>
+                      <p style={{ fontSize: '12px', color: '#93c5fd', fontFamily: 'monospace', fontWeight: 700, margin: '2px 0 0 0' }}>Ref: {currentQr.reference_id}</p>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#fbbf24' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#fbbf24', fontWeight: 600 }}>
                       <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#fbbf24' }}></span>
                       Listening for customer scan via BaaS SSE...
                     </div>
@@ -440,16 +440,16 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                       onClick={() => {
                         handlePaymentSuccess(`YESBR5${Date.now().toString().slice(-8)}`);
                       }}
-                      style={{ fontSize: '11px', color: '#64748b', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                      style={{ fontSize: '12px', color: '#93c5fd', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontWeight: 600 }}
                     >
                       [Simulate Customer PhonePe/GPay Approval]
                     </button>
                   </div>
                 ) : (
-                  <div style={{ textAlign: 'center', color: '#64748b' }}>
-                    <div style={{ fontSize: '36px', marginBottom: '8px' }}>📲</div>
-                    <p style={{ fontSize: '13px', fontWeight: 600, color: '#94a3b8', margin: 0 }}>Enter amount & click Generate</p>
-                    <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>Live QR will render here for customer</p>
+                  <div style={{ textAlign: 'center', color: '#cbd5e1' }}>
+                    <div style={{ fontSize: '40px', marginBottom: '8px' }}>📲</div>
+                    <p style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff', margin: 0 }}>Enter amount & click Generate</p>
+                    <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '4px 0 0 0' }}>Live QR will render here for customer</p>
                   </div>
                 )}
               </div>
@@ -496,41 +496,41 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
               </div>
 
               {/* Sample Virtual Account Card */}
-              <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #020617 100%)', border: '1px solid #334155', borderRadius: '12px', padding: '20px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+              <div style={{ background: 'linear-gradient(135deg, #0f172a 0%, #020617 100%)', border: '1.5px solid #334155', borderRadius: '12px', padding: '20px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                   <div>
-                    <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', color: '#64748b', textTransform: 'uppercase' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', color: '#38bdf8', textTransform: 'uppercase' }}>
                       Decentro Virtual Escrow Partner
                     </span>
-                    <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#fff', margin: '4px 0 0 0' }}>YES BANK NODAL CMS</h4>
+                    <h4 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', margin: '4px 0 0 0' }}>YES BANK NODAL CMS</h4>
                   </div>
                   <span className="decentro-badge-zero-pg">
                     ACTIVE
                   </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', fontSize: '11px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', fontSize: '12px' }}>
                   <div>
-                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Assigned Account No (VAN)</span>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff', fontSize: '13px' }}>
+                    <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>Assigned Account No (VAN)</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#ffffff', fontSize: '14px' }}>
                       {vaDetails?.account_number || `NSAI${selectedCustomerId ? String(selectedCustomerId).padStart(6, '0') : '000001'}`}
                     </span>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Bank IFSC Code</span>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff', fontSize: '13px' }}>YESB0CMSNOC</span>
+                    <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>Bank IFSC Code</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#ffffff', fontSize: '14px' }}>YESB0CMSNOC</span>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Virtual UPI ID</span>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff', fontSize: '13px' }}>
+                    <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>Virtual UPI ID</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#ffffff', fontSize: '14px' }}>
                       nsai{selectedCustomerId ? String(selectedCustomerId).padStart(6, '0') : '000001'}@yesbank
                     </span>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Reconciliation Protocol</span>
-                    <span style={{ fontWeight: 700, color: '#34d399', fontSize: '13px' }}>FIFO Indent Clearing</span>
+                    <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>Reconciliation Protocol</span>
+                    <span style={{ fontWeight: 800, color: '#4ade80', fontSize: '14px' }}>FIFO Indent Clearing</span>
                   </div>
                 </div>
-                <p style={{ marginTop: '16px', fontSize: '11px', color: '#64748b', borderTop: '1px solid #1e293b', paddingTop: '12px', lineHeight: 1.5, margin: '16px 0 0 0' }}>
+                <p style={{ marginTop: '16px', fontSize: '12px', color: '#cbd5e1', borderTop: '1px solid #1e293b', paddingTop: '12px', lineHeight: 1.5, margin: '16px 0 0 0' }}>
                   Fleet drivers and finance teams transfer funds directly via RTGS/NEFT to this assigned VAN. When received, the system automatically allocates payment to the oldest unpaid fuel slips.
                 </p>
               </div>
@@ -693,13 +693,13 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
               </div>
 
               {gstinResult && (
-                <div style={{ background: '#020617', border: '1px solid #1e293b', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '11.5px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #1e293b', paddingBottom: '12px' }}>
+                <div style={{ background: '#020617', border: '1.5px solid #334155', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1.5px solid #1e293b', paddingBottom: '12px' }}>
                     <div>
-                      <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Official Legal Entity</span>
-                      <h4 style={{ fontSize: '16px', fontWeight: 700, color: '#fff', margin: '4px 0 0 0' }}>{gstinResult.legal_name}</h4>
+                      <span style={{ fontSize: '11px', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 800 }}>Official Legal Entity</span>
+                      <h4 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', margin: '4px 0 0 0' }}>{gstinResult.legal_name}</h4>
                       {gstinResult.trade_name && (
-                        <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0 0' }}>Trade: {gstinResult.trade_name}</p>
+                        <p style={{ fontSize: '12px', color: '#cbd5e1', fontWeight: 600, margin: '2px 0 0 0' }}>Trade: {gstinResult.trade_name}</p>
                       )}
                     </div>
                     <span className="decentro-badge-zero-pg">
@@ -709,32 +709,32 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px' }}>
                     <div>
-                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>GSTIN</span>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fff' }}>{gstinResult.gstin}</span>
+                      <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>GSTIN</span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#ffffff', fontSize: '13.5px' }}>{gstinResult.gstin}</span>
                     </div>
                     <div>
-                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Taxpayer Type</span>
-                      <span style={{ color: '#fff', fontWeight: 600 }}>{gstinResult.taxpayer_type || 'Regular'}</span>
+                      <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>Taxpayer Type</span>
+                      <span style={{ color: '#ffffff', fontWeight: 700, fontSize: '13px' }}>{gstinResult.taxpayer_type || 'Regular'}</span>
                     </div>
                     <div>
-                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>State Jurisdiction</span>
-                      <span style={{ color: '#fff', fontWeight: 600 }}>{gstinResult.state_jurisdiction} ({gstinResult.state_code})</span>
+                      <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>State Jurisdiction</span>
+                      <span style={{ color: '#ffffff', fontWeight: 700, fontSize: '13px' }}>{gstinResult.state_jurisdiction} ({gstinResult.state_code})</span>
                     </div>
                     <div>
-                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Constitution</span>
-                      <span style={{ color: '#fff', fontWeight: 600 }}>{gstinResult.constitution_of_business || 'Private Limited'}</span>
+                      <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>Constitution</span>
+                      <span style={{ color: '#ffffff', fontWeight: 700, fontSize: '13px' }}>{gstinResult.constitution_of_business || 'Private Limited'}</span>
                     </div>
                   </div>
 
                   {gstinResult.address && (
-                    <div style={{ borderTop: '1px solid #1e293b', paddingTop: '10px' }}>
-                      <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Principal Place of Business</span>
-                      <p style={{ color: '#cbd5e1', lineHeight: 1.5, margin: 0 }}>{gstinResult.address}</p>
+                    <div style={{ borderTop: '1.5px solid #1e293b', paddingTop: '10px' }}>
+                      <span style={{ color: '#93c5fd', display: 'block', marginBottom: '3px', fontWeight: 700, fontSize: '11px' }}>Principal Place of Business</span>
+                      <p style={{ color: '#ffffff', lineHeight: 1.5, margin: 0, fontWeight: 500 }}>{gstinResult.address}</p>
                     </div>
                   )}
 
                   {gstinResult.customer_updated && (
-                    <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '6px', padding: '10px', color: '#34d399', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ background: 'rgba(16,185,129,0.2)', border: '1.5px solid rgba(16,185,129,0.5)', borderRadius: '6px', padding: '10px', color: '#4ade80', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>✓</span> Fleet Customer Profile has been auto-populated with verified GSTIN, PAN, and address!
                     </div>
                   )}

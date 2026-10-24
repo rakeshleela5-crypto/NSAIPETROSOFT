@@ -22,7 +22,7 @@ html, body, #root {
   box-shadow: 0 0 0 2px rgba(0, 85, 234, 0.3) !important;
 }
 
-input:focus-visible, select:focus-visible, textarea:focus-visible {
+input:not(.decentro-input):focus-visible, select:not(.decentro-select):focus-visible, textarea:focus-visible {
   outline: 2px solid #0055ea !important;
   background-color: #ffffd8 !important; /* Classic ERP active field indicator */
 }
