@@ -111,6 +111,8 @@ import {
   TransferEntryModal,
   UndergroundTankMasterModal,
   ViewStockModal,
+  ShiftClosingWizardModal,
+  ForecourtAutomationModal,
 } from './components';
 import { erpStore } from './store/erpStore';
 
@@ -2139,6 +2141,7 @@ export default function App() {
     { cat: 'entry', icon: '👨‍💼', title: 'Employee Settlement', hotkey: '', action: openEmployeeSettlement },
     { cat: 'entry', icon: '💵', title: 'Cashier Denominations', hotkey: '', action: () => setActiveDialog('denom') },
     { cat: 'entry', icon: '📖', title: 'Day Book Cashier Tally', hotkey: '', action: () => setActiveDialog('dayBookReport') },
+    { cat: 'entry', icon: '🏁', title: 'Shift Closing Wizard (4-Step)', hotkey: '', action: () => setActiveDialog('shiftWizard') },
 
     // Reports
     { cat: 'reports', icon: '⚙️', title: 'All 44 Reports Criteria', hotkey: '', action: () => setActiveDialog('reports') },
@@ -2162,6 +2165,7 @@ export default function App() {
     { cat: 'tools', icon: '⚙️', title: 'Control Panel', hotkey: '', action: () => setActiveDialog('controlPanel') },
     { cat: 'tools', icon: '🧮', title: 'Calculator', hotkey: '', action: () => setActiveDialog('calc') },
     { cat: 'tools', icon: '⚡', title: 'Decentro API Banking', hotkey: '', action: () => setActiveDialog('decentroBanking') },
+    { cat: 'tools', icon: '📡', title: 'Forecourt IoT Automation', hotkey: '', action: () => setActiveDialog('forecourtAutomation') },
     { cat: 'tools', icon: '☁️', title: 'Cloudflare R2 Backups', hotkey: '', action: openBackupDialog },
     { cat: 'tools', icon: '⚖️', title: 'Stamping Reminder', hotkey: '', action: openStampingCalendar },
     { cat: 'tools', icon: '❓', title: 'Help Desk', hotkey: '', action: () => setActiveDialog('help') },
@@ -2273,6 +2277,9 @@ export default function App() {
               <button className="win-dropdown-item" onClick={openEmployeeSettlement}>👨‍💼 Employee Shift Settlement (FrmLis...)</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('denom'); setOpenDropdown(null); }}>💵 Cashier Denomination Settlement</button>
               <button className="win-dropdown-item" onClick={() => { setActiveDialog('dayBookReport'); setOpenDropdown(null); }}>📖 Day Book / Shift Cashier Tally</button>
+              <div className="win-menu-divider" />
+              <button className="win-dropdown-item" style={{ color: '#047857', fontWeight: 700 }} onClick={() => { setActiveDialog('shiftWizard'); setOpenDropdown(null); }}>🏁 Shift Closing Wizard (4-Step Tally)</button>
+              <button className="win-dropdown-item" style={{ color: '#b45309', fontWeight: 700 }} onClick={() => { setActiveDialog('forecourtAutomation'); setOpenDropdown(null); }}>📡 Forecourt Automation Hub (IoT)</button>
             </div>
           )}
         </div>
@@ -2315,6 +2322,8 @@ export default function App() {
         <button className="win-menu-item" onClick={() => setActiveDialog('selectCustomerBill')}>Credit Bills</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('cardEntry')}>Card Entry</button>
         <button className="win-menu-item" onClick={() => setActiveDialog('cashBill')}>Sale POS</button>
+        <button className="win-menu-item" style={{ color: '#16a34a', fontWeight: 700 }} onClick={() => setActiveDialog('shiftWizard')}>🏁 Shift Wizard</button>
+        <button className="win-menu-item" style={{ color: '#d97706', fontWeight: 700 }} onClick={() => setActiveDialog('forecourtAutomation')}>📡 Forecourt IoT</button>
         <button className="win-menu-item" style={{ color: '#0284c7', fontWeight: 700 }} onClick={() => setActiveDialog('decentroBanking')}>⚡ Decentro Banking</button>
         <button className="win-menu-item" style={{ color: '#0d47a1', fontWeight: 700 }} onClick={openBackupDialog}>☁️ Cloudflare R2</button>
       </div>
@@ -2353,6 +2362,12 @@ export default function App() {
         </button>
         <button className="win-toolbar-btn" onClick={() => setActiveDialog('cashBill')} title="Fast Retail Sale POS Billing (F2)">
           <span>🧾</span><span>Sale POS</span>
+        </button>
+        <button className="win-toolbar-btn" onClick={() => setActiveDialog('shiftWizard')} title="Guided 4-Step Shift End Closing Wizard">
+          <span>🏁</span><span>Shift Wizard</span>
+        </button>
+        <button className="win-toolbar-btn" onClick={() => setActiveDialog('forecourtAutomation')} title="Forecourt Automation & Dispenser Controller Hub (IoT)">
+          <span>📡</span><span>Forecourt IoT</span>
         </button>
         <div className="win-toolbar-sep" />
         <button className="win-toolbar-btn" onClick={() => setActiveDialog('addProduct')} title="Add Lubricant / DEF / Additive Product">
@@ -3285,6 +3300,20 @@ export default function App() {
         onCustomerUpdated={loadAllErpData}
         showToast={showToast}
         loadAllErpData={loadAllErpData}
+      />
+
+      <ShiftClosingWizardModal
+        isOpen={activeDialog === 'shiftWizard'}
+        onClose={() => setActiveDialog(null)}
+        stationProfile={stationProfile}
+        showToast={showToast}
+      />
+
+      <ForecourtAutomationModal
+        isOpen={activeDialog === 'forecourtAutomation'}
+        onClose={() => setActiveDialog(null)}
+        stationProfile={stationProfile}
+        showToast={showToast}
       />
 
       {/* -------------------------------------------------------------

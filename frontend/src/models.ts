@@ -44,6 +44,8 @@ export type DialogType =
   | 'buildMis'
   | 'nozzleStaffMaster'
   | 'decentroBanking'
+  | 'shiftWizard'
+  | 'forecourtAutomation'
   | null;
 
 export interface StationProfile {

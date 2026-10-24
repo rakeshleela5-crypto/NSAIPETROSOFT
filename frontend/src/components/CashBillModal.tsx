@@ -43,6 +43,101 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
   const [cashMemoLiters, setCashMemoLiters] = useState<number>(20.0);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number>(customers[0]?.id || 1);
   const [driverName, setDriverName] = useState<string>('');
+  const [customerMobile, setCustomerMobile] = useState<string>('');
+  const [scannedBarcode, setScannedBarcode] = useState<string>('');
+  const [barcodeNotification, setBarcodeNotification] = useState<string | null>(null);
+
+  // Lube & Packaged Goods Barcode Catalog (Standard Indian Fuel Retail Barcodes)
+  const LUBE_BARCODE_CATALOG = [
+    { barcode: '8901030001001', code: 'SERVO-4T', name: 'Servo 4T Synth 10W-30 (1L)', rate: 385.00 },
+    { barcode: '8901030002002', code: 'MAK-4T', name: 'Mak 4T Premium Plus (900ml)', rate: 340.00 },
+    { barcode: '8901030003003', code: 'HP-MILCY', name: 'HP Milcy Turbo 15W-40 (5L)', rate: 1450.00 },
+    { barcode: '8901030004004', code: 'DEF-CLEAR', name: 'ClearBlue DEF / AdBlue (20L)', rate: 820.00 },
+    { barcode: '8901030005005', code: 'CASTROL-4T', name: 'Castrol Activ 4T 20W-40 (1L)', rate: 410.00 },
+  ];
+
+  const applyBarcodeLookup = (code: string) => {
+    const clean = code.trim();
+    if (!clean) return;
+    const item = LUBE_BARCODE_CATALOG.find(
+      (l) => l.barcode === clean || l.code.toLowerCase() === clean.toLowerCase()
+    );
+    if (item) {
+      setCashMemoProduct(item.name);
+      setCashMemoRate(item.rate);
+      setCashMemoLiters(1.0);
+      setBarcodeNotification(`✔ Scanned: ${item.name} @ ₹${item.rate}`);
+      showToast(`🏷️ Barcode matched: ${item.name}`);
+      setTimeout(() => setBarcodeNotification(null), 4000);
+    } else {
+      showToast(`⚠ Barcode "${clean}" not found in Lube catalog`);
+    }
+  };
+
+  const generateWhatsAppInvoice = (
+    bNo: string,
+    veh: string,
+    prod: string,
+    liters: number,
+    rate: number,
+    total: number,
+    mode: string,
+    dateStr: string
+  ) => {
+    return (
+      `⛽ *${stationProfile.stationName.toUpperCase()}*\n` +
+      `${stationProfile.oilCompany} RETAIL OUTLET\n` +
+      `${stationProfile.city || ''} | GSTIN: ${stationProfile.gstin || 'N/A'}\n` +
+      `--------------------------------\n` +
+      `🧾 *RETAIL CASH MEMO / POS SLIP*\n` +
+      `*Bill No:* ${bNo}\n` +
+      `*Date:* ${dateStr}\n` +
+      `*Vehicle No:* ${veh.toUpperCase() || 'WALK-IN'}\n` +
+      `--------------------------------\n` +
+      `*Item:* ${prod}\n` +
+      `*Quantity:* ${liters.toFixed(2)} L\n` +
+      `*Sale Rate:* ₹${rate.toFixed(2)}/L\n` +
+      `*TOTAL PAID:* ₹${total.toFixed(2)}\n` +
+      `*Payment Mode:* ${mode}\n` +
+      `--------------------------------\n` +
+      `Thank you for fueling with us!\n` +
+      `Drive Safe • Save Nature • Visit Again\n` +
+      `_Powered by NSaiPetroSoft Cloud_`
+    );
+  };
+
+  const handleSendWhatsApp = (customPhone?: string, billInfo?: any) => {
+    const rawTarget = customPhone || customerMobile || prompt('Enter 10-digit Customer Mobile Number for WhatsApp Slip:');
+    if (!rawTarget) return;
+    const cleanNumber = rawTarget.replace(/\D/g, '');
+    const fullPhone = cleanNumber.length === 10 ? `91${cleanNumber}` : cleanNumber;
+
+    const prodName = cashMemoProduct === 'MS' ? 'Petrol (MS)' : cashMemoProduct === 'HSD' ? 'Diesel (HSD)' : cashMemoProduct;
+    const msg = billInfo
+      ? generateWhatsAppInvoice(
+          billInfo.bill_no,
+          billInfo.vehicle_no,
+          billInfo.product_name,
+          Number(billInfo.qty),
+          Number(billInfo.rate),
+          Number(billInfo.amount),
+          billInfo.payment_mode,
+          billInfo.date
+        )
+      : generateWhatsAppInvoice(
+          cashMemoBillNo,
+          cashMemoVehicle,
+          prodName,
+          cashMemoLiters,
+          cashMemoRate,
+          totalAmount,
+          billMode,
+          getTodayErpDate()
+        );
+
+    window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    showToast(`📱 Opening WhatsApp for ${fullPhone}...`);
+  };
 
   // Multi-Mode Tender Breakdown (Split Tender)
   const [splitCash, setSplitCash] = useState<number>(0);
@@ -552,8 +647,68 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
               />
             </div>
 
+            {/* 🏷️ Lube / Engine Oil Barcode Scanner Input */}
+            <div style={{ background: '#fefce8', border: '1px solid #fde047', padding: '6px', borderRadius: '3px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#854d0e' }}>🏷️ Barcode Scanner (Lubes/DEF):</span>
+                {barcodeNotification && (
+                  <span style={{ fontSize: '10.5px', color: '#15803d', fontWeight: 700 }}>{barcodeNotification}</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <input
+                  type="text"
+                  className="win-input"
+                  placeholder="Scan USB/Bluetooth barcode or enter code (e.g. 8901030001001)..."
+                  value={scannedBarcode}
+                  onChange={(e) => setScannedBarcode(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      applyBarcodeLookup(scannedBarcode);
+                    }
+                  }}
+                  style={{ flex: 1, fontSize: '11px', fontFamily: 'monospace' }}
+                />
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  onClick={() => applyBarcodeLookup(scannedBarcode)}
+                  style={{ fontSize: '10.5px', height: '22px', padding: '0 8px', fontWeight: 700 }}
+                >
+                  🔍 Scan
+                </button>
+              </div>
+              {/* Quick sample barcodes for instant testing */}
+              <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '9.5px', color: '#713f12' }}>Presets:</span>
+                {LUBE_BARCODE_CATALOG.map((item) => (
+                  <button
+                    key={item.barcode}
+                    type="button"
+                    onClick={() => {
+                      setScannedBarcode(item.barcode);
+                      applyBarcodeLookup(item.barcode);
+                    }}
+                    style={{
+                      fontSize: '9.5px',
+                      padding: '1px 5px',
+                      background: '#fff',
+                      border: '1px solid #ca8a04',
+                      borderRadius: '2px',
+                      cursor: 'pointer',
+                      color: '#854d0e',
+                    }}
+                    title={`Scan ${item.name} (${item.barcode})`}
+                  >
+                    🏷️ {item.code} (₹{item.rate})
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="win-form-row">
-              <span className="win-label" style={{ width: '90px' }}>Fuel Grade</span>
+              <span className="win-label" style={{ width: '90px' }}>Product / Grade</span>
               <select
                 className="win-select"
                 value={cashMemoProduct}
@@ -625,15 +780,47 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
               />
             </div>
 
-            <div className="win-actions-row" style={{ marginTop: '14px' }}>
+            <div className="win-form-row">
+              <span className="win-label" style={{ width: '90px', color: '#15803d', fontWeight: 700 }}>📱 WhatsApp No</span>
+              <input
+                type="tel"
+                className="win-input"
+                placeholder="10-digit mobile (e.g. 9876543210)"
+                value={customerMobile}
+                onChange={(e) => setCustomerMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                style={{ flex: 1, fontWeight: 700, color: '#166534' }}
+              />
+            </div>
+
+            <div className="win-actions-row" style={{ marginTop: '12px', gap: '8px' }}>
               <button
                 type="button"
                 className="win-btn-classic win-btn-primary"
                 onClick={handleExecuteSaveAndPrint}
-                style={{ flex: 1, fontSize: '13px', fontWeight: 700 }}
+                style={{ flex: 1.2, fontSize: '12.5px', fontWeight: 700 }}
               >
                 <span>⚡</span>
-                <span>Save & Print 80mm Slip (F2)</span>
+                <span>Save & Print Slip (F2)</span>
+              </button>
+              <button
+                type="button"
+                className="win-btn-classic"
+                onClick={() => {
+                  handleExecuteSaveAndPrint();
+                  handleSendWhatsApp();
+                }}
+                style={{
+                  flex: 1,
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  background: 'linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%)',
+                  color: '#14532d',
+                  borderColor: '#86efac',
+                }}
+                title="Save transaction and immediately open WhatsApp with formatted slip"
+              >
+                <span>📱</span>
+                <span>Save & WhatsApp</span>
               </button>
             </div>
           </div>
@@ -685,6 +872,23 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                 *** THANK YOU! VISIT AGAIN ***
               </div>
             </div>
+            <button
+              type="button"
+              className="win-btn-classic"
+              onClick={() => handleSendWhatsApp()}
+              style={{
+                width: '100%',
+                marginTop: '10px',
+                background: '#16a34a',
+                color: '#fff',
+                borderColor: '#15803d',
+                fontWeight: 700,
+                fontSize: '11px',
+              }}
+              title="Share this receipt on WhatsApp"
+            >
+              📱 Share Receipt via WhatsApp
+            </button>
           </div>
         </div>
 
@@ -754,6 +958,23 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                               title="Reprint duplicate thermal slip"
                             >
                               🖨️ Print
+                            </button>
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{
+                                fontSize: '9.5px',
+                                height: '18px',
+                                padding: '0 4px',
+                                background: '#e8f8f5',
+                                color: '#16a34a',
+                                borderColor: '#86efac',
+                                fontWeight: 700,
+                              }}
+                              onClick={() => handleSendWhatsApp(undefined, b)}
+                              title="Send slip to customer on WhatsApp"
+                            >
+                              📱 WA
                             </button>
                             <button
                               type="button"
