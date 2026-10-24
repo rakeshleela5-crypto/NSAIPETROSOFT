@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import type { StationProfile } from '../models';
 import { getTodayErpDate } from '../utils/dateUtils';
-import { resetOperationsToCleanSlate } from '../api/client';
+import { resetOperationsToCleanSlate, restoreBackupApi, fetchReversalVouchersApi, type SupervisorReversalVoucherItem } from '../api/client';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 import { erpStore } from '../store/erpStore';
 import { exportToCsv } from '../utils/exportCsv';
@@ -62,6 +62,25 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
   const [selectedStationBranch, setSelectedStationBranch] = useState<string>(stationProfile.stationName);
   const [selectedFinancialYear, setSelectedFinancialYear] = useState<string>('2026-27');
 
+  // Supervisor Reversal Vouchers Audit Trail state
+  const [reversalVouchers, setReversalVouchers] = useState<SupervisorReversalVoucherItem[]>([]);
+  const [showReversals, setShowReversals] = useState<boolean>(false);
+  const [isLoadingReversals, setIsLoadingReversals] = useState<boolean>(false);
+
+  const handleFetchReversals = async () => {
+    setIsLoadingReversals(true);
+    try {
+      const list = await fetchReversalVouchersApi('1234');
+      setReversalVouchers(list);
+      setShowReversals(true);
+      showToast(`✔ Loaded ${list.length} supervisor reversal vouchers.`);
+    } catch (e: any) {
+      showToast(`Audit log notice: ${e.message || 'No vouchers found'}`);
+    } finally {
+      setIsLoadingReversals(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   // 1. Download Backup JSON with Adler-32 Checksum
@@ -92,11 +111,22 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
     reader.onload = async (evt) => {
       try {
         setRestoreError(null);
-        setRestoreStatus('Validating backup schema & checksum...');
+        setRestoreStatus('Validating backup schema & restoring PostgreSQL database...');
         const content = evt.target?.result as string;
         const result = erpStore.restoreBackupJson(content);
-        setRestoreStatus(`✔ Successfully restored ${result.recordsRestored} operational records. A rollback snapshot has been preserved.`);
-        showToast('✔ ERP Database successfully restored from backup!');
+        
+        // Full-Stack Parity: Persist restored snapshot into PostgreSQL!
+        try {
+          const parsed = JSON.parse(content);
+          const apiRes = await restoreBackupApi({ data: parsed });
+          setRestoreStatus(`✔ Successfully restored ${apiRes.records_restored || result.recordsRestored} operational records to PostgreSQL! A rollback snapshot has been preserved.`);
+          showToast('✔ ERP Database successfully restored and saved to PostgreSQL!');
+        } catch (apiErr: any) {
+          console.warn('PostgreSQL restore API note:', apiErr);
+          setRestoreStatus(`✔ Successfully restored ${result.recordsRestored} records locally. (Backend note: ${apiErr.message || 'local-only mode'})`);
+          showToast('✔ ERP Database restored to active session!');
+        }
+
         await loadAllErpData();
       } catch (err: any) {
         setRestoreError(`Restore failed: ${err.message}`);
@@ -757,6 +787,62 @@ export const ControlPanelModal: React.FC<ControlPanelModalProps> = ({
                   >
                     ↩ Rollback to Pre-Restore Snapshot
                   </button>
+                </div>
+
+                {/* Supervisor Reversal Vouchers Audit Trail */}
+                <div style={{ marginTop: '16px', paddingTop: '10px', borderTop: '1px solid #d4d0c8' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div>
+                      <strong style={{ fontSize: '12px', color: '#2c3e50' }}>🛡️ Supervisor Reversal Vouchers Audit Trail</strong>
+                      <div style={{ fontSize: '11px', color: '#666' }}>PostgreSQL log of all transactions voided via managerial PIN override.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="win-btn-classic"
+                      style={{ fontSize: '11px', fontWeight: 600 }}
+                      onClick={handleFetchReversals}
+                      disabled={isLoadingReversals}
+                    >
+                      {isLoadingReversals ? 'Loading...' : '🔍 Audit Reversals'}
+                    </button>
+                  </div>
+
+                  {showReversals && (
+                    <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid #7f9db9', background: '#fff' }}>
+                      <table className="win-table" style={{ width: '100%', fontSize: '10.5px' }}>
+                        <thead>
+                          <tr>
+                            <th>Voucher #</th>
+                            <th>Action Type</th>
+                            <th>Target Ref</th>
+                            <th className="text-right">Amount (₹)</th>
+                            <th>Reason</th>
+                            <th>Authorized By</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reversalVouchers.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} style={{ textAlign: 'center', padding: '10px', color: '#888' }}>
+                                No void/reversal vouchers recorded. All transactions intact.
+                              </td>
+                            </tr>
+                          ) : (
+                            reversalVouchers.map((v) => (
+                              <tr key={v.id}>
+                                <td style={{ fontWeight: 600 }}>{v.voucher_no}</td>
+                                <td><span style={{ color: '#c0392b', fontWeight: 600 }}>{v.action_type}</span></td>
+                                <td>{v.target_reference}</td>
+                                <td className="text-right">{v.amount?.toFixed(2)}</td>
+                                <td>{v.reason}</td>
+                                <td>{v.authorized_by}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

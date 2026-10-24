@@ -891,6 +891,57 @@ export async function triggerCreateBackup(): Promise<CreateBackupResponse> {
   return res.json();
 }
 
+export interface RestoreBackupResult {
+  status: string;
+  records_restored: number;
+  table_stats: Record<string, number>;
+  message: string;
+}
+
+export async function restoreBackupApi(
+  payload: { data?: any; filename?: string; snapshot?: any },
+  managerPin?: string
+): Promise<RestoreBackupResult> {
+  const pinParam = managerPin ? `?pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/pump/backups/restore${pinParam}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(payload),
+    },
+    15000
+  );
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Database restore failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export interface SupervisorReversalVoucherItem {
+  id: number;
+  voucher_no: string;
+  action_type: string;
+  target_reference: string;
+  amount: number;
+  reason: string;
+  authorized_by: string;
+  created_at: string;
+}
+
+export async function fetchReversalVouchersApi(managerPin?: string): Promise<SupervisorReversalVoucherItem[]> {
+  const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/reversal-vouchers${pinParam}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`Fetch reversal vouchers failed: ${res.status}`);
+  return res.json();
+}
+
 export function getBackupDownloadUrl(filename: string): string {
   return `${API_BASE_URL}/api/v1/pump/backups/download/${encodeURIComponent(filename)}`;
 }
@@ -1012,34 +1063,34 @@ export async function fetchStationProfileApi(): Promise<StationProfile | null> {
   }
 }
 
-export async function saveStationProfileApi(profile: StationProfile): Promise<any> {
-  try {
-    const payload = {
-      station_name: profile.stationName,
-      oil_company: profile.oilCompany,
-      dealer_code: profile.dealerCode || '',
-      address: profile.address || '',
-      city: profile.city || '',
-      state: profile.state || '',
-      state_code: profile.stateCode || '',
-      pincode: profile.pincode || '',
-      gstin: profile.gstin || '',
-      pan_no: profile.panNo || '',
-      phone: profile.phone || '',
-      upi_vpa: profile.upiVpa || '',
-      printer_paper_width: profile.printerPaperWidth || '80mm',
-      manager_pin: profile.managerPin || undefined,
-    };
-    const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return null;
-    return await res.json().catch(() => null);
-  } catch (_err) {
-    return null;
+export async function saveStationProfileApi(profile: StationProfile, currentManagerPin?: string): Promise<any> {
+  const payload = {
+    station_name: profile.stationName,
+    oil_company: profile.oilCompany,
+    dealer_code: profile.dealerCode || '',
+    address: profile.address || '',
+    city: profile.city || '',
+    state: profile.state || '',
+    state_code: profile.stateCode || '',
+    pincode: profile.pincode || '',
+    gstin: profile.gstin || '',
+    pan_no: profile.panNo || '',
+    phone: profile.phone || '',
+    upi_vpa: profile.upiVpa || '',
+    printer_paper_width: profile.printerPaperWidth || '80mm',
+    manager_pin: profile.managerPin || undefined,
+    current_manager_pin: currentManagerPin || profile.managerPin || '1234',
+  };
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/station-profile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to update station profile (${res.status})`);
   }
+  return await res.json().catch(() => ({ message: 'Station profile updated successfully' }));
 }
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ interface CloudBackupModalProps {
   onRefreshList: () => void;
   getMasterExcelDownloadUrl: () => string;
   getBackupDownloadUrl: (filename: string) => string;
+  onRestoreBackup?: (filename: string) => void;
 }
 
 export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
@@ -23,6 +24,7 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
   onRefreshList,
   getMasterExcelDownloadUrl,
   getBackupDownloadUrl,
+  onRestoreBackup,
 }) => {
   if (!isOpen) return null;
 
@@ -143,7 +145,7 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
                             {b.storage === 'cloudflare_r2' ? '☁️ Cloudflare R2' : '💾 Local Disk'}
                           </span>
                         </td>
-                        <td style={{ textAlign: 'center' }}>
+                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                           <a
                             href={getBackupDownloadUrl(b.filename)}
                             target="_blank"
@@ -157,11 +159,35 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
                               height: '18px',
                               padding: '0 6px',
                               fontSize: '10px',
-                              fontWeight: 600
+                              fontWeight: 600,
+                              marginRight: '4px',
                             }}
                           >
                             ⬇️ Download
                           </a>
+                          {onRestoreBackup && (
+                            <button
+                              type="button"
+                              className="win-btn-classic"
+                              style={{
+                                lineHeight: '18px',
+                                height: '18px',
+                                padding: '0 6px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                background: '#fdfefe',
+                                color: '#c0392b',
+                              }}
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to restore database snapshot "${b.filename}"? This will atomically update PostgreSQL tables.`)) {
+                                  onRestoreBackup(b.filename);
+                                }
+                              }}
+                              title="Restore this snapshot directly to PostgreSQL"
+                            >
+                              🔄 Restore
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))

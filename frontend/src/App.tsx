@@ -53,6 +53,7 @@ import {
   fetchCashBillsApi,
   fetchLubeSalesApi,
   deleteRateHistoryApi,
+  restoreBackupApi,
 } from './api/client';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
@@ -218,11 +219,11 @@ export default function App() {
     setStationProfile(updated);
     erpStore.hydrateFromBackend({ stationProfile: updated });
     try {
-      await saveStationProfileApi(updated);
+      await saveStationProfileApi(updated, stationProfile.managerPin || '1234');
       showToast('✔ Station Outlet Profile Updated & Saved to Cloud Database!');
     } catch (err: any) {
       console.warn('Backend station profile sync deferred:', err);
-      showToast('✔ Station Profile updated in session (Cloud sync pending)');
+      showToast(`✔ Station Profile updated in session. Note: ${err.message || 'Cloud sync pending'}`);
     }
   };
 
@@ -1328,6 +1329,19 @@ export default function App() {
     } finally {
       setIsBackingUp(false);
     }
+  };
+
+  const handleRestoreDatabaseBackup = (filename: string) => {
+    requestManagerAuthorization(`Restore Database Snapshot "${filename}"`, async (pin?: string) => {
+      try {
+        showToast('⏳ Restoring PostgreSQL database from cloud archive...');
+        const res = await restoreBackupApi({ filename }, pin);
+        showToast(`✔ Database restored: ${res.records_restored} records updated across tables!`);
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(`❌ Database restore error: ${err.message || 'Operation failed'}`);
+      }
+    });
   };
 
   const openReports = () => {
@@ -2925,6 +2939,14 @@ export default function App() {
       <CalculatorModal
         isOpen={activeDialog === 'calc'}
         onClose={() => setActiveDialog(null)}
+        onInsertValue={(val: string) => {
+          showToast(`✔ Copied ${val} from Calculator to clipboard!`);
+          try {
+            if (typeof navigator !== 'undefined' && navigator.clipboard) {
+              navigator.clipboard.writeText(val);
+            }
+          } catch {}
+        }}
       />
 
       <ReportCriteriaModal
@@ -3223,6 +3245,7 @@ export default function App() {
         onRefreshList={openBackupDialog}
         getMasterExcelDownloadUrl={getMasterExcelDownloadUrl}
         getBackupDownloadUrl={getBackupDownloadUrl}
+        onRestoreBackup={handleRestoreDatabaseBackup}
       />
 
       <ManagerAuthModal

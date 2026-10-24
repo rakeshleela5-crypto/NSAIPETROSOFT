@@ -14,6 +14,7 @@ from app.services.backup_service import (
     generate_excel_workbook,
     list_all_backups,
     r2_service,
+    restore_database_snapshot,
 )
 
 router = APIRouter()
@@ -92,6 +93,58 @@ async def create_backup(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backup generation failed: {str(e)}")
+
+
+@router.post("/restore", summary="Restore Database Snapshot to PostgreSQL")
+async def restore_backup_endpoint(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    authorized: bool = Depends(verify_backup_authorized),
+):
+    """
+    Surgically restores an entire ERP database backup into PostgreSQL.
+    Accepts raw JSON snapshot data or filename to pull from R2/local disk.
+    """
+    try:
+        # Check if snapshot is provided as raw JSON data or filename
+        snapshot_data = payload.get("data") or payload.get("snapshot") or payload
+        filename = payload.get("filename")
+
+        if filename and not snapshot_data:
+            safe_filename = Path(filename).name
+            raw_bytes = None
+            if r2_service.is_configured():
+                try:
+                    raw_bytes = r2_service.get_object_bytes(f"backups/{safe_filename}")
+                except Exception:
+                    pass
+            if not raw_bytes:
+                local_path = (LOCAL_BACKUP_DIR / safe_filename).resolve()
+                if local_path.is_file() and local_path.exists():
+                    with open(local_path, "rb") as f:
+                        raw_bytes = f.read()
+
+            if not raw_bytes:
+                raise HTTPException(status_code=404, detail=f"Backup archive '{safe_filename}' not found")
+
+            # Decompress if gzip
+            import gzip
+            import json
+            try:
+                decompressed = gzip.decompress(raw_bytes)
+                snapshot_data = json.loads(decompressed.decode("utf-8"))
+            except Exception:
+                snapshot_data = json.loads(raw_bytes.decode("utf-8"))
+
+        if not isinstance(snapshot_data, dict):
+            raise HTTPException(status_code=400, detail="Invalid snapshot data format")
+
+        result = await restore_database_snapshot(db, snapshot_data)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database restoration failed: {str(e)}")
 
 
 @router.get("", summary="List All Cloudflare R2 & Local Database Backups")

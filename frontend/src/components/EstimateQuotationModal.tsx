@@ -132,6 +132,21 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
           remarks: `Converted from Quotation #${q?.quotation_no || ''}`,
           indent_no: bill.indent_no,
         });
+
+        // Full-Stack Parity: Persist status='CONVERTED' in PostgreSQL
+        if (q) {
+          await saveQuotationApi({
+            id: q.id,
+            quotation_no: q.quotation_no,
+            customer_name: q.customer_name,
+            customer_mobile: q.customer_mobile,
+            customer_gstin: q.customer_gstin,
+            total_amount: q.total_amount,
+            terms: q.terms,
+            status: 'CONVERTED',
+            items: q.items || [],
+          }).catch((statusErr) => console.warn('Quotation status update note:', statusErr));
+        }
       } catch (backendErr) {
         console.warn('Backend converted quotation sync deferred or offline:', backendErr);
       }

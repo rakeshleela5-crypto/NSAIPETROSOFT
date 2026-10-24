@@ -3,7 +3,7 @@ import { decentroBanking } from '../services/decentroBanking';
 import type { DynamicUpiQrResponse, GstinKycResponse, SupplierPayoutResponse } from '../services/decentroBanking';
 import type { CustomerFull } from '../models';
 import { erpStore } from '../store/erpStore';
-import { createCardSettlement } from '../api/client';
+import { createCardSettlement, createExpense } from '../api/client';
 
 interface DecentroBankingModalProps {
   isOpen: boolean;
@@ -189,6 +189,14 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
       setPayoutResult(resp);
       if (resp) {
         try {
+          // Persist supplier disbursement directly to PostgreSQL expense ledger
+          await createExpense({
+            category: 'Supplier Payout (OMC)',
+            amount: amt,
+            paid_to: vendorName,
+            narration: `${payoutTransferType} Payout via Decentro BaaS (Txn: ${resp.decentro_txn_id || idempKey}) - ${payoutPurpose}`,
+          }).catch((e) => console.warn('PostgreSQL expense record note:', e));
+
           erpStore.recordExpense({
             category: 'Supplier Payout (OMC)',
             amount: amt,
