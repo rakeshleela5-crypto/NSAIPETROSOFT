@@ -15,6 +15,9 @@ interface BankAccountsMasterModalProps {
   onCreateBankAccount: (e: React.FormEvent) => void;
   onOpenTransfer: () => void;
   onDeleteBankAccount?: (id: number, name: string) => void;
+  onUpdateBankAccount?: (id: number, data: { account_name?: string; account_type?: string; balance?: number }) => Promise<void>;
+  showToast?: (msg: string) => void;
+  loadAllErpData?: () => Promise<void>;
 }
 
 export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = ({
@@ -30,8 +33,47 @@ export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = (
   onCreateBankAccount,
   onOpenTransfer,
   onDeleteBankAccount,
+  onUpdateBankAccount,
+  showToast: _showToast,
+  loadAllErpData: _loadAllErpData,
 }) => {
+  const [editingAccountId, setEditingAccountId] = React.useState<number | null>(null);
+  const [editName, setEditName] = React.useState<string>('');
+  const [editType, setEditType] = React.useState<string>('CURRENT');
+  const [editBalance, setEditBalance] = React.useState<number>(0);
+  const [isUpdating, setIsUpdating] = React.useState<boolean>(false);
+
   if (!isOpen) return null;
+
+  const handleStartEdit = (a: BankAccountItem) => {
+    setEditingAccountId(a.id);
+    setEditName(a.name);
+    setEditType(a.type);
+    setEditBalance(a.balance);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccountId(null);
+    setEditName('');
+    setEditType('CURRENT');
+    setEditBalance(0);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAccountId || !editName.trim() || !onUpdateBankAccount) return;
+    try {
+      setIsUpdating(true);
+      await onUpdateBankAccount(editingAccountId, {
+        account_name: editName.trim().toUpperCase(),
+        account_type: editType,
+        balance: editBalance,
+      });
+      handleCancelEdit();
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   return (
     <div className="win-modal-overlay">
@@ -53,18 +95,29 @@ export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = (
                     <th>Account Name</th>
                     <th>Type</th>
                     <th className="text-right">Balance</th>
-                    <th style={{ width: '40px', textAlign: 'center' }}>Del</th>
+                    <th style={{ width: '65px', textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {accountsList.map((a) => (
-                    <tr key={a.id}>
+                    <tr key={a.id} className={editingAccountId === a.id ? 'win-selected-row' : ''}>
                       <td style={{ fontWeight: 600 }}>{a.name}</td>
                       <td>{a.type}</td>
                       <td className="text-right" style={{ fontWeight: 700, color: a.balance > 0 ? '#1b6b80' : '#c0392b' }}>
                         ₹ {a.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
-                      <td style={{ textAlign: 'center' }}>
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {onUpdateBankAccount && (
+                          <button
+                            type="button"
+                            className="win-btn-classic"
+                            style={{ height: '18px', padding: '0 4px', fontSize: '10px', marginRight: '3px' }}
+                            onClick={() => handleStartEdit(a)}
+                            title="Edit account name and type"
+                          >
+                            ✏️
+                          </button>
+                        )}
                         {a.id !== 1 && onDeleteBankAccount && (
                           <button
                             type="button"
@@ -85,62 +138,122 @@ export const BankAccountsMasterModal: React.FC<BankAccountsMasterModalProps> = (
           </div>
 
           <div>
-            <div style={{ fontWeight: 700, marginBottom: '6px' }}>Add New Bank / Ledger</div>
-            <form onSubmit={onCreateBankAccount}>
-              <div className="win-form-row">
-                <span className="win-label">Account Name</span>
-                <input
-                  type="text"
-                  className="win-input"
-                  required
-                  value={newBankName}
-                  onChange={(e) => setNewBankName(e.target.value)}
-                  style={{ flex: 1 }}
-                  placeholder="e.g. SBI CURRENT 9821"
-                />
+            {editingAccountId ? (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <div style={{ fontWeight: 700, color: '#002b80' }}>✏️ Edit Bank / Ledger</div>
+                  <button type="button" className="win-btn-classic" style={{ fontSize: '10px', height: '18px', padding: '0 4px' }} onClick={handleCancelEdit}>
+                    ✕ Cancel
+                  </button>
+                </div>
+                <form onSubmit={handleSaveEdit}>
+                  <div className="win-form-row">
+                    <span className="win-label">Account Name</span>
+                    <input
+                      type="text"
+                      className="win-input"
+                      required
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label">Type</span>
+                    <select
+                      className="win-select"
+                      style={{ flex: 1 }}
+                      value={editType}
+                      onChange={(e) => setEditType(e.target.value)}
+                    >
+                      <option>CURRENT</option>
+                      <option>SAVINGS</option>
+                      <option>POS</option>
+                      <option>WALLET</option>
+                      <option>CASH</option>
+                    </select>
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label">Balance (₹)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="win-input"
+                      value={editBalance}
+                      onChange={(e) => setEditBalance(parseFloat(e.target.value) || 0)}
+                      style={{ flex: 1, fontWeight: 700 }}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="win-btn-classic win-btn-primary"
+                    style={{ width: '100%', marginTop: '10px' }}
+                    disabled={isUpdating}
+                  >
+                    {isUpdating ? 'Updating...' : '✔ Save Account Changes'}
+                  </button>
+                </form>
               </div>
-              <div className="win-form-row">
-                <span className="win-label">Type</span>
-                <select
-                  className="win-select"
-                  style={{ flex: 1 }}
-                  value={newBankType}
-                  onChange={(e) => setNewBankType(e.target.value)}
-                >
-                  <option>CURRENT</option>
-                  <option>SAVINGS</option>
-                  <option>POS</option>
-                  <option>WALLET</option>
-                  <option>CASH</option>
-                </select>
+            ) : (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: '6px' }}>Add New Bank / Ledger</div>
+                <form onSubmit={onCreateBankAccount}>
+                  <div className="win-form-row">
+                    <span className="win-label">Account Name</span>
+                    <input
+                      type="text"
+                      className="win-input"
+                      required
+                      value={newBankName}
+                      onChange={(e) => setNewBankName(e.target.value)}
+                      style={{ flex: 1 }}
+                      placeholder="e.g. SBI CURRENT 9821"
+                    />
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label">Type</span>
+                    <select
+                      className="win-select"
+                      style={{ flex: 1 }}
+                      value={newBankType}
+                      onChange={(e) => setNewBankType(e.target.value)}
+                    >
+                      <option>CURRENT</option>
+                      <option>SAVINGS</option>
+                      <option>POS</option>
+                      <option>WALLET</option>
+                      <option>CASH</option>
+                    </select>
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label">Opening Bal (₹)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="win-input"
+                      value={newBankBalance}
+                      onChange={(e) => setNewBankBalance(parseFloat(e.target.value) || 0)}
+                      style={{ flex: 1, fontWeight: 700 }}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="win-btn-classic win-btn-primary"
+                    style={{ width: '100%', marginTop: '10px' }}
+                  >
+                    Create Account
+                  </button>
+                  <button
+                    type="button"
+                    className="win-btn-classic"
+                    style={{ width: '100%', marginTop: '6px' }}
+                    onClick={onOpenTransfer}
+                  >
+                    Contra Fund Transfer ▾
+                  </button>
+                </form>
               </div>
-              <div className="win-form-row">
-                <span className="win-label">Opening Bal (₹)</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="win-input"
-                  value={newBankBalance}
-                  onChange={(e) => setNewBankBalance(parseFloat(e.target.value) || 0)}
-                  style={{ flex: 1, fontWeight: 700 }}
-                />
-              </div>
-              <button
-                type="submit"
-                className="win-btn-classic win-btn-primary"
-                style={{ width: '100%', marginTop: '10px' }}
-              >
-                Create Account
-              </button>
-              <button
-                type="button"
-                className="win-btn-classic"
-                style={{ width: '100%', marginTop: '6px' }}
-                onClick={onOpenTransfer}
-              >
-                Contra Fund Transfer ▾
-              </button>
-            </form>
+            )}
           </div>
         </div>
         <div className="win-dialog-footer">

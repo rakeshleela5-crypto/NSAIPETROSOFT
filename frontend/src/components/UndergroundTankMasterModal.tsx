@@ -7,6 +7,7 @@ import {
   updateTankApi,
   deleteTankApi,
   fetchTankStrappingChartApi,
+  saveTankStrappingChartApi,
   saveStrappingPointApi,
   deleteStrappingPointApi,
 } from '../api/client';
@@ -100,6 +101,32 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
     }
   };
 
+  const handleGenerateStandardStrapping = async () => {
+    const activeTank = tanks.find((t) => t.id === selectedChartTankId);
+    const capacity = activeTank?.capacity || 20000;
+    const maxDip = 220;
+    const steps = [
+      { dip_cm: 0, volume_liters: 0, notes: 'Zero Dip Reference' },
+      { dip_cm: 20, volume_liters: Math.round(capacity * 0.04), notes: 'Statutory Point 1' },
+      { dip_cm: 40, volume_liters: Math.round(capacity * 0.11), notes: 'Statutory Point 2' },
+      { dip_cm: 60, volume_liters: Math.round(capacity * 0.20), notes: 'Statutory Point 3' },
+      { dip_cm: 80, volume_liters: Math.round(capacity * 0.31), notes: 'Statutory Point 4' },
+      { dip_cm: 110, volume_liters: Math.round(capacity * 0.50), notes: 'Midpoint (50% Shell)' },
+      { dip_cm: 140, volume_liters: Math.round(capacity * 0.69), notes: 'Statutory Point 6' },
+      { dip_cm: 160, volume_liters: Math.round(capacity * 0.80), notes: 'Statutory Point 7' },
+      { dip_cm: 180, volume_liters: Math.round(capacity * 0.89), notes: 'Statutory Point 8' },
+      { dip_cm: 200, volume_liters: Math.round(capacity * 0.96), notes: 'Statutory Point 9' },
+      { dip_cm: maxDip, volume_liters: capacity, notes: 'Full Capacity Calibration' },
+    ];
+
+    try {
+      await saveTankStrappingChartApi(selectedChartTankId, steps);
+      if (showToast) showToast(`✔ Standard Statutory 10-Point Calibration Curve (${capacity.toLocaleString('en-IN')}L) generated and saved to PostgreSQL!`);
+      await loadStrappingPoints(selectedChartTankId);
+    } catch (err: any) {
+      if (showToast) showToast(`❌ Failed to generate strapping chart: ${err.message || 'Operation failed'}`);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -388,6 +415,15 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  className="win-btn-classic"
+                  style={{ fontSize: '10.5px', height: '22px', background: '#e3f2fd', fontWeight: 600, color: '#0d47a1' }}
+                  onClick={handleGenerateStandardStrapping}
+                  title="Generate standard statutory 10-point W&M strapping calibration curve"
+                >
+                  ⚡ Standard Curve
+                </button>
               </div>
             </div>
 

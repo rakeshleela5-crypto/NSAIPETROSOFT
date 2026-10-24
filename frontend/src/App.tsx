@@ -45,6 +45,7 @@ import {
   fetchLubesApi,
   closeShiftApi,
   deleteBankAccountApi,
+  updateBankAccountApi,
   deleteTankDipApi,
   deleteCardSettlementApi,
   fetchTransfersApi,
@@ -1962,6 +1963,22 @@ export default function App() {
     });
   };
 
+  const handleUpdateBankAccount = async (id: number, data: { account_name?: string; account_type?: string; balance?: number }) => {
+    try {
+      await updateBankAccountApi(id, data);
+      erpStore.saveBankAccount({
+        id,
+        name: data.account_name || 'BANK ACCOUNT',
+        type: data.account_type || 'CURRENT',
+        balance: data.balance,
+      });
+      showToast(`✔ Bank Account "${data.account_name || id}" updated in PostgreSQL!`);
+      await loadAllErpData();
+    } catch (err: any) {
+      showToast(`❌ Cannot update Bank Account: ${err.message || 'Operation failed'}`);
+    }
+  };
+
   // Card POS Settlement Save
   const handleSaveCardSettlement = async () => {
     const cardPayload = {
@@ -3104,6 +3121,7 @@ export default function App() {
         onCreateBankAccount={handleCreateBankAccount}
         onOpenTransfer={() => setActiveDialog('transfer')}
         onDeleteBankAccount={handleDeleteBankAccount}
+        onUpdateBankAccount={handleUpdateBankAccount}
       />
 
       <ControlPanelModal

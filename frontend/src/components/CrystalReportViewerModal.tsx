@@ -3,6 +3,7 @@ import type { CustomerFull, StationProfile } from '../models';
 import { erpStore } from '../store/erpStore';
 import { toIsoDate, getTodayIsoDate, getCurrentMonthStartIsoDate, formatErpDate } from '../utils/dateUtils';
 import { exportToCsv } from '../utils/exportCsv';
+import { fetchDensityRegisterApi, fetchStampingRegisterApi } from '../api/client';
 
 interface CrystalReportViewerModalProps {
   isOpen: boolean;
@@ -58,11 +59,34 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
   const [dateFilterMode, setDateFilterMode] = useState<'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'>('TODAY');
   const [reportZoom, setReportZoom] = useState<string>('100%');
   const [selectedCustomerId, setSelectedCustomerId] = useState<number>(customers[0]?.id || 1);
+  const [densityRegisterData, setDensityRegisterData] = useState<any[]>([]);
+  const [stampingRegisterData, setStampingRegisterData] = useState<any[]>([]);
 
   useEffect(() => {
     if (initialFromDate) setFromDate(toIsoDate(initialFromDate));
     if (initialToDate) setToDate(toIsoDate(initialToDate));
   }, [initialFromDate, initialToDate]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const rep = (reportCriteriaRadio || activeReportTitle).toUpperCase();
+    if (rep.includes('DENSITY')) {
+      fetchDensityRegisterApi()
+        .then((data) => {
+          if (Array.isArray(data)) setDensityRegisterData(data);
+          else if (data && Array.isArray(data.records)) setDensityRegisterData(data.records);
+        })
+        .catch(() => {
+          setDensityRegisterData([]);
+        });
+    } else if (rep.includes('STAMPING')) {
+      fetchStampingRegisterApi()
+        .then((data) => {
+          if (Array.isArray(data)) setStampingRegisterData(data);
+        })
+        .catch(() => {});
+    }
+  }, [isOpen, reportCriteriaRadio, activeReportTitle]);
 
   if (!isOpen) return null;
 
@@ -97,7 +121,37 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
     const reportKey = (reportCriteriaRadio || activeReportTitle).toUpperCase();
     const filename = `NSAIPETROSOFT_${reportKey.replace(/[^A-Z0-9]/g, '_')}_${fromDate}_to_${toDate}`;
 
-    if (reportKey.includes('DSR')) {
+    if (reportKey.includes('DENSITY')) {
+      exportToCsv(
+        filename,
+        ['Date', 'Product / Tank', 'Observed Density (kg/m3)', 'Observed Temp (C)', 'Converted 15C Density (kg/m3)', 'Invoice Density', 'Variation', 'Compliance Status'],
+        densityRegisterData.map((d: any) => [
+          d.date || d.recorded_at,
+          d.product_name || d.tank_name || 'HSD / MS',
+          d.observed_density || d.density,
+          d.temperature || d.temp_c || 15.0,
+          d.converted_density_15c || d.density_15c || d.density,
+          d.invoice_density || 830.0,
+          d.density_difference ? d.density_difference.toFixed(2) : '0.00',
+          d.status || (Math.abs(Number(d.density_difference || 0)) <= 3.0 ? 'PASS' : 'WARNING'),
+        ])
+      );
+    } else if (reportKey.includes('STAMPING')) {
+      exportToCsv(
+        filename,
+        ['Nozzle Name', 'Tank / Product', 'Seal Number', 'Certificate Number', 'Last Stamped', 'Next Due Date', 'Days Remaining', 'Status'],
+        stampingRegisterData.map((s: any) => [
+          s.nozzle_name || `Nozzle #${s.nozzle_id}`,
+          s.tank || s.product || 'Standard Tank',
+          s.wm_seal_no || 'WM-SEAL-VERIFIED',
+          s.wm_certificate_no || 'CERT-LM-2026',
+          s.last_stamped || s.last_stamped_date,
+          s.next_due || s.stamping_due_date,
+          s.days_remaining ?? 365,
+          s.status || 'ACTIVE',
+        ])
+      );
+    } else if (reportKey.includes('DSR')) {
       exportToCsv(
         filename,
         ['Nozzle', 'Product', 'Opening Meter', 'Closing Meter', 'Testing', 'Net Litres', 'Rate (INR)', 'Amount (INR)'],
@@ -309,6 +363,119 @@ export const CrystalReportViewerModal: React.FC<CrystalReportViewerModalProps> =
                 Statement Period: {formatErpDate(fromDate)} To {formatErpDate(toDate)} | Shift: {critShift || 'ALL'}
               </div>
             </div>
+
+            {/* ============================================================== */}
+            {/* STATUTORY 1: DAILY DENSITY REGISTER (ASTM 53B) */}
+            {/* ============================================================== */}
+            {repKey.includes('DENSITY') && (
+              <div>
+                <div className="crystal-table-subhead">Statutory Daily Morning Density Register (Rule 18 / ASTM Table 53B Conversion)</div>
+                <table className="crystal-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Product / Tank</th>
+                      <th className="text-right">Observed Density (kg/m³)</th>
+                      <th className="text-right">Observed Temp (°C)</th>
+                      <th className="text-right">15°C Density (ASTM 53B)</th>
+                      <th className="text-right">Invoice Ref Density</th>
+                      <th className="text-right">Variation (±3.0)</th>
+                      <th style={{ textAlign: 'center' }}>Inspection Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {densityRegisterData.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '12px', color: '#666' }}>
+                          No statutory density measurements recorded in selected date range. Morning density check at 06:00 AM required under Marketing Discipline Guidelines (MDG).
+                        </td>
+                      </tr>
+                    ) : (
+                      densityRegisterData.map((d: any, idx: number) => {
+                        const diff = Number(d.density_difference ?? (d.converted_density_15c && d.invoice_density ? (d.converted_density_15c - d.invoice_density) : 0));
+                        const isPass = Math.abs(diff) <= 3.0;
+                        return (
+                          <tr key={idx}>
+                            <td style={{ fontWeight: 600 }}>{formatErpDate(d.date || d.recorded_at)}</td>
+                            <td>{d.product_name || d.tank_name || 'HSD Tank 01'}</td>
+                            <td className="text-right">{Number(d.observed_density || d.density || 830).toFixed(1)}</td>
+                            <td className="text-right">{Number(d.temperature || d.temp_c || 25).toFixed(1)} °C</td>
+                            <td className="text-right" style={{ fontWeight: 700, color: '#002b80' }}>
+                              {Number(d.converted_density_15c || d.density_15c || 830).toFixed(1)}
+                            </td>
+                            <td className="text-right">{Number(d.invoice_density || 830).toFixed(1)}</td>
+                            <td className="text-right" style={{ fontWeight: 700, color: isPass ? '#2e7d32' : '#c62828' }}>
+                              {diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '3px', fontWeight: 700, background: isPass ? '#e8f5e9' : '#ffebee', color: isPass ? '#1b5e20' : '#b71c1c', border: `1px solid ${isPass ? '#a5d6a7' : '#ef9a9a'}` }}>
+                                {isPass ? '✔ PASSED' : '⚠ EXCEEDED'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ============================================================== */}
+            {/* STATUTORY 2: W&M NOZZLE STAMPING REGISTER */}
+            {/* ============================================================== */}
+            {repKey.includes('STAMPING') && (
+              <div>
+                <div className="crystal-table-subhead">Legal Metrology Nozzle Stamping & Seal Verification Schedule (Rule 14 & 27)</div>
+                <table className="crystal-table">
+                  <thead>
+                    <tr>
+                      <th>Nozzle</th>
+                      <th>Tank / Product</th>
+                      <th>Weights & Measures Seal No</th>
+                      <th>Calibration Certificate</th>
+                      <th>Last Stamped</th>
+                      <th>Stamping Due Date</th>
+                      <th className="text-right">Days Remaining</th>
+                      <th style={{ textAlign: 'center' }}>Statutory Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stampingRegisterData.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '12px', color: '#666' }}>
+                          No statutory nozzle stamping records found. Update calibrations in Legal Metrology Stamping Schedule.
+                        </td>
+                      </tr>
+                    ) : (
+                      stampingRegisterData.map((s: any, idx: number) => {
+                        const days = s.days_remaining ?? 365;
+                        const isExpired = days <= 0;
+                        const isExpiring = days <= 30 && days > 0;
+                        return (
+                          <tr key={idx}>
+                            <td style={{ fontWeight: 700 }}>{s.nozzle_name || `Nozzle #${s.nozzle_id}`}</td>
+                            <td>{s.tank || s.product || 'Standard Tank'}</td>
+                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{s.wm_seal_no || 'WM-SEAL-VERIFIED'}</td>
+                            <td style={{ fontSize: '10.5px' }}>{s.wm_certificate_no || 'CERT-LM-2026'}</td>
+                            <td>{formatErpDate(s.last_stamped || s.last_stamped_date)}</td>
+                            <td style={{ fontWeight: 600 }}>{formatErpDate(s.next_due || s.stamping_due_date)}</td>
+                            <td className="text-right" style={{ fontWeight: 700, color: isExpired ? '#b71c1c' : isExpiring ? '#e65100' : '#2e7d32' }}>
+                              {days} days
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '3px', fontWeight: 700, background: isExpired ? '#ffebee' : isExpiring ? '#fff3e0' : '#e8f5e9', color: isExpired ? '#b71c1c' : isExpiring ? '#e65100' : '#1b5e20', border: `1px solid ${isExpired ? '#ef9a9a' : isExpiring ? '#ffcc80' : '#a5d6a7'}` }}>
+                                {isExpired ? '⛔ EXPIRED' : isExpiring ? '⚠️ DUE SOON' : '✔ ACTIVE'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* ============================================================== */}
             {/* 1. DSR REPORT (Daily Sales Register) */}

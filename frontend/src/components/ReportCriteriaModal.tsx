@@ -65,6 +65,8 @@ export const ReportCriteriaModal: React.FC<ReportCriteriaModalProps> = ({
                 <div style={{ fontWeight: 700, fontSize: '11px', color: '#b71c1c', marginBottom: '4px', borderBottom: '1px solid #ccc' }}>Statutory & Financial</div>
                 {[
                   'DSR',
+                  'Daily Density Register (ASTM 53B)',
+                  'W&M Nozzle Stamping Register',
                   'VAT SUMMARY',
                   'PROFIT SUMMARY',
                   'PURCHASE LFR SUMMARY',

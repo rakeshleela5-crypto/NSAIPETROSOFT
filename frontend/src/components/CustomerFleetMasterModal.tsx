@@ -7,6 +7,7 @@ import {
   deleteCustomer as deleteCustomerApi,
   addVehicle,
   deleteCustomerVehicleApi,
+  toggleCustomerBlockApi,
 } from '../api/client';
 
 interface CustomerFleetMasterModalProps {
@@ -222,6 +223,28 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     }
   };
 
+  const handleToggleBlockCustomer = (c: CustomerFull) => {
+    const actionDesc = c.is_blocked
+      ? `Unblock Customer "${c.name}" (Restore Credit Dispensing)`
+      : `Block Customer "${c.name}" from Credit Fuel Dispensing`;
+    const doToggle = async () => {
+      try {
+        const res = await toggleCustomerBlockApi(c.id);
+        showToast(`✔ Customer "${c.name}" credit status: ${res.is_blocked ? 'BLOCKED 🚫' : 'ACTIVE ✅'}`);
+        await loadAllErpData();
+      } catch (err: any) {
+        showToast(`❌ Cannot toggle credit block: ${err.message || 'Operation failed'}`);
+      }
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(actionDesc, doToggle);
+    } else {
+      if (!window.confirm(`Are you sure you want to ${actionDesc}?`)) return;
+      doToggle();
+    }
+  };
+
   const filtered = customers.filter((c) => {
     if (!masterCustSearch) return true;
     const s = masterCustSearch.toLowerCase();
@@ -294,8 +317,13 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                         onClick={() => setSelectedCustId(c.id)}
                       >
                         <td style={{ fontWeight: 600 }}>{c.code}</td>
-                        <td style={{ color: '#0055ea', fontWeight: 600, cursor: 'pointer' }} onClick={() => openCustomerStatement(c.id)}>
+                        <td style={{ color: c.is_blocked ? '#c0392b' : '#0055ea', fontWeight: 600, cursor: 'pointer' }} onClick={() => openCustomerStatement(c.id)}>
                           {c.name}
+                          {c.is_blocked && (
+                            <span style={{ marginLeft: '6px', fontSize: '9px', background: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a', padding: '1px 4px', borderRadius: '3px', fontWeight: 700 }}>
+                              🚫 BLOCKED
+                            </span>
+                          )}
                         </td>
                         <td>{c.mobile || '-'}</td>
                         <td style={{ fontSize: '10.5px' }}>{c.gst_no || '-'}</td>
@@ -309,6 +337,23 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                           </span>
                         </td>
                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <button
+                            type="button"
+                            className="win-btn-classic"
+                            style={{
+                              fontSize: '10px',
+                              height: '20px',
+                              padding: '0 4px',
+                              marginRight: '4px',
+                              color: c.is_blocked ? '#2e7d32' : '#c62828',
+                              fontWeight: 600,
+                              background: c.is_blocked ? '#e8f5e9' : '#fff',
+                            }}
+                            onClick={() => handleToggleBlockCustomer(c)}
+                            title={c.is_blocked ? "Unblock customer credit fuel dispensing" : "Block customer from credit fuel dispensing"}
+                          >
+                            {c.is_blocked ? '🔓 Unblock' : '🔒 Block'}
+                          </button>
                           <button
                             type="button"
                             className="win-btn-classic"

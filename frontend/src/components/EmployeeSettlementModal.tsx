@@ -6,7 +6,9 @@ import {
   settleEmployeeShortageApi,
   fetchEmployeeShortagesApi,
   deleteEmployeeShortageApi,
+  recordLubeSaleApi,
 } from '../api/client';
+import { erpStore } from '../store/erpStore';
 import { calculateNetMeterQty } from '../utils/petroUtils';
 import { enqueueOfflineRecord } from '../utils/offlineQueue';
 
@@ -286,11 +288,13 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                   className="win-btn-classic"
                   style={{ fontSize: '10px', height: '18px', padding: '0 4px' }}
                   onClick={() => {
-                    setEmpLubeItems([
-                      ...empLubeItems,
-                      { product: 'MAK 4T PLUS 20W 40 900ML', qty: 1, rate: 365.0, amount: 365.0 }
-                    ]);
-                    showToast('✔ Lube item added to settlement');
+                    const storeProds = erpStore.getState().products;
+                    const defaultProd = storeProds && storeProds.length > 0 ? storeProds[0] : null;
+                    const item = defaultProd
+                      ? { lube_product_id: defaultProd.id, product: defaultProd.name, qty: 1, rate: defaultProd.sale_price || defaultProd.mrp, amount: defaultProd.sale_price || defaultProd.mrp }
+                      : { lube_product_id: 1, product: 'MAK 4T PLUS 20W 40 900ML', qty: 1, rate: 365.0, amount: 365.0 };
+                    setEmpLubeItems([...empLubeItems, item]);
+                    showToast(`✔ Lube pack added to settlement`);
                   }}
                 >
                   + Add Pack
@@ -304,6 +308,7 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                       <th className="text-right">Qty</th>
                       <th className="text-right">Rate</th>
                       <th className="text-right">Amount</th>
+                      <th style={{ width: '28px', textAlign: 'center' }}>✕</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -327,6 +332,21 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                         </td>
                         <td className="text-right">{l.rate.toFixed(2)}</td>
                         <td className="text-right" style={{ fontWeight: 700 }}>{l.amount.toFixed(2)}</td>
+                        <td style={{ textAlign: 'center', padding: '1px' }}>
+                          <button
+                            type="button"
+                            className="win-btn-classic"
+                            style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
+                            onClick={() => {
+                              const updated = empLubeItems.filter((_, idx) => idx !== i);
+                              setEmpLubeItems(updated);
+                              showToast('✔ Lube item removed');
+                            }}
+                            title="Remove lube item"
+                          >
+                            ✕
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -630,6 +650,34 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                       };
 
                       try {
+                        // Persist all shift lube pack sales to PostgreSQL & decrement physical inventory
+                        for (const item of empLubeItems) {
+                          if (item.qty > 0) {
+                            const lubePayload = {
+                              lube_product_id: item.lube_product_id || 1,
+                              qty_units: item.qty,
+                              rate: item.rate,
+                              payment_mode: 'CASH',
+                            };
+                            try {
+                              if (navigator.onLine) {
+                                await recordLubeSaleApi(lubePayload);
+                              } else {
+                                enqueueOfflineRecord('LUBE_SALE', lubePayload);
+                              }
+                              erpStore.recordLubeSale({
+                                lube_product_id: item.lube_product_id || 1,
+                                product_name: item.product,
+                                qty_units: item.qty,
+                                rate: item.rate,
+                                payment_mode: 'CASH',
+                              });
+                            } catch (lubeErr) {
+                              console.warn('Lube sale backend record note:', lubeErr);
+                            }
+                          }
+                        }
+
                         if (!navigator.onLine) {
                           enqueueOfflineRecord('SHIFT_SETTLEMENT', payload);
                           showToast(`💾 Offline Mode: Shift settlement buffered locally. Will auto-sync.`);

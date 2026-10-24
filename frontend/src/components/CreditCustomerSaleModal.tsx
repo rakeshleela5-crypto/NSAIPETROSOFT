@@ -289,7 +289,21 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
 
               {(() => {
                 const cust = customers.find((c) => c.id === creditCustId);
-                if (!cust || !cust.credit_limit) return null;
+                if (!cust) return null;
+                if (cust.is_blocked) {
+                  return (
+                    <div style={{ background: '#7f1d1d', color: '#fff', padding: '8px 10px', borderRadius: '4px', fontSize: '11px', marginBottom: '8px', border: '2px solid #b91c1c' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                        <span style={{ fontSize: '14px' }}>🚫</span>
+                        <span>CUSTOMER CREDIT ACCOUNT BLOCKED:</span>
+                      </div>
+                      <div style={{ margin: '4px 0', lineHeight: 1.4, color: '#fecaca' }}>
+                        Customer <strong>{cust.name}</strong> is currently BLOCKED from credit fuel dispensing due to payment default. Credit sales will be rejected by the backend. Unblock in Customer Fleet Master first.
+                      </div>
+                    </div>
+                  );
+                }
+                if (!cust.credit_limit) return null;
                 const currentDue = cust.current_outstanding || 0;
                 const newDue = currentDue + (creditQty * creditRate) - creditCashPaid;
                 const isExceeded = newDue > cust.credit_limit;
