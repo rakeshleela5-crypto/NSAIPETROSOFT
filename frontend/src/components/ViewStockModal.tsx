@@ -26,6 +26,10 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
   showToast,
   loadAllErpData,
 }) => {
+  const [sellingProduct, setSellingProduct] = React.useState<LubeProductItem | null>(null);
+  const [sellQty, setSellQty] = React.useState<number>(1);
+  const [isSubmittingSale, setIsSubmittingSale] = React.useState<boolean>(false);
+
   if (!isOpen) return null;
 
   const totalLubeValuation = products.reduce(
@@ -161,34 +165,9 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
                             className="win-btn-classic"
                             style={{ height: '20px', padding: '0 6px', fontSize: '10px', fontWeight: 700, color: '#1b5e20' }}
                             disabled={(p.current_stock_units || 0) <= 0}
-                            onClick={async () => {
-                              const qtyStr = window.prompt(`Enter quantity of "${p.name}" to sell (Max: ${p.current_stock_units}):`, '1');
-                              if (!qtyStr) return;
-                              const qty = parseInt(qtyStr, 10);
-                              if (isNaN(qty) || qty <= 0 || qty > (p.current_stock_units || 0)) {
-                                if (showToast) showToast('⚠ Invalid quantity entered');
-                                return;
-                              }
-                              try {
-                                erpStore.recordLubeSale({
-                                  lube_product_id: p.id,
-                                  product_name: p.name,
-                                  product_code: p.code,
-                                  qty_units: qty,
-                                  rate: p.sale_price,
-                                  payment_mode: 'CASH',
-                                });
-                                await recordLubeSaleApi({
-                                  lube_product_id: p.id,
-                                  qty_units: qty,
-                                  rate: p.sale_price,
-                                  payment_mode: 'CASH',
-                                });
-                                if (showToast) showToast(`✔ Sold ${qty} unit(s) of "${p.name}"! Cash on Hand & inventory updated.`);
-                                if (loadAllErpData) await loadAllErpData();
-                              } catch (err: any) {
-                                if (showToast) showToast(`❌ Sale failed: ${err.message}`);
-                              }
+                            onClick={() => {
+                              setSellingProduct(p);
+                              setSellQty(1);
                             }}
                             title="Sell packaged units from counter"
                           >
@@ -242,6 +221,101 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
           <button className="win-btn-classic" onClick={onClose}>Close</button>
         </div>
       </div>
+
+      {/* Retro Direct POS Counter Sale Modal */}
+      {sellingProduct && (
+        <div className="win-modal-overlay" style={{ zIndex: 10000 }}>
+          <div className="win-form-dialog" style={{ width: '420px', boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }}>
+            <div className="win-dialog-titlebar">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>🛒</span>
+                <span>Direct Point-of-Sale: Sell Lubricant Units</span>
+              </div>
+              <button className="win-btn" onClick={() => setSellingProduct(null)} disabled={isSubmittingSale}>✕</button>
+            </div>
+            <div className="win-dialog-body">
+              <div style={{ fontSize: '11px', color: '#444', marginBottom: '8px' }}>
+                Record counter sale of packaged inventory with automatic Cash on Hand & Ledger update.
+              </div>
+              <div className="win-form-row">
+                <span className="win-label" style={{ minWidth: '110px' }}>Product:</span>
+                <span style={{ fontWeight: 700, color: '#0a246a' }}>{sellingProduct.name} ({sellingProduct.code})</span>
+              </div>
+              <div className="win-form-row">
+                <span className="win-label" style={{ minWidth: '110px' }}>Available Stock:</span>
+                <span style={{ fontWeight: 700, color: '#27ae60' }}>{sellingProduct.current_stock_units} units</span>
+              </div>
+              <div className="win-form-row">
+                <span className="win-label" style={{ minWidth: '110px' }}>Sale Price / Unit:</span>
+                <span style={{ fontWeight: 700 }}>₹ {sellingProduct.sale_price.toFixed(2)}</span>
+              </div>
+              <div className="win-form-row" style={{ marginTop: '6px' }}>
+                <span className="win-label" style={{ minWidth: '110px' }}>Quantity to Sell:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={sellingProduct.current_stock_units}
+                  className="win-input"
+                  value={sellQty}
+                  onChange={(e) => setSellQty(Math.max(1, Math.min(sellingProduct.current_stock_units || 1, parseInt(e.target.value) || 1)))}
+                  style={{ width: '80px', fontWeight: 700, fontSize: '13px' }}
+                />
+              </div>
+              <div className="win-form-row" style={{ marginTop: '8px', borderTop: '1px solid #7f9db9', paddingTop: '6px' }}>
+                <span className="win-label" style={{ minWidth: '110px' }}>Total Cash Due:</span>
+                <span style={{ fontWeight: 800, fontSize: '14px', color: '#1b5e20' }}>
+                  ₹ {(sellQty * sellingProduct.sale_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+            <div className="win-dialog-footer">
+              <button
+                type="button"
+                className="win-btn-classic"
+                onClick={() => setSellingProduct(null)}
+                disabled={isSubmittingSale}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="win-btn-classic win-btn-primary"
+                disabled={isSubmittingSale || sellQty <= 0 || sellQty > (sellingProduct.current_stock_units || 0)}
+                onClick={async () => {
+                  try {
+                    setIsSubmittingSale(true);
+                    // Pessimistic Execution: Call server API first
+                    await recordLubeSaleApi({
+                      lube_product_id: sellingProduct.id,
+                      qty_units: sellQty,
+                      rate: sellingProduct.sale_price,
+                      payment_mode: 'CASH',
+                    });
+                    // Only update client store upon API success
+                    erpStore.recordLubeSale({
+                      lube_product_id: sellingProduct.id,
+                      product_name: sellingProduct.name,
+                      product_code: sellingProduct.code,
+                      qty_units: sellQty,
+                      rate: sellingProduct.sale_price,
+                      payment_mode: 'CASH',
+                    });
+                    if (showToast) showToast(`✔ Sold ${sellQty} unit(s) of "${sellingProduct.name}"! Cash on Hand & inventory updated.`);
+                    setSellingProduct(null);
+                    if (loadAllErpData) await loadAllErpData();
+                  } catch (err: any) {
+                    if (showToast) showToast(`❌ Sale failed: ${err.message || 'Operation failed'}`);
+                  } finally {
+                    setIsSubmittingSale(false);
+                  }
+                }}
+              >
+                {isSubmittingSale ? 'Recording...' : '✔ Record Cash Sale'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

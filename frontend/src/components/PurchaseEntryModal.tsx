@@ -365,13 +365,24 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                       type="button"
                       className="win-btn-classic"
                       style={{ padding: '0 4px' }}
-                      title="Add New Charge Code"
+                      title="Cycle Inward Charge Code (01=HSD, 02=MS, 03=XP95, 04=XG, 05=DEF)"
                       onClick={() => {
-                        const newCode = window.prompt('Enter Inward Charge Code (e.g. 03 for XP95):', '03');
-                        if (newCode && newCode.trim()) {
-                          setPurChargeCode(newCode.trim().toUpperCase());
-                          showToast(`✔ Charge code set to: ${newCode.trim().toUpperCase()}`);
+                        const codes = ['01', '02', '03', '04', '05'];
+                        const idx = codes.indexOf(purChargeCode);
+                        const nextCode = codes[(idx + 1) % codes.length];
+                        setPurChargeCode(nextCode);
+                        if (nextCode === '01') {
+                          setPurRateKl(72478.36);
+                          setPurDensity(825.4);
+                          const matchedTank = tanks.find(t => t.code === 'HSD');
+                          if (matchedTank) setSelectedTankId(matchedTank.id);
+                        } else if (nextCode === '02') {
+                          setPurRateKl(76890.12);
+                          setPurDensity(742.8);
+                          const matchedTank = tanks.find(t => t.code === 'MS');
+                          if (matchedTank) setSelectedTankId(matchedTank.id);
                         }
+                        showToast(`✔ Charge code switched to: ${nextCode}`);
                       }}
                     >
                       +
