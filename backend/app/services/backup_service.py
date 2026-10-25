@@ -173,6 +173,36 @@ class R2StorageService:
             logger.error(f"Error fetching R2 backup {key}: {e}")
             return None
 
+    def generate_presigned_url(
+        self,
+        key: str,
+        expiration: int = 900,
+        client_method: str = "get_object",
+        content_type: Optional[str] = None,
+    ) -> str:
+        """
+        Generate an S3v4 presigned URL for secure zero-egress Cloudflare R2 upload or download.
+        Expiration defaults to 900 seconds (15 minutes).
+        """
+        client = self.get_client()
+        if not client:
+            # Fallback URL for simulation / local test environments
+            method_str = "upload" if client_method == "put_object" else "download"
+            return (
+                f"https://{self.bucket_name or 'nsaipetrosoft-backups'}.r2.cloudflarestorage.com/{key}"
+                f"?action={method_str}&expires={expiration}&mock=true"
+            )
+
+        params: Dict[str, Any] = {"Bucket": self.bucket_name, "Key": key}
+        if content_type and client_method == "put_object":
+            params["ContentType"] = content_type
+
+        return client.generate_presigned_url(
+            ClientMethod=client_method,
+            Params=params,
+            ExpiresIn=expiration,
+        )
+
 
 r2_service = R2StorageService()
 

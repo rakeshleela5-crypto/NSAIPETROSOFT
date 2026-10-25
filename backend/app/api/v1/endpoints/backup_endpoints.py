@@ -95,6 +95,41 @@ async def create_backup(
         raise HTTPException(status_code=500, detail=f"Backup generation failed: {str(e)}")
 
 
+@router.post("/presigned-url", summary="Generate Cloudflare R2 Presigned URL")
+async def generate_presigned_url_endpoint(
+    payload: dict,
+    authorized: bool = Depends(verify_backup_authorized),
+):
+    """
+    Generates a secure S3v4 presigned URL for direct zero-egress document/receipt/backup
+    upload or download to Cloudflare R2.
+    """
+    key = payload.get("key") or payload.get("filename")
+    if not key:
+        raise HTTPException(status_code=400, detail="Document key or filename is required.")
+    expiration = int(payload.get("expiration") or payload.get("expires_in") or 900)
+    action = payload.get("action", "download").lower()
+    client_method = "put_object" if action in ("upload", "put") else "get_object"
+    content_type = payload.get("content_type", "application/pdf" if key.endswith(".pdf") else "application/gzip")
+
+    url = r2_service.generate_presigned_url(
+        key=key,
+        expiration=expiration,
+        client_method=client_method,
+        content_type=content_type,
+    )
+
+    return {
+        "url": url,
+        "key": key,
+        "bucket": r2_service.bucket_name,
+        "action": action,
+        "client_method": client_method,
+        "expires_in": expiration,
+        "content_type": content_type,
+    }
+
+
 @router.post("/restore", summary="Restore Database Snapshot to PostgreSQL")
 async def restore_backup_endpoint(
     payload: dict,

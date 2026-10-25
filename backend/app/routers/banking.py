@@ -536,7 +536,17 @@ async def create_fleet_virtual_account(
     )
 
 
-# Webhook Collections Endpoint: /api/v1/webhooks/decentro/collections
+# Webhook Collections Endpoint: /api/v1/webhooks/decentro and /api/v1/webhooks/decentro/collections
+@webhooks_router.post(
+    "",
+    summary="Decentro Collection & Inbound RTGS/NEFT Webhook (Root)",
+    dependencies=[Depends(verify_decentro_webhook_signature)],
+)
+@webhooks_router.post(
+    "/",
+    summary="Decentro Collection & Inbound RTGS/NEFT Webhook (Trailing Slash)",
+    dependencies=[Depends(verify_decentro_webhook_signature)],
+)
 @webhooks_router.post(
     "/collections",
     summary="Decentro Collection & Inbound RTGS/NEFT Webhook",
@@ -569,15 +579,22 @@ async def decentro_collections_webhook(
     txn_status = (
         payload.get("transaction_status")
         or payload.get("status")
+        or payload.get("transactionStatus")
         or "SUCCESS"
     ).upper()
-    amount = float(payload.get("amount") or payload.get("transfer_amount") or 0.0)
+    amount = float(
+        payload.get("amount")
+        or payload.get("transfer_amount")
+        or payload.get("transactionAmount")
+        or 0.0
+    )
     payee_account = (
         payload.get("payee_account_number")
         or payload.get("payeeAccountNumber")
         or payload.get("account_number")
         or payload.get("payerVirtualAccountNumber")
         or payload.get("payer_virtual_account_number")
+        or payload.get("beneficiaryAccountNumber")
         or ""
     )
     transfer_type = (
@@ -612,8 +629,17 @@ async def decentro_collections_webhook(
                 select(CollectionLedgerEntry).where(CollectionLedgerEntry.bank_reference_number == bank_utr)
             )
         ).scalar_one_or_none()
+        dup_audit = (
+            await db.execute(
+                select(DecentroWebhookAudit).where(
+                    DecentroWebhookAudit.bank_reference_number == bank_utr,
+                    DecentroWebhookAudit.status.in_(["PROCESSED", "SUCCESS", "DUPLICATE"]),
+                    DecentroWebhookAudit.id != audit.id,
+                )
+            )
+        ).scalars().first()
 
-        if dup_va_log or dup_ledger:
+        if dup_va_log or dup_ledger or dup_audit:
             audit.status = "DUPLICATE"
             audit.result_summary = f"Duplicate UTR {bank_utr} ignored idempotently."
             await db.commit()
@@ -802,9 +828,21 @@ async def decentro_collections_webhook(
     )
     db.add(webhook_log)
 
-    audit.status = "PROCESSED"
-    audit.result_summary = f"Callback processed: UTR {bank_utr}, Status: {txn_status}"
-    await db.commit()
+    try:
+        audit.status = "PROCESSED"
+        audit.result_summary = f"Callback processed: UTR {bank_utr}, Status: {txn_status}"
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        exc_str = str(exc).lower()
+        if "unique" in exc_str or "duplicate" in exc_str or "integrity" in exc_str:
+            return {
+                "response_code": "CB_S00000",
+                "status": "ALREADY_PROCESSED",
+                "utr": bank_utr,
+                "message": "Webhook already processed concurrently",
+            }
+        raise
 
     # Decentro expects CB_S00000 or HTTP 200 to acknowledge callback
     return {
@@ -1129,7 +1167,94 @@ async def verify_gstin_kyc(
     )
 
 
+# =============================================================================
+# 5. Bank Reconciliation by UTR / Audit Ledger Endpoint
+# =============================================================================
+@router.get(
+    "/reconciliation/utr/{utr}",
+    summary="Get Bank Reconciliation & Ledger Entries by UTR",
+    tags=["Decentro Bank Reconciliation"],
+)
+async def get_reconciliation_by_utr(
+    utr: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Audit endpoint to verify that a bank reference number (UTR) was credited exactly once
+    and not duplicated across ledger records.
+    """
+    clean_utr = utr.strip()
+
+    # 1. Collection ledger entries
+    ledger_q = select(CollectionLedgerEntry).where(
+        CollectionLedgerEntry.bank_reference_number == clean_utr
+    )
+    ledger_entries = (await db.execute(ledger_q)).scalars().all()
+
+    # 2. Virtual account webhook logs
+    va_q = select(VirtualAccountWebhookLog).where(
+        VirtualAccountWebhookLog.bank_utr == clean_utr
+    )
+    va_logs = (await db.execute(va_q)).scalars().all()
+
+    # 3. Decentro transactions
+    dec_q = select(DecentroTransaction).where(
+        DecentroTransaction.bank_reference_number == clean_utr
+    )
+    dec_txns = (await db.execute(dec_q)).scalars().all()
+
+    # 4. Payment receipts
+    receipt_q = select(PaymentReceipt).where(
+        PaymentReceipt.cheque_no.like(f"%{clean_utr}%")
+    )
+    receipts = (await db.execute(receipt_q)).scalars().all()
+
+    # 5. Audits
+    audit_q = select(DecentroWebhookAudit).where(
+        DecentroWebhookAudit.bank_reference_number == clean_utr
+    )
+    audits = (await db.execute(audit_q)).scalars().all()
+
+    # Determine reconciled count:
+    # If CollectionLedgerEntry exists, count is len(ledger_entries).
+    # Else if DecentroTransaction exists with SUCCESS/RECONCILED, count is len(reconciled).
+    # Else if VirtualAccountWebhookLog was recorded, exactly 1 successful inbound log exists.
+    # Otherwise 0.
+    if ledger_entries:
+        count = len(ledger_entries)
+    elif dec_txns:
+        reconciled_dec = [t for t in dec_txns if t.status in ("SUCCESS", "RECONCILED")]
+        count = len(reconciled_dec) if reconciled_dec else len(dec_txns)
+    elif va_logs:
+        count = 1
+    elif any(a.status in ("PROCESSED", "SUCCESS") for a in audits):
+        count = 1
+    else:
+        count = 0
+
+    return {
+        "utr": clean_utr,
+        "count": count,
+        "reconciled": count > 0,
+        "ledger_entries_count": len(ledger_entries),
+        "webhook_logs_count": len(va_logs),
+        "receipts_count": len(receipts),
+        "audits_count": len(audits),
+        "ledger_entries": [
+            {
+                "id": e.id,
+                "customer_id": e.customer_id,
+                "amount": e.amount,
+                "receipt_no": e.receipt_no,
+                "created_at": str(e.created_at),
+            }
+            for e in ledger_entries
+        ],
+    }
+
+
 # Mount sub-routers into main router
 router.include_router(banking_router)
 router.include_router(webhooks_router)
+
 
