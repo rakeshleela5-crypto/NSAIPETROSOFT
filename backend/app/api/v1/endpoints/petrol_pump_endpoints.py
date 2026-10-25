@@ -1,3 +1,6 @@
+import csv
+import io
+import re
 from datetime import date, datetime, timedelta, timezone
 import hmac
 import json
@@ -1644,6 +1647,135 @@ async def create_customer(data: CustomerCreate, db: AsyncSession = Depends(get_d
     return {"message": "Customer created successfully", "id": cust.id, "code": cust.code, "name": cust.name, "current_outstanding": cust.current_outstanding}
 
 
+class CustomerBulkImportRequest(BaseModel):
+    csv_content: Optional[str] = None
+    items: Optional[List[Dict[str, Any]]] = None
+
+
+@router.post("/customers/bulk-import-csv", summary="Bulk Import Fleet Customers & Vehicles from CSV")
+async def bulk_import_customers_csv(payload: CustomerBulkImportRequest, db: AsyncSession = Depends(get_db)):
+    rows = []
+    if payload.items:
+        rows = payload.items
+    elif payload.csv_content:
+        content = payload.csv_content.strip()
+        if content.startswith("\ufeff"):
+            content = content[1:]
+        reader = csv.DictReader(io.StringIO(content))
+        for r in reader:
+            norm_r = {str(k).strip().lower().replace(" ", "_"): v for k, v in r.items() if k is not None}
+            rows.append(norm_r)
+    else:
+        raise HTTPException(status_code=400, detail="Either csv_content or items array must be provided")
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No rows found in CSV")
+
+    inserted_count = 0
+    updated_count = 0
+    vehicles_added = 0
+    errors = []
+
+    count_res = await db.execute(select(func.count(Customer.id)))
+    next_code_num = (count_res.scalar() or 0) + 1
+
+    for idx, r in enumerate(rows, start=1):
+        try:
+            name = (r.get("name") or r.get("customer_name") or r.get("firm_name") or r.get("party_name") or "").strip().upper()
+            if not name:
+                errors.append({"row": idx, "error": "Customer / Firm Name is required"})
+                continue
+
+            mobile = str(r.get("mobile") or r.get("phone") or r.get("contact") or "9999999999").strip()
+            city = str(r.get("city") or "SURAT").strip().upper()
+            state = str(r.get("state") or "GUJARAT").strip().upper()
+            address = str(r.get("address") or "").strip() or None
+            gst_no = str(r.get("gst_no") or r.get("gstin") or r.get("gst") or "").strip().upper() or None
+            pan_no = str(r.get("pan_no") or r.get("pan") or "").strip().upper() or None
+            
+            try:
+                credit_limit = float(r.get("credit_limit") or r.get("limit") or 50000.0)
+            except (ValueError, TypeError):
+                credit_limit = 50000.0
+
+            try:
+                opening_balance = float(r.get("opening_balance") or r.get("current_outstanding") or r.get("balance") or 0.0)
+            except (ValueError, TypeError):
+                opening_balance = 0.0
+
+            bill_period = str(r.get("bill_period") or r.get("billing_cycle") or "FORTNIGHTLY").strip().upper()
+            code = str(r.get("code") or r.get("customer_code") or "").strip().upper()
+
+            # Find existing customer by code or name
+            cust_stmt = select(Customer).options(selectinload(Customer.vehicles))
+            if code:
+                cust_stmt = cust_stmt.where((Customer.code == code) | (func.upper(Customer.name) == name))
+            else:
+                cust_stmt = cust_stmt.where(func.upper(Customer.name) == name)
+
+            cust_res = await db.execute(cust_stmt)
+            cust = cust_res.scalar_one_or_none()
+
+            if cust:
+                # Update existing customer
+                cust.mobile = mobile or cust.mobile
+                cust.city = city or cust.city
+                cust.state = state or cust.state
+                if address: cust.address = address
+                if gst_no: cust.gst_no = gst_no
+                if pan_no: cust.pan_no = pan_no
+                cust.credit_limit = credit_limit
+                cust.bill_period = bill_period
+                updated_count += 1
+            else:
+                # Create new customer
+                assigned_code = code if code else f"{next_code_num}"
+                next_code_num += 1
+                cust = Customer(
+                    code=assigned_code,
+                    name=name,
+                    mobile=mobile,
+                    city=city,
+                    state=state,
+                    address=address,
+                    gst_no=gst_no,
+                    pan_no=pan_no,
+                    credit_limit=credit_limit,
+                    current_outstanding=opening_balance,
+                    bill_period=bill_period,
+                )
+                db.add(cust)
+                await db.flush()
+                inserted_count += 1
+
+            # Parse vehicles (support comma, semicolon, newline separated)
+            vehicles_raw = str(r.get("vehicles") or r.get("vehicle_list") or r.get("vehicle_no") or "").strip()
+            if vehicles_raw:
+                raw_veh_list = [v.strip().upper() for v in re.split(r"[,;|\n]+", vehicles_raw) if v.strip()]
+                existing_vehs = {v.vehicle_no.upper() for v in (cust.vehicles or [])}
+                for v_no in raw_veh_list:
+                    clean_v = re.sub(r"[^A-Z0-9]", "", v_no)
+                    if clean_v and clean_v not in existing_vehs:
+                        new_veh = Vehicle(customer_id=cust.id, vehicle_no=clean_v, vehicle_type="Truck")
+                        db.add(new_veh)
+                        existing_vehs.add(clean_v)
+                        vehicles_added += 1
+
+        except Exception as row_exc:
+            errors.append({"row": idx, "error": str(row_exc)})
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Successfully processed {len(rows)} customer records ({inserted_count} inserted, {updated_count} updated, {vehicles_added} vehicles added)",
+        "total_rows": len(rows),
+        "inserted": inserted_count,
+        "updated": updated_count,
+        "vehicles_added": vehicles_added,
+        "errors": errors,
+    }
+
+
 @router.post("/vehicles", summary="Add Vehicle to Customer")
 async def add_vehicle(data: VehicleCreate, db: AsyncSession = Depends(get_db)):
     cust = await db.get(Customer, data.customer_id)
@@ -1772,6 +1904,8 @@ class TankDipCreate(BaseModel):
     closing_dip: float
     closing_stock: float
     notes: Optional[str] = None
+    observed_density: Optional[float] = None
+    observed_temp: Optional[float] = None
 
 
 @router.get("/dips", summary="List Tank Dip Entries")
@@ -1794,6 +1928,9 @@ async def list_dips(db: AsyncSession = Depends(get_db)):
             "meter_sale": e.meter_wise_sale,
             "variation": e.variation_liters,
             "tolerance_limit": e.tolerance_limit,
+            "observed_density": e.observed_density,
+            "observed_temp": e.observed_temp,
+            "density_15c": e.density_15c,
         }
         for e in entries
     ]
@@ -1833,6 +1970,14 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     tolerance_pct = 0.59 if is_petrol else 0.15
     tolerance_limit = round(-1 * (meter_sale * tolerance_pct / 100), 2) if meter_sale > 0 else 0.0
 
+    # ASTM Table 53B 15°C Density Reduction
+    density_15c = None
+    if data.observed_density and data.observed_density > 0:
+        product_code = "MS" if is_petrol else "HSD"
+        temp = data.observed_temp if (data.observed_temp is not None and data.observed_temp > 0) else 15.0
+        d_res = reduce_density_to_15c(data.observed_density, temp, product_code)
+        density_15c = d_res["density_15c"]
+
     # Update tank live stock
     tank.current_stock = data.closing_stock
     tank.current_dip_cm = data.closing_dip
@@ -1850,6 +1995,9 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
         variation_liters=variation,
         tolerance_limit=tolerance_limit,
         notes=data.notes,
+        observed_density=data.observed_density,
+        observed_temp=data.observed_temp,
+        density_15c=density_15c,
     )
     db.add(entry)
     await db.commit()
@@ -1865,6 +2013,9 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
         "variation_liters": variation,
         "tolerance_limit": tolerance_limit,
         "exceeds_tolerance": variation < tolerance_limit,
+        "observed_density": data.observed_density,
+        "observed_temp": data.observed_temp,
+        "density_15c": density_15c,
     }
 
 
@@ -2584,8 +2735,11 @@ async def get_density_register(db: AsyncSession = Depends(get_db)):
             "tank": d.tank.tank_name if d.tank else "-",
             "dip_cm": d.closing_dip,
             "closing_stock": d.closing_stock,
+            "observed_density": d.observed_density or (830.0 if "HSD" in (d.tank.tank_name if d.tank else "") else 745.0),
+            "observed_temp": d.observed_temp or 15.0,
+            "density_15c": d.density_15c or (830.0 if "HSD" in (d.tank.tank_name if d.tank else "") else 745.0),
             "standard_density": 830.0 if "HSD" in (d.tank.tank_name if d.tank else "") else 745.0,
-            "status": "RECORDED",
+            "status": "RECORDED" if d.observed_density else "PASS",
         }
         for d in dips
     ]
@@ -4197,6 +4351,158 @@ async def save_lube_product(payload: LubeProductCreate, db: AsyncSession = Depen
         "id": lube.id,
         "code": lube.code,
         "current_stock_units": lube.current_stock_units,
+    }
+
+
+class LubeBulkImportRequest(BaseModel):
+    csv_content: Optional[str] = None
+    items: Optional[List[Dict[str, Any]]] = None
+
+
+@router.post("/lubes/bulk-import-csv", summary="Bulk Import Lubricants, DEF & Packaged Items from CSV")
+async def bulk_import_lubes_csv(payload: LubeBulkImportRequest, db: AsyncSession = Depends(get_db)):
+    rows = []
+    if payload.items:
+        rows = payload.items
+    elif payload.csv_content:
+        content = payload.csv_content.strip()
+        if content.startswith("\ufeff"):
+            content = content[1:]
+        reader = csv.DictReader(io.StringIO(content))
+        for r in reader:
+            norm_r = {str(k).strip().lower().replace(" ", "_"): v for k, v in r.items() if k is not None}
+            rows.append(norm_r)
+    else:
+        raise HTTPException(status_code=400, detail="Either csv_content or items array must be provided")
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No rows found in CSV")
+
+    inserted_count = 0
+    updated_count = 0
+    errors = []
+
+    for idx, r in enumerate(rows, start=1):
+        try:
+            code = str(r.get("code") or r.get("item_code") or r.get("product_code") or "").strip().upper()
+            name = str(r.get("name") or r.get("item_name") or r.get("product_name") or r.get("description") or "").strip()
+
+            if not code and not name:
+                errors.append({"row": idx, "error": "Item code or Item name is required"})
+                continue
+
+            if not code:
+                clean_slug = re.sub(r"[^A-Z0-9]", "-", name.upper())[:10].strip("-")
+                code = f"LUB-{clean_slug}-{idx}"
+            if not name:
+                name = code
+
+            category = str(r.get("category") or "4T Engine Oil").strip()
+            package_size = str(r.get("package_size") or r.get("pack_size") or r.get("unit") or "1 Litre").strip()
+            barcode = str(r.get("barcode") or "").strip() or None
+            hsn_code = str(r.get("hsn_code") or r.get("hsn") or "2710").strip()
+
+            try:
+                sale_price = float(r.get("sale_price") or r.get("selling_price") or r.get("rate") or r.get("price") or 0.0)
+            except (ValueError, TypeError):
+                sale_price = 0.0
+
+            try:
+                cost_price = float(r.get("cost_price") or r.get("purchase_price") or r.get("cost") or 0.0)
+            except (ValueError, TypeError):
+                cost_price = 0.0
+
+            try:
+                mrp = float(r.get("mrp") or sale_price or 0.0)
+            except (ValueError, TypeError):
+                mrp = sale_price
+
+            try:
+                stock_units = int(float(r.get("stock_qty") or r.get("current_stock_units") or r.get("stock") or r.get("qty") or 0))
+            except (ValueError, TypeError):
+                stock_units = 0
+
+            try:
+                reorder_level = int(float(r.get("reorder_level") or r.get("min_stock") or 10))
+            except (ValueError, TypeError):
+                reorder_level = 10
+
+            try:
+                gst_percent = float(r.get("gst_percent") or r.get("gst") or 18.0)
+            except (ValueError, TypeError):
+                gst_percent = 18.0
+
+            # Find existing product by code
+            stmt = select(LubeProduct).where(LubeProduct.code == code)
+            res = await db.execute(stmt)
+            lube = res.scalar_one_or_none()
+
+            if lube:
+                # Update existing product
+                lube.name = name
+                lube.category = category
+                lube.package_size = package_size
+                if barcode: lube.barcode = barcode
+                lube.hsn_code = hsn_code
+                lube.gst_percent = gst_percent
+                lube.mrp = mrp
+                lube.sale_price = sale_price
+                lube.cost_price = cost_price
+                lube.current_stock_units = stock_units
+                lube.reorder_level = reorder_level
+                updated_count += 1
+            else:
+                # Create new product
+                lube = LubeProduct(
+                    code=code,
+                    name=name,
+                    category=category,
+                    package_size=package_size,
+                    barcode=barcode,
+                    hsn_code=hsn_code,
+                    gst_percent=gst_percent,
+                    mrp=mrp,
+                    sale_price=sale_price,
+                    cost_price=cost_price,
+                    current_stock_units=stock_units,
+                    reorder_level=reorder_level,
+                )
+                db.add(lube)
+                inserted_count += 1
+
+        except Exception as row_exc:
+            errors.append({"row": idx, "error": str(row_exc)})
+
+    await db.commit()
+
+    # Query all active products to return updated list
+    all_res = await db.execute(select(LubeProduct).order_by(LubeProduct.category, LubeProduct.name))
+    all_lubes = all_res.scalars().all()
+
+    return {
+        "status": "success",
+        "message": f"Successfully processed {len(rows)} products ({inserted_count} added, {updated_count} updated)",
+        "total_rows": len(rows),
+        "inserted": inserted_count,
+        "updated": updated_count,
+        "errors": errors,
+        "products": [
+            {
+                "id": l.id,
+                "code": l.code,
+                "name": l.name,
+                "category": l.category,
+                "package_size": l.package_size,
+                "barcode": l.barcode or "",
+                "mrp": l.mrp,
+                "sale_price": l.sale_price,
+                "cost_price": l.cost_price,
+                "current_stock_units": l.current_stock_units,
+                "reorder_level": l.reorder_level,
+                "is_low_stock": l.current_stock_units <= l.reorder_level,
+            }
+            for l in all_lubes
+        ],
     }
 
 

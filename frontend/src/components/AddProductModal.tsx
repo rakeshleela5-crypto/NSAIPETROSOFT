@@ -37,6 +37,20 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     }
 
     try {
+      await saveLubeProductApi({
+        product_code: productCode.trim().toUpperCase(),
+        product_name: productName.trim().toUpperCase(),
+        category,
+        package_size: packageSize.trim(),
+        mrp,
+        cost_price: costPrice,
+        sale_price: salePrice,
+        stock_qty: openingStock,
+        reorder_level: reorderLevel,
+        hsn_code: hsnCode,
+        gst_percent: gstPercent,
+      });
+
       erpStore.saveLubeProduct({
         code: productCode.trim().toUpperCase(),
         name: productName.trim().toUpperCase(),
@@ -49,29 +63,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         reorder_level: reorderLevel,
       });
 
-      try {
-        await saveLubeProductApi({
-          product_code: productCode.trim().toUpperCase(),
-          product_name: productName.trim().toUpperCase(),
-          category,
-          package_size: packageSize.trim(),
-          mrp,
-          cost_price: costPrice,
-          sale_price: salePrice,
-          stock_qty: openingStock,
-          reorder_level: reorderLevel,
-          hsn_code: hsnCode,
-          gst_percent: gstPercent,
-        });
-      } catch (apiErr) {
-        console.warn('Backend lube sync deferred:', apiErr);
-      }
-
-      showToast(`✔ Product "${productName.toUpperCase()}" added to master catalog & database!`);
+      showToast(`✔ Product "${productName.toUpperCase()}" permanently committed to PostgreSQL database!`);
       await loadAllErpData();
       onClose();
     } catch (err: any) {
-      showToast(`❌ Error: ${err.message}`);
+      showToast(`❌ Database Error saving product: ${err.message || 'Server rejected product'}`);
     }
   };
 

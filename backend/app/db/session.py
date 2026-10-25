@@ -61,6 +61,9 @@ async def init_db() -> None:
             "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS invoice_density_15c DOUBLE PRECISION DEFAULT 0.0",
             "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS density_variance DOUBLE PRECISION DEFAULT 0.0",
             "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS density_status VARCHAR(50) DEFAULT 'PASSED'",
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS observed_density NUMERIC(12, 3)",
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS observed_temp NUMERIC(12, 3)",
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS density_15c NUMERIC(12, 3)",
             # Shift Immutability & Supervisor Reversal Vouchers Table
             """
             CREATE TABLE IF NOT EXISTS supervisor_reversal_vouchers (

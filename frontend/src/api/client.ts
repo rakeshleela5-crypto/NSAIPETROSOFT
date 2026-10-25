@@ -483,6 +483,8 @@ export async function createTankDip(data: {
   closing_dip: number;
   closing_stock: number;
   notes?: string;
+  observed_density?: number;
+  observed_temp?: number;
 }): Promise<any> {
   const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/dips`, {
     method: 'POST',
@@ -1177,6 +1179,57 @@ export async function saveLubeProductApi(data: any): Promise<any> {
   return res.json();
 }
 
+export interface BulkImportResponse {
+  status: string;
+  message: string;
+  total_rows: number;
+  inserted: number;
+  updated: number;
+  vehicles_added?: number;
+  errors?: Array<{ row: number; error: string }>;
+  products?: any[];
+}
+
+export async function bulkImportLubesCsvApi(payload: {
+  csv_content?: string;
+  items?: any[];
+}): Promise<BulkImportResponse> {
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/pump/lubes/bulk-import-csv`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    },
+    30000
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Lube bulk CSV import failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function bulkImportCustomersCsvApi(payload: {
+  csv_content?: string;
+  items?: any[];
+}): Promise<BulkImportResponse> {
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/pump/customers/bulk-import-csv`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    },
+    30000
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Customer fleet bulk CSV import failed (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function recordLubeSaleApi(data: {
   shift_id?: number;
   lube_product_id: number;
@@ -1841,6 +1894,40 @@ export async function deleteEmployeeShortageApi(shortageId: number, managerPin?:
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Void employee shortage failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Expenses CRUD API (Committed to PostgreSQL & Cash on Hand)
+// ---------------------------------------------------------------------------
+export async function createExpenseApi(data: {
+  category: string;
+  amount: number;
+  narration?: string;
+  paid_to?: string;
+  account_id?: number;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/expenses`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Create expense failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteExpenseApi(expenseId: number): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/expenses/${expenseId}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete expense failed: ${res.status}`);
   }
   return res.json();
 }

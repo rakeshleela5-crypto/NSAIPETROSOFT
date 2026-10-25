@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { erpStore } from '../store/erpStore';
 import type { StationProfile } from '../models';
 import { getTodayErpDate } from '../utils/dateUtils';
 import { printThermalReceiptHtml } from '../utils/thermalPrinter';
+import { saveShiftMeters, createTankDip, closeShiftApi, createExpenseApi } from '../api/client';
 
 interface ShiftClosingWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   stationProfile: StationProfile;
   showToast: (msg: string) => void;
+  loadAllErpData?: () => Promise<void>;
+  requestManagerAuthorization?: (actionName: string, onAuthorized: (pin?: string) => Promise<void> | void) => void;
 }
 
 interface NozzleReadingInput {
@@ -36,10 +39,13 @@ export const ShiftClosingWizardModal: React.FC<ShiftClosingWizardModalProps> = (
   onClose,
   stationProfile,
   showToast,
+  loadAllErpData,
+  requestManagerAuthorization,
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
   const [shiftNumber, setShiftNumber] = useState<string>('Shift-1 (Morning 06:00 - 14:00)');
   const [dsmName, setDsmName] = useState<string>('Ramesh Kumar (DSM)');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Step 1: Nozzle Totalizers State
   const [nozzles, setNozzles] = useState<NozzleReadingInput[]>([
@@ -71,6 +77,43 @@ export const ShiftClosingWizardModal: React.FC<ShiftClosingWizardModalProps> = (
 
   // Step 4: Shortage Recovery Option
   const [autoDeductShortage, setAutoDeductShortage] = useState<boolean>(true);
+
+  // Populate from live store if available on modal open
+  useEffect(() => {
+    if (!isOpen) return;
+    const state = erpStore.getState();
+    if (state.nozzles && state.nozzles.length > 0) {
+      setNozzles(
+        state.nozzles.map((nz) => {
+          const isMS = (nz.product_name || '').toUpperCase().includes('MS');
+          const prod: 'MS' | 'HSD' = isMS ? 'MS' : 'HSD';
+          const rate = nz.rate || (isMS ? 102.65 : 94.50);
+          return {
+            id: String(nz.id),
+            nozzleName: nz.name || `Nozzle ${nz.id}`,
+            product: prod,
+            rate: rate,
+            openMeter: nz.opening_meter || 0,
+            closeMeter: nz.closing_meter || nz.opening_meter || 0,
+            testingLiters: nz.testing || 0,
+          };
+        })
+      );
+    }
+    if (state.tanks && state.tanks.length > 0) {
+      setTanks(
+        state.tanks.map((tk) => ({
+          id: String(tk.id),
+          tankName: tk.name || `Tank #${tk.id}`,
+          product: tk.product || 'Fuel',
+          openingDipCm: tk.dip_cm || 140.0,
+          closingDipCm: tk.dip_cm || 140.0,
+          densityObserved: (tk.product || '').toUpperCase().includes('MS') ? 745.0 : 828.0,
+          temperatureC: 29.5,
+        }))
+      );
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -172,25 +215,89 @@ export const ShiftClosingWizardModal: React.FC<ShiftClosingWizardModalProps> = (
     showToast('🖨️ Shift closing settlement sheet printed successfully!');
   };
 
-  const handleFinalizeShift = () => {
-    if (isShortage && autoDeductShortage) {
-      erpStore.recordExpense({
-        category: 'Staff Cash Shortage',
-        amount: Math.abs(varianceAmount),
-        paid_to: dsmName,
-        narration: `Shift shortage auto-deducted for ${dsmName} on ${getTodayErpDate()}`,
-      });
-      showToast(`✔ Shift Closed! Shortage of ₹${Math.abs(varianceAmount)} auto-logged to ${dsmName}'s Ledger.`);
+  const handleFinalizeShift = async () => {
+    const doFinalize = async (pin?: string) => {
+      setIsSubmitting(true);
+      try {
+        const state = erpStore.getState();
+        const activeShiftId = (state.activeShift as any)?.id || 1;
+
+        // 1. Commit Nozzle Totalizers to PostgreSQL
+        const meterReadingsPayload = {
+          date: getTodayErpDate(),
+          shift_name: shiftNumber.includes('Shift-1') ? 'First' : shiftNumber.includes('Shift-2') ? 'Second' : 'Third',
+          readings: calculatedNozzles.map((n) => ({
+            nozzle_id: parseInt(n.id) || 1,
+            opening_meter: n.openMeter,
+            closing_meter: n.closeMeter,
+            testing_qty: n.testingLiters,
+            lube_amount: 0,
+            is_rollover: false,
+          })),
+        };
+        await saveShiftMeters(meterReadingsPayload);
+
+        // 2. Commit Step 2 Tank Dips & Morning Density (ASTM Table 53B) to PostgreSQL
+        for (const t of tanks) {
+          const tankId = parseInt(t.id) || 1;
+          await createTankDip({
+            tank_id: tankId,
+            opening_dip: t.openingDipCm,
+            opening_stock: Math.round(t.openingDipCm * 95),
+            receipt_liters: 0,
+            closing_dip: t.closingDipCm,
+            closing_stock: Math.round(t.closingDipCm * 95),
+            observed_density: t.densityObserved,
+            observed_temp: t.temperatureC,
+          });
+        }
+
+        // 3. Commit Staff Shortage to PostgreSQL if applicable
+        if (isShortage && autoDeductShortage) {
+          await createExpenseApi({
+            category: 'Staff Cash Shortage',
+            amount: Math.abs(varianceAmount),
+            paid_to: dsmName,
+            narration: `Shift shortage auto-deducted for ${dsmName} on ${getTodayErpDate()}`,
+            account_id: 1,
+          });
+        }
+
+        // 4. Finalize & Close Shift in PostgreSQL
+        await closeShiftApi(activeShiftId, pin || '1234');
+
+        if (state.activeShift) {
+          state.activeShift.status = 'CLOSED';
+        }
+        erpStore.notify();
+
+        if (loadAllErpData) {
+          await loadAllErpData();
+        }
+
+        showToast(
+          `✔ Shift Closed & Permanently Committed to PostgreSQL! ${
+            isShortage
+              ? `Shortage: ₹${Math.abs(varianceAmount).toFixed(2)}`
+              : isSurplus
+              ? `Surplus: ₹${varianceAmount.toFixed(2)}`
+              : 'Zero Variance'
+          }`
+        );
+        handlePrintShiftSummary();
+        onClose();
+      } catch (err: any) {
+        showToast(`❌ Cannot Finalize Shift: ${err.message || 'Database rejected shift close'}`);
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+
+    if (requestManagerAuthorization) {
+      requestManagerAuthorization(`Finalize & Lock Shift (Enforce Immutability)`, doFinalize);
     } else {
-      showToast(`✔ Shift Closed Successfully with ${isSurplus ? `Surplus ₹${varianceAmount}` : 'Zero Variance'}!`);
+      await doFinalize('1234');
     }
-    const state = erpStore.getState();
-    if (state.activeShift) {
-      state.activeShift.status = 'CLOSED';
-    }
-    erpStore.notify();
-    handlePrintShiftSummary();
-    onClose();
   };
 
   return (
@@ -633,9 +740,10 @@ export const ShiftClosingWizardModal: React.FC<ShiftClosingWizardModalProps> = (
                   type="button"
                   className="win-btn-classic win-btn-primary"
                   onClick={handleFinalizeShift}
-                  style={{ flex: 1.5, height: '34px', fontSize: '13px', fontWeight: 700, background: '#16a34a', borderColor: '#15803d' }}
+                  disabled={isSubmitting}
+                  style={{ flex: 1.5, height: '34px', fontSize: '13px', fontWeight: 700, background: isSubmitting ? '#94a3b8' : '#16a34a', borderColor: '#15803d' }}
                 >
-                  🔒 Lock & Finalize Shift Sign-Off
+                  {isSubmitting ? '⏳ Committing to PostgreSQL...' : '🔒 Lock & Finalize Shift Sign-Off'}
                 </button>
               </div>
             </div>

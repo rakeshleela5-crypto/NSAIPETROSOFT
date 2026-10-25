@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type { CustomerFull } from '../models';
 import { erpStore } from '../store/erpStore';
 import {
@@ -8,7 +8,9 @@ import {
   addVehicle,
   deleteCustomerVehicleApi,
   toggleCustomerBlockApi,
+  bulkImportCustomersCsvApi,
 } from '../api/client';
+import { exportToCsv } from '../utils/exportCsv';
 
 interface CustomerFleetMasterModalProps {
   isOpen: boolean;
@@ -31,6 +33,10 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
 }) => {
   const [masterCustSearch, setMasterCustSearch] = useState<string>('');
   const [selectedCustId, setSelectedCustId] = useState<number | null>(null);
+
+  // CSV Import State
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const csvFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Form state
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -122,6 +128,102 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     }
   };
 
+  const handleDownloadFleetTemplate = () => {
+    const headers = [
+      'name',
+      'mobile',
+      'city',
+      'state',
+      'address',
+      'gst_no',
+      'pan_no',
+      'credit_limit',
+      'opening_balance',
+      'bill_period',
+      'vehicles',
+    ];
+    const sampleRows = [
+      [
+        'SHREE BALAJI LOGISTICS & TRANSPORT',
+        '9825123456',
+        'SURAT',
+        'GUJARAT',
+        'Ring Road Transport Hub',
+        '24AAACS5432D1Z8',
+        'AAACS5432D',
+        250000.0,
+        68450.0,
+        'FORTNIGHTLY',
+        'GJ05AB1234,GJ05CD5678,GJ05EF9012',
+      ],
+      [
+        'GUJARAT EARTHMOVERS & INFRA',
+        '9898011223',
+        'SURAT',
+        'GUJARAT',
+        'Hazira Port Highway',
+        '24AABCE1122C1Z4',
+        'AABCE1122C',
+        150000.0,
+        42100.0,
+        'MONTHLY',
+        'GJ05XY9988,GJ05JK4455',
+      ],
+      [
+        'PATEL TRAVELS & BUS SERVICE',
+        '9824055667',
+        'SURAT',
+        'GUJARAT',
+        'Central Bus Stand Station Road',
+        '24AACCP7788P1Z2',
+        'AACCP7788P',
+        100000.0,
+        18900.0,
+        'WEEKLY',
+        'GJ05TR7711,GJ05TR7722',
+      ],
+    ];
+    exportToCsv('NSAIPETROSOFT_Fleet_Customers_Template', headers, sampleRows);
+    if (showToast) showToast('📄 Fleet CSV Template downloaded! Fill in Excel and click Import CSV.');
+  };
+
+  const handleCustomerCsvSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const csvText = event.target?.result as string;
+      if (!csvText || !csvText.trim()) {
+        if (showToast) showToast('❌ Selected CSV file is empty.');
+        return;
+      }
+
+      setIsImporting(true);
+      try {
+        const res = await bulkImportCustomersCsvApi({ csv_content: csvText });
+        if (res.status === 'success') {
+          showToast(`✔ ${res.message} Permanently committed to PostgreSQL!`);
+          await loadAllErpData();
+        } else {
+          showToast(`⚠ Import response: ${res.message}`);
+        }
+      } catch (err: any) {
+        showToast(`❌ Bulk Fleet CSV Import Error: ${err.message || 'Server rejected file'}`);
+      } finally {
+        setIsImporting(false);
+        if (csvFileInputRef.current) {
+          csvFileInputRef.current.value = '';
+        }
+      }
+    };
+    reader.onerror = () => {
+      showToast('❌ Error reading file from disk.');
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
   const handleSaveCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
@@ -139,9 +241,47 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     }
 
     try {
-      // 1. ACID Store immediate local update
+      // 1. Direct Cloud PostgreSQL Persistence (Strict Fail-Closed)
+      let persistedCustId = editCustId;
+      if (editCustId) {
+        await updateCustomer(editCustId, {
+          name: formName.trim().toUpperCase(),
+          mobile: formMobile.trim(),
+          city: formCity.trim().toUpperCase(),
+          gst_no: formGstin.trim().toUpperCase() || undefined,
+          pan_no: formPan.trim().toUpperCase() || undefined,
+          credit_limit: formCreditLimit,
+          bill_period: formBillPeriod,
+        });
+      } else {
+        const res = await createCustomer({
+          name: formName.trim().toUpperCase(),
+          mobile: formMobile.trim(),
+          city: formCity.trim().toUpperCase(),
+          gst_no: formGstin.trim().toUpperCase() || undefined,
+          pan_no: formPan.trim().toUpperCase() || undefined,
+          credit_limit: formCreditLimit,
+          current_outstanding: formOpeningBal,
+          opening_balance: formOpeningBal,
+          bill_period: formBillPeriod,
+        });
+        persistedCustId = res.id;
+      }
+
+      // Persist vehicles
+      if (persistedCustId && vehicleList.length > 0) {
+        for (const v of vehicleList) {
+          try {
+            await addVehicle(persistedCustId, v.vehicle_no);
+          } catch {
+            // Duplicate vehicle or already assigned
+          }
+        }
+      }
+
+      // 2. Update local ACID store only after PostgreSQL commit succeeded
       erpStore.saveCustomer({
-        id: editCustId || undefined,
+        id: persistedCustId || undefined,
         name: formName.trim().toUpperCase(),
         mobile: formMobile.trim(),
         city: formCity.trim().toUpperCase(),
@@ -153,53 +293,11 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
         vehicles: vehicleList.map((v) => v.vehicle_no),
       });
 
-      // 2. Direct Cloud PostgreSQL Persistence
-      let persistedCustId = editCustId;
-      try {
-        if (editCustId) {
-          await updateCustomer(editCustId, {
-            name: formName.trim().toUpperCase(),
-            mobile: formMobile.trim(),
-            city: formCity.trim().toUpperCase(),
-            gst_no: formGstin.trim().toUpperCase() || undefined,
-            pan_no: formPan.trim().toUpperCase() || undefined,
-            credit_limit: formCreditLimit,
-            bill_period: formBillPeriod,
-          });
-        } else {
-          const res = await createCustomer({
-            name: formName.trim().toUpperCase(),
-            mobile: formMobile.trim(),
-            city: formCity.trim().toUpperCase(),
-            gst_no: formGstin.trim().toUpperCase() || undefined,
-            pan_no: formPan.trim().toUpperCase() || undefined,
-            credit_limit: formCreditLimit,
-            current_outstanding: formOpeningBal,
-            opening_balance: formOpeningBal,
-            bill_period: formBillPeriod,
-          });
-          persistedCustId = res.id;
-        }
-
-        // Persist vehicles
-        if (persistedCustId && vehicleList.length > 0) {
-          for (const v of vehicleList) {
-            try {
-              await addVehicle(persistedCustId, v.vehicle_no);
-            } catch (vErr) {
-              // Ignore duplicate vehicle errors
-            }
-          }
-        }
-      } catch (apiErr: any) {
-        console.warn('Backend customer sync deferred:', apiErr);
-      }
-
-      showToast(`✔ Customer "${formName.toUpperCase()}" saved to PostgreSQL & Store!`);
+      showToast(`✔ Customer "${formName.toUpperCase()}" saved to PostgreSQL!`);
       setIsEditing(false);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`❌ Error: ${err.message}`);
+      showToast(`❌ Database Error: ${err.message || 'Failed to save customer to PostgreSQL'}`);
     }
   };
 
@@ -282,6 +380,42 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                   style={{ flex: 1 }}
                 />
               </div>
+              <input
+                type="file"
+                ref={csvFileInputRef}
+                accept=".csv"
+                style={{ display: 'none' }}
+                onChange={handleCustomerCsvSelected}
+              />
+              <button
+                type="button"
+                className="win-btn-classic"
+                onClick={handleDownloadFleetTemplate}
+                style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="Download standard CSV template for Fleet Customers & Vehicles"
+              >
+                <span>📄</span> Template
+              </button>
+              <button
+                type="button"
+                className="win-btn-classic"
+                onClick={() => csvFileInputRef.current?.click()}
+                disabled={isImporting}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  background: isImporting ? '#e0e0e0' : '#eef8ff',
+                  borderColor: '#2980b9',
+                  fontWeight: 600,
+                  color: '#1a5276'
+                }}
+                title="Bulk Import 20, 50, 100+ Fleet Customer Accounts & Vehicles directly into PostgreSQL"
+              >
+                <span>📥</span> {isImporting ? 'Importing...' : 'Import CSV'}
+              </button>
               <button
                 type="button"
                 className="win-btn-classic win-btn-primary"

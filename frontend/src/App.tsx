@@ -361,6 +361,8 @@ export default function App() {
   const [dipReceipt, setDipReceipt] = useState<number>(0.0);
   const [dipCloseCm, setDipCloseCm] = useState<number>(0.0);
   const [dipCloseStock, setDipCloseStock] = useState<number>(0.0);
+  const [dipObservedDensity, setDipObservedDensity] = useState<number | undefined>(undefined);
+  const [dipObservedTemp, setDipObservedTemp] = useState<number | undefined>(undefined);
   const [dipsList, setDipsList] = useState<any[]>([]);
 
   // Cash Denomination Settlement State (Frame 200)
@@ -601,7 +603,7 @@ export default function App() {
       }
       // 1. Process Card Settlements
       let normalizedCardSettlements: any[] = [];
-      if (cardSettlementsData && cardSettlementsData.length > 0) {
+      if (Array.isArray(cardSettlementsData)) {
         normalizedCardSettlements = cardSettlementsData.map((s: any) => ({
           id: s.id,
           date: s.date,
@@ -626,7 +628,7 @@ export default function App() {
 
       // 2. Process Credit Sales with dual-field compatibility
       let normalizedCreditBills: any[] = [];
-      if (creditSalesData && creditSalesData.length > 0) {
+      if (Array.isArray(creditSalesData)) {
         normalizedCreditBills = creditSalesData.map((s: any) => ({
           id: s.id,
           date: s.date,
@@ -654,7 +656,7 @@ export default function App() {
 
       // 3. Process Payment Receipts with dual-field compatibility
       let normalizedPayments: any[] = [];
-      if (paymentsData && paymentsData.length > 0) {
+      if (Array.isArray(paymentsData)) {
         normalizedPayments = paymentsData.map((p: any) => ({
           id: p.id,
           receipt_no: p.receipt_no,
@@ -674,7 +676,7 @@ export default function App() {
         setEmpCreditReceived(cashReceivedFromDues);
       }
 
-      const activeExpenses = (expensesData && expensesData.length > 0) ? expensesData : erpStore.getState().expenses;
+      const activeExpenses = Array.isArray(expensesData) ? expensesData : erpStore.getState().expenses;
       setExpensesList(activeExpenses);
       setEmpExpensesList(
         activeExpenses.map((e: any) => ({
@@ -685,7 +687,7 @@ export default function App() {
           paid_to: e.paid_to,
         }))
       );
-      if (purchasesData && purchasesData.length > 0) {
+      if (Array.isArray(purchasesData)) {
         setPurPoHistory(
           purchasesData.map((p: any) => ({
             id: p.id,
@@ -697,13 +699,13 @@ export default function App() {
           }))
         );
       }
-      if (settlementsData && settlementsData.length > 0) {
+      if (Array.isArray(settlementsData)) {
         setShiftSettlementsList(settlementsData);
       }
-      if (dipsData && dipsData.length > 0) {
+      if (Array.isArray(dipsData)) {
         setDipsList(dipsData);
       }
-      if (stampingData && stampingData.length > 0) {
+      if (Array.isArray(stampingData)) {
         setStampingList(stampingData);
       }
       if (vatData) setVatReport(vatData);
@@ -1690,7 +1692,7 @@ export default function App() {
           setOfflineQueueCount(getOfflineQueueCount());
           showToast(`💾 Offline Buffer: Shift readings saved locally.`);
         } else {
-          showToast('✔ Shift meter readings recorded in local store & buffer!');
+          showToast(`❌ Cannot save meter readings: ${err.message || 'Database rejected meters'}`);
         }
       }
     });
@@ -1705,46 +1707,29 @@ export default function App() {
       paid_to: expPaidTo,
     };
     try {
-      const newExp = erpStore.recordExpense({
+      erpStore.recordExpense({
         ...expPayload,
         paid_from_account_id: 1,
       });
-
-      // Instantly update active shift cashier expenses
-      setExpensesList((prev) => [newExp, ...prev]);
-      setEmpExpensesList((prev) => [
-        {
-          id: newExp.id,
-          category: newExp.category,
-          amount: newExp.amount,
-          narration: newExp.narration,
-          paid_to: newExp.paid_to,
-        },
-        ...prev,
-      ]);
 
       if (!navigator.onLine) {
         enqueueOfflineRecord('EXPENSE', expPayload);
         setOfflineQueueCount(getOfflineQueueCount());
         showToast(`💾 Offline Forecourt: Shift expense of ₹${expAmount} saved to local queue.`);
       } else {
-        try {
-          await createExpense(expPayload);
-        } catch (e: any) {
-          if (!navigator.onLine || e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
-            enqueueOfflineRecord('EXPENSE', expPayload);
-            setOfflineQueueCount(getOfflineQueueCount());
-            showToast(`💾 Offline Buffer: Expense of ₹${expAmount} queued for auto-sync.`);
-          } else {
-            console.warn('Backend expense sync deferred or offline:', e);
-          }
-        }
+        await createExpense(expPayload);
       }
 
-      showToast(`✔ Shift Expense of ₹${expAmount} recorded! Cashier liability reduced in real time.`);
+      showToast(`✔ Shift Expense of ₹${expAmount} recorded to PostgreSQL! Cashier liability reduced in real time.`);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`✔ Expense of ₹${expAmount} recorded locally!`);
+      if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        enqueueOfflineRecord('EXPENSE', expPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Buffer: Expense of ₹${expAmount} queued for auto-sync.`);
+      } else {
+        showToast(`❌ Database Error recording expense: ${err.message || 'Operation failed'}`);
+      }
     }
   };
 
@@ -1779,23 +1764,19 @@ export default function App() {
         setOfflineQueueCount(getOfflineQueueCount());
         showToast(`💾 Offline Forecourt: Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} buffered locally.`);
       } else {
-        try {
-          await createTransfer(transferPayload);
-        } catch (tErr: any) {
-          if (!navigator.onLine || tErr.message?.includes('Failed to fetch') || tErr.message?.includes('NetworkError')) {
-            enqueueOfflineRecord('CONTRA_TRANSFER', transferPayload);
-            setOfflineQueueCount(getOfflineQueueCount());
-            showToast(`💾 Offline Buffer: Contra transfer queued for auto-sync.`);
-          } else {
-            console.warn('Backend transfer sync deferred:', tErr);
-          }
-        }
+        await createTransfer(transferPayload);
       }
-      showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} completed!`);
+      showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} permanently committed to PostgreSQL!`);
       setTransferRemarks('');
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} recorded in local accounts!`);
+      if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        enqueueOfflineRecord('CONTRA_TRANSFER', transferPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        showToast(`💾 Offline Buffer: Contra transfer queued for auto-sync.`);
+      } else {
+        showToast(`❌ Database Error executing contra transfer: ${err.message || 'Operation failed'}`);
+      }
     }
   };
 
@@ -1834,6 +1815,8 @@ export default function App() {
       receipt_liters: dipReceipt,
       closing_dip: dipCloseCm,
       closing_stock: dipCloseStock,
+      observed_density: dipObservedDensity,
+      observed_temp: dipObservedTemp,
     };
     try {
       erpStore.recordDip({
@@ -1848,7 +1831,7 @@ export default function App() {
         return;
       }
       const res = await createTankDip(dipPayload);
-      showToast(`✔ Dip recorded! Variation: ${res.variation_liters} L (Tolerance: ${res.tolerance_limit} L)`);
+      showToast(`✔ Dip & ASTM 53B Density recorded! Variation: ${res.variation_liters} L (Tolerance: ${res.tolerance_limit} L)`);
       await loadAllErpData();
     } catch (err: any) {
       if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
@@ -1856,7 +1839,7 @@ export default function App() {
         setOfflineQueueCount(getOfflineQueueCount());
         showToast(`💾 Offline Buffer: Tank physical dip saved locally. Will auto-sync when online.`);
       } else {
-        showToast(`✔ Tank physical dip of ${dipCloseCm} cm recorded in local register.`);
+        showToast(`❌ Database Error recording dip: ${err.message || 'Server rejected entry'}`);
       }
     }
   };
@@ -2928,6 +2911,10 @@ export default function App() {
         setDipCloseCm={setDipCloseCm}
         dipCloseStock={dipCloseStock}
         setDipCloseStock={setDipCloseStock}
+        dipObservedDensity={dipObservedDensity}
+        setDipObservedDensity={setDipObservedDensity}
+        dipObservedTemp={dipObservedTemp}
+        setDipObservedTemp={setDipObservedTemp}
         dipsList={dipsList}
         salesReadings={salesReadings}
         onSaveDip={handleSaveDip}
@@ -3307,6 +3294,8 @@ export default function App() {
         onClose={() => setActiveDialog(null)}
         stationProfile={stationProfile}
         showToast={showToast}
+        loadAllErpData={loadAllErpData}
+        requestManagerAuthorization={requestManagerAuthorization}
       />
 
       <ForecourtAutomationModal

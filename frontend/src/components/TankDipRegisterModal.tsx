@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { TankStock } from '../models';
 import { exportToCsv } from '../utils/exportCsv';
 import { calculateDipVolumeApi } from '../api/client';
-import { calculateCylindricalTankVolume, calcDipVariance, roundVolume } from '../utils/petroMath';
+import { calculateCylindricalTankVolume, calcDipVariance, roundVolume, convertDensityTo15C } from '../utils/petroMath';
 import { erpStore } from '../store/erpStore';
 
 interface TankDipRegisterModalProps {
@@ -21,6 +21,10 @@ interface TankDipRegisterModalProps {
   setDipCloseCm: (cm: number) => void;
   dipCloseStock: number;
   setDipCloseStock: (stock: number) => void;
+  dipObservedDensity?: number;
+  setDipObservedDensity?: (density: number | undefined) => void;
+  dipObservedTemp?: number;
+  setDipObservedTemp?: (temp: number | undefined) => void;
   dipsList: any[];
   salesReadings?: any[];
   onSaveDip: (e: React.FormEvent) => void;
@@ -43,6 +47,10 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
   setDipCloseCm,
   dipCloseStock,
   setDipCloseStock,
+  dipObservedDensity,
+  setDipObservedDensity,
+  dipObservedTemp,
+  setDipObservedTemp,
   dipsList,
   salesReadings,
   onSaveDip,
@@ -108,13 +116,24 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
   const varianceResult = calcDipVariance(dipCloseStock, expectedBookStock, tankCapacity);
   const isAbnormalShrinkage = varianceResult.status === 'CRITICAL_LOSS' || (varianceResult.diffLitres < -100);
 
+  // ASTM Table 53B Hydrometer Density Conversion & Statutory Verification
+  const isMS = (currentTank?.product || '').toUpperCase().includes('MS') || (currentTank?.name || '').toUpperCase().includes('MS');
+  const densityCalc = (dipObservedDensity && dipObservedDensity > 0 && dipObservedTemp && dipObservedTemp > 0)
+    ? convertDensityTo15C(dipObservedDensity, dipObservedTemp, isMS ? 'MS' : 'HSD')
+    : null;
+  const isDensityCompliant = densityCalc
+    ? isMS
+      ? densityCalc.density15C >= 720 && densityCalc.density15C <= 775
+      : densityCalc.density15C >= 820 && densityCalc.density15C <= 860
+    : true;
+
   const handleFormSubmit = (e: React.FormEvent) => {
     onSaveDip(e);
   };
 
   return (
     <div className="win-modal-overlay">
-      <div className="win-form-dialog" style={{ width: '640px' }}>
+      <div className="win-form-dialog" style={{ width: '660px' }}>
         <div className="win-dialog-titlebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>📐</span>
@@ -218,6 +237,66 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
               />
             </div>
 
+            {/* Morning Hydrometer Density & Temperature Audit (ASTM Table 53B) */}
+            <div style={{
+              marginTop: '8px',
+              padding: '8px 10px',
+              background: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              borderRadius: '3px',
+            }}>
+              <div style={{ fontWeight: 700, fontSize: '11px', color: '#1e3a8a', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>🌡</span>
+                <span>Morning Hydrometer Density & Temperature (ASTM Table 53B Reduction)</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div className="win-form-row" style={{ margin: 0 }}>
+                  <span className="win-label" style={{ minWidth: '95px', fontSize: '11px' }}>Obs. Density</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="win-input"
+                    style={{ flex: 1, fontWeight: 700 }}
+                    placeholder={isMS ? 'e.g. 745.2 kg/m³' : 'e.g. 828.5 kg/m³'}
+                    value={dipObservedDensity ?? ''}
+                    onChange={(e) => setDipObservedDensity?.(e.target.value ? parseFloat(e.target.value) : undefined)}
+                  />
+                </div>
+                <div className="win-form-row" style={{ margin: 0 }}>
+                  <span className="win-label" style={{ minWidth: '85px', fontSize: '11px' }}>Obs. Temp (°C)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="win-input"
+                    style={{ flex: 1, fontWeight: 700 }}
+                    placeholder="e.g. 29.5"
+                    value={dipObservedTemp ?? ''}
+                    onChange={(e) => setDipObservedTemp?.(e.target.value ? parseFloat(e.target.value) : undefined)}
+                  />
+                </div>
+              </div>
+              {densityCalc && (
+                <div style={{
+                  marginTop: '6px',
+                  padding: '4px 8px',
+                  background: isDensityCompliant ? '#f0fdf4' : '#fffbeb',
+                  border: `1px solid ${isDensityCompliant ? '#86efac' : '#fde68a'}`,
+                  borderRadius: '2px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '10.5px'
+                }}>
+                  <span>
+                    Converted 15°C Density: <strong style={{ color: '#0f172a' }}>{densityCalc.density15C} kg/m³</strong> (ASTM 53B)
+                  </span>
+                  <span style={{ fontWeight: 700, color: isDensityCompliant ? '#166534' : '#b45309' }}>
+                    {isDensityCompliant ? '✔ Compliant (Statutory Range)' : '⚠ Variance Warning'}
+                  </span>
+                </div>
+              )}
+            </div>
+
             {/* Live Variance Analysis Box: Book vs Dip */}
             <div style={{
               marginTop: '10px',
@@ -281,6 +360,7 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
                       <th>Tank</th>
                       <th className="text-right">Open Dip</th>
                       <th className="text-right">Close Dip</th>
+                      <th>Density @ 15°C</th>
                       <th className="text-right">Meter Sales</th>
                       <th className="text-right">Variation</th>
                       <th style={{ width: '36px', textAlign: 'center' }}>Del</th>
@@ -296,6 +376,18 @@ export const TankDipRegisterModal: React.FC<TankDipRegisterModalProps> = ({
                           <td>{d.tank_name || `Tank #${d.tank_id || dipTankId}`}</td>
                           <td className="text-right">{d.opening_dip ?? 0} cm ({d.opening_stock ?? 0} L)</td>
                           <td className="text-right">{d.closing_dip ?? 0} cm ({d.closing_stock ?? 0} L)</td>
+                          <td style={{ fontSize: '9.5px', whiteSpace: 'nowrap' }}>
+                            {d.observed_density ? (
+                              <span>
+                                {d.observed_density} @ {d.observed_temp ?? 15}°C{' '}
+                                <span style={{ fontWeight: 700, color: '#1e3a8a' }}>
+                                  ({d.density_15c ? `${d.density_15c}` : '-'})
+                                </span>
+                              </span>
+                            ) : (
+                              <span style={{ color: '#94a3b8' }}>-</span>
+                            )}
+                          </td>
                           <td className="text-right">{Number(d.meter_sale ?? d.meter_wise_sale ?? 0).toLocaleString('en-IN')} L</td>
                           <td className="text-right" style={{ fontWeight: 700, color: varL < 0 ? '#dc2626' : '#16a34a' }}>
                             {varL > 0 ? `+${varL}` : varL} L

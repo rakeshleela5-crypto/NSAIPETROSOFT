@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { LubeProductItem } from '../models';
 import { erpStore } from '../store/erpStore';
-import { saveLubeProductApi, deleteLubeProductApi } from '../api/client';
+import { saveLubeProductApi, deleteLubeProductApi, bulkImportLubesCsvApi } from '../api/client';
+import { exportToCsv } from '../utils/exportCsv';
 
 interface BulkEditorModalProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
   }>>([]);
 
   const [hasChanges, setHasChanges] = useState<boolean>(false);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const csvFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (products) {
@@ -58,9 +61,89 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
     setHasChanges(true);
   };
 
+  const handleDownloadTemplate = () => {
+    const headers = [
+      'code',
+      'name',
+      'category',
+      'package_size',
+      'cost_price',
+      'sale_price',
+      'mrp',
+      'stock_qty',
+      'reorder_level',
+      'barcode',
+      'hsn_code',
+      'gst_percent',
+    ];
+    const sampleRows = [
+      ['SERVO-4T-1L', 'Servo 4T Super 20W-40', '4T Engine Oil', '1 Litre', 300.0, 360.0, 385.0, 48, 12, '8901030001001', '2710', 18.0],
+      ['MAK-2T-500ML', 'Mak 2T Plus Two-Stroke Oil', '2T Two-Stroke Oil', '500 ml', 110.0, 135.0, 145.0, 60, 20, '8901030001002', '2710', 18.0],
+      ['CLEAR-DEF-20L', 'ClearBlue DEF / AdBlue Bucket', 'Diesel Exhaust Fluid', '20 Litre', 680.0, 880.0, 950.0, 25, 10, '8901030001003', '3102', 18.0],
+      ['COOLANT-PREMIX-1L', 'Golden Cruiser Radiator Coolant', 'Coolant', '1 Litre', 165.0, 210.0, 230.0, 30, 10, '8901030001004', '3820', 18.0],
+      ['GREASE-CHASSIS-1KG', 'Servo Chassis Grease MP', 'Grease', '1 Kg', 220.0, 280.0, 310.0, 15, 5, '8901030001005', '2710', 18.0],
+    ];
+    exportToCsv('NSAIPETROSOFT_Lube_Inventory_Template', headers, sampleRows);
+    if (showToast) showToast('📄 CSV Template downloaded! Open in Excel, fill your items, and click Import CSV.');
+  };
+
+  const handleCsvFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const csvText = event.target?.result as string;
+      if (!csvText || !csvText.trim()) {
+        if (showToast) showToast('❌ Selected CSV file is empty.');
+        return;
+      }
+
+      setIsImporting(true);
+      try {
+        const res = await bulkImportLubesCsvApi({ csv_content: csvText });
+        if (res.status === 'success') {
+          if (res.products && res.products.length > 0) {
+            erpStore.hydrateFromBackend({ products: res.products });
+            setGridData(
+              res.products.map((p: any) => ({
+                id: p.id,
+                code: p.code,
+                name: p.name,
+                sale_price: p.sale_price,
+                cost_price: p.cost_price,
+                current_stock_units: p.current_stock_units,
+                reorder_level: p.reorder_level,
+              }))
+            );
+          }
+          if (showToast) {
+            showToast(`✔ ${res.message} Permanently committed to PostgreSQL!`);
+          }
+          if (loadAllErpData) await loadAllErpData();
+        } else {
+          if (showToast) showToast(`⚠ Import response: ${res.message}`);
+        }
+      } catch (err: any) {
+        if (showToast) showToast(`❌ Bulk CSV Import Error: ${err.message || 'Server rejected file'}`);
+      } finally {
+        setIsImporting(false);
+        if (csvFileInputRef.current) {
+          csvFileInputRef.current.value = '';
+        }
+      }
+    };
+    reader.onerror = () => {
+      if (showToast) showToast('❌ Error reading file from local disk.');
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
   const handleCommitAll = async () => {
     try {
       erpStore.bulkUpdateProducts(gridData);
+      let failedCount = 0;
       for (const item of gridData) {
         try {
           await saveLubeProductApi({
@@ -72,10 +155,14 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
             reorder_level: item.reorder_level,
           });
         } catch {
-          // Continue bulk loop
+          failedCount++;
         }
       }
-      if (showToast) showToast(`✔ Committed updates across ${gridData.length} products to master inventory!`);
+      if (failedCount === 0) {
+        if (showToast) showToast(`✔ Committed updates across ${gridData.length} products directly to PostgreSQL!`);
+      } else {
+        if (showToast) showToast(`⚠ Committed with ${failedCount} failures out of ${gridData.length} items. Check network.`);
+      }
       setHasChanges(false);
       if (loadAllErpData) await loadAllErpData();
       onClose();
@@ -117,15 +204,47 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
         </div>
 
         <div className="win-dialog-body">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '11.5px', color: '#555' }}>
-              Edit values directly in the grid. Click <strong>Commit All Changes</strong> to save atomically.
-            </span>
-            {hasChanges && (
-              <span style={{ fontSize: '11px', color: '#d35400', fontWeight: 700 }}>
-                ● Uncommitted Changes Pending
+          <input
+            type="file"
+            ref={csvFileInputRef}
+            accept=".csv"
+            style={{ display: 'none' }}
+            onChange={handleCsvFileSelected}
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+            <div>
+              <span style={{ fontSize: '11.5px', color: '#555' }}>
+                Edit inline or bulk import 20, 50, 100+ items directly via CSV into PostgreSQL.
               </span>
-            )}
+              {hasChanges && (
+                <span style={{ marginLeft: '10px', fontSize: '11px', color: '#d35400', fontWeight: 700 }}>
+                  ● Uncommitted Changes Pending
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                className="win-btn-classic"
+                onClick={handleDownloadTemplate}
+                style={{ fontSize: '11px', padding: '3px 8px', fontWeight: 600 }}
+                title="Download CSV format with standard column headers for Microsoft Excel"
+              >
+                <span>📄</span> Download CSV Template
+              </button>
+              <button
+                type="button"
+                className="win-btn-classic"
+                onClick={() => csvFileInputRef.current?.click()}
+                disabled={isImporting}
+                style={{ fontSize: '11px', padding: '3px 10px', fontWeight: 700, background: '#e8f5e9', borderColor: '#81c784', color: '#1b5e20' }}
+                title="Select and upload a CSV file to permanently commit 20-100+ items to PostgreSQL"
+              >
+                <span>📥</span> {isImporting ? 'Ingesting to PostgreSQL...' : 'Import CSV'}
+              </button>
+            </div>
           </div>
 
           <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '420px', overflowY: 'auto' }}>

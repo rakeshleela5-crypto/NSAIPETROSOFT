@@ -298,6 +298,9 @@ class TankDipEntry(Base):
     meter_wise_sale: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     variation_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     tolerance_limit: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    observed_density: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
+    observed_temp: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
+    density_15c: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     tank = relationship("Tank", back_populates="dip_entries")
