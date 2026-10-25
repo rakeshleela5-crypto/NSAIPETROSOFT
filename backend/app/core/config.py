@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # Railway automatically supplies DATABASE_URL or DATABASE_PRIVATE_URL
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/nsaipetrosoft"
     DB_ECHO: bool = False
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: float = 30.0
 
     # Security & JWT Auth (Overridden automatically by Railway environment variable SECRET_KEY)
     SECRET_KEY: str = "nsai-petrosoft-enterprise-secret-key-change-in-production-2026"

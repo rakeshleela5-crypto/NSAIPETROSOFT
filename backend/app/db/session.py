@@ -3,10 +3,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import settings
 from app.db.base import Base
 
+engine_kwargs = {
+    "echo": settings.DB_ECHO,
+    "pool_pre_ping": True,
+}
+if not settings.SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
+    engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+    engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT
+
 engine = create_async_engine(
     settings.SQLALCHEMY_DATABASE_URI,
-    echo=settings.DB_ECHO,
-    pool_pre_ping=True,
+    **engine_kwargs,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -132,6 +140,14 @@ async def init_db() -> None:
             "ALTER TABLE lube_products ALTER COLUMN cost_price TYPE NUMERIC(12, 2)",
             "ALTER TABLE lube_sale_entries ALTER COLUMN rate TYPE NUMERIC(12, 2)",
             "ALTER TABLE lube_sale_entries ALTER COLUMN total_amount TYPE NUMERIC(12, 2)",
+            # 5-Year High Volume B-Tree Composite Indexes
+            "CREATE INDEX IF NOT EXISTS idx_credit_sales_customer_date ON credit_sales (customer_id, date)",
+            "CREATE INDEX IF NOT EXISTS idx_shift_meter_nozzle_shift ON shift_meter_readings (nozzle_id, shift_id)",
+            "CREATE INDEX IF NOT EXISTS idx_payment_receipts_customer_date ON payment_receipts (customer_id, date)",
+            "CREATE INDEX IF NOT EXISTS idx_tank_dips_tank_date ON tank_dip_entries (tank_id, date)",
+            "CREATE INDEX IF NOT EXISTS idx_shifts_date_status ON shifts (date, status)",
+            "CREATE INDEX IF NOT EXISTS idx_decentro_txn_id_created ON decentro_transactions (decentro_txn_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_decentro_utr ON decentro_transactions (bank_reference_number)",
         ]
         for query in migrations:
             try:

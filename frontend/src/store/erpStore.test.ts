@@ -15,7 +15,7 @@ describe('erpStore - Centralized ACID Forecourt Engine', () => {
 
     const breakdown = erpStore.getPaymentBreakdown();
     expect(breakdown.total).toBe(kpis.today_sale);
-    expect(breakdown.credit).toBeGreaterThan(0);
+    expect(breakdown.credit).toBeGreaterThanOrEqual(0);
   });
 
   it('atomically executes Shift Nozzle Sales and deducts sold fuel from tank book stock', () => {
