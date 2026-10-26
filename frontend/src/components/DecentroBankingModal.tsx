@@ -428,12 +428,17 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
                           alt="Dynamic UPI QR"
                           style={{ width: '180px', height: '180px', objectFit: 'contain', display: 'block' }}
                         />
-                      ) : (
+                      ) : currentQr.qr_code_base64 ? (
                         <img
                           src={`data:image/svg+xml;base64,${currentQr.qr_code_base64}`}
                           alt="Dynamic UPI QR"
                           style={{ width: '180px', height: '180px', objectFit: 'contain', display: 'block' }}
                         />
+                      ) : (
+                        <div style={{ width: '180px', height: '180px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#0f172a' }}>
+                          <span style={{ fontSize: '36px' }}>⚡</span>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#334155', marginTop: '6px' }}>UPI Scan Ready</span>
+                        </div>
                       )}
                     </div>
                     <div>

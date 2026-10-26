@@ -28,7 +28,14 @@ from app.models.banking import (
     VirtualAccountWebhookLog,
 )
 from app.models.decentro import DecentroTransaction
-from app.models.petrol_pump import BankAccount, CreditSale, Customer, PaymentReceipt
+from app.models.petrol_pump import (
+    BankAccount,
+    CreditSale,
+    Customer,
+    Nozzle,
+    PaymentReceipt,
+    Shift,
+)
 from app.services.decentro_client import decentro_client
 
 banking_router = APIRouter(prefix="/banking", tags=["Decentro API Banking V2"])
@@ -231,12 +238,26 @@ async def create_dynamic_upi_qr(
     )
     db.add(noz_txn)
 
+    # Validate shift/nozzle FK existences in DB to avoid asyncpg type errors or Foreign Key violations
+    valid_shift_id: Optional[int] = int(req.shift_id) if (req.shift_id is not None and str(req.shift_id).isdigit()) else None
+    valid_nozzle_id: Optional[int] = int(req.nozzle_id) if (req.nozzle_id is not None and str(req.nozzle_id).isdigit()) else None
+
+    if valid_shift_id is not None:
+        shift_check = await db.get(Shift, valid_shift_id)
+        if not shift_check:
+            valid_shift_id = None
+
+    if valid_nozzle_id is not None:
+        nozzle_check = await db.get(Nozzle, valid_nozzle_id)
+        if not nozzle_check:
+            valid_nozzle_id = None
+
     # Persist in SQLModel UpiQrTransaction table (backward compatibility)
     txn = UpiQrTransaction(
         reference_id=ref_id,
         decentro_txn_id=decentro_txn_id,
-        shift_id=int(req.shift_id) if str(req.shift_id).isdigit() else None,
-        nozzle_id=int(req.nozzle_id) if str(req.nozzle_id).isdigit() else None,
+        shift_id=valid_shift_id,
+        nozzle_id=valid_nozzle_id,
         lane_id=req.lane_id or nozzle_str,
         bill_no=req.bill_no,
         amount=req.amount,
@@ -255,8 +276,8 @@ async def create_dynamic_upi_qr(
         status=txn_status,
         upi_uri=upi_uri,
         qr_code_base64=qr_code_base64,
-        shift_id=shift_str,
-        nozzle_id=nozzle_str,
+        shift_id=valid_shift_id,
+        nozzle_id=valid_nozzle_id,
         lane_id=req.lane_id or nozzle_str,
         bill_no=req.bill_no,
         request_payload=json.dumps(req.model_dump(), default=str),

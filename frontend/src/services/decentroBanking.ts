@@ -117,11 +117,14 @@ class DecentroBankingService {
       // Offline / Network fallback to NPCI Standard UPI Intent
       const refId = params.reference_id || `UPI_${(params.lane_id || 'POS').toUpperCase()}_${Date.now()}`;
       const upiUri = `upi://pay?pa=nsaipetro@yesbank&pn=NSAI+PetroSoft&am=${params.amount.toFixed(2)}&tr=${refId}&tn=${encodeURIComponent(params.purpose_message || 'Fuel')}&cu=INR`;
+      const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"><rect width="200" height="200" fill="#ffffff" rx="10"/><rect x="20" y="20" width="50" height="50" fill="#1e3a8a" rx="4"/><rect x="30" y="30" width="30" height="30" fill="#ffffff"/><rect x="35" y="35" width="20" height="20" fill="#1e3a8a"/><rect x="130" y="20" width="50" height="50" fill="#1e3a8a" rx="4"/><rect x="140" y="30" width="30" height="30" fill="#ffffff"/><rect x="145" y="35" width="20" height="20" fill="#1e3a8a"/><rect x="20" y="130" width="50" height="50" fill="#1e3a8a" rx="4"/><rect x="30" y="140" width="30" height="30" fill="#ffffff"/><rect x="35" y="145" width="20" height="20" fill="#1e3a8a"/><circle cx="100" cy="100" r="16" fill="#f59e0b"/><text x="100" y="104" font-family="Arial" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">UPI</text><text x="100" y="192" font-family="monospace" font-size="8" fill="#64748b" text-anchor="middle">SCAN TO PAY VIA UPI</text></svg>`;
+      const fallbackQrBase64 = typeof btoa !== 'undefined' ? btoa(fallbackSvg) : undefined;
       return {
         reference_id: refId,
         amount: params.amount,
         status: 'PENDING',
         upi_uri: upiUri,
+        qr_code_base64: fallbackQrBase64,
         created_at: new Date().toISOString(),
         message: 'Generated offline fallback Dynamic UPI URI',
       };
