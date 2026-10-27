@@ -197,6 +197,87 @@ async def init_db() -> None:
             "ALTER TABLE lube_products ALTER COLUMN cost_price TYPE NUMERIC(12, 2)",
             "ALTER TABLE lube_sale_entries ALTER COLUMN rate TYPE NUMERIC(12, 2)",
             "ALTER TABLE lube_sale_entries ALTER COLUMN total_amount TYPE NUMERIC(12, 2)",
+            # Forecourt & Automation Controller Logs
+            """
+            CREATE TABLE IF NOT EXISTS forecourt_controller_logs (
+                id SERIAL PRIMARY KEY,
+                tx_id VARCHAR(50) UNIQUE NOT NULL,
+                event_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                pump_id INTEGER NOT NULL,
+                nozzle_name VARCHAR(50) NOT NULL,
+                product_name VARCHAR(100) NOT NULL,
+                product_code VARCHAR(20) DEFAULT 'MS' NOT NULL,
+                liters NUMERIC(12, 3) NOT NULL,
+                rate NUMERIC(12, 2) NOT NULL,
+                amount NUMERIC(12, 2) NOT NULL,
+                protocol VARCHAR(100) DEFAULT 'DOMS PSS 5000 (Ethernet TCP/IP)' NOT NULL,
+                controller_ip VARCHAR(100) DEFAULT '192.168.1.150:4001' NOT NULL,
+                status VARCHAR(30) DEFAULT 'PENDING' NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Shift Cash Safe Drops
+            """
+            CREATE TABLE IF NOT EXISTS shift_cash_drops (
+                id SERIAL PRIMARY KEY,
+                shift_id INTEGER REFERENCES shifts(id),
+                employee_id INTEGER REFERENCES employees(id),
+                drop_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                amount NUMERIC(12, 2) NOT NULL,
+                vault_account_id INTEGER REFERENCES bank_accounts(id) DEFAULT 1 NOT NULL,
+                witness_name VARCHAR(100),
+                notes TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # DSM Attendant Attendance & Floats
+            """
+            CREATE TABLE IF NOT EXISTS employee_attendance (
+                id SERIAL PRIMARY KEY,
+                employee_id INTEGER REFERENCES employees(id) NOT NULL,
+                shift_id INTEGER REFERENCES shifts(id),
+                date DATE DEFAULT CURRENT_DATE NOT NULL,
+                status VARCHAR(30) DEFAULT 'PRESENT' NOT NULL,
+                in_time VARCHAR(20),
+                out_time VARCHAR(20),
+                opening_cash_float NUMERIC(12, 2) DEFAULT 0.0,
+                remarks VARCHAR(255),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Statutory Compliance Licenses
+            """
+            CREATE TABLE IF NOT EXISTS statutory_compliance_licenses (
+                id SERIAL PRIMARY KEY,
+                license_name VARCHAR(150) NOT NULL,
+                license_number VARCHAR(100) UNIQUE NOT NULL,
+                issuing_authority VARCHAR(150) DEFAULT 'PESO / Govt of Gujarat' NOT NULL,
+                issue_date DATE NOT NULL,
+                expiry_date DATE NOT NULL,
+                reminder_days_before INTEGER DEFAULT 30,
+                document_key VARCHAR(500),
+                status VARCHAR(30) DEFAULT 'ACTIVE' NOT NULL,
+                remarks TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            # Packaged Lube Inward Stock Entries
+            """
+            CREATE TABLE IF NOT EXISTS lube_inward_entries (
+                id SERIAL PRIMARY KEY,
+                invoice_no VARCHAR(100) NOT NULL,
+                date DATE DEFAULT CURRENT_DATE NOT NULL,
+                supplier_name VARCHAR(150) DEFAULT 'BHARAT PETROLEUM CORP LTD (LUBE DIV)' NOT NULL,
+                lube_product_id INTEGER REFERENCES lube_products(id) NOT NULL,
+                qty_units INTEGER NOT NULL,
+                cost_price NUMERIC(12, 2) NOT NULL,
+                total_amount NUMERIC(12, 2) NOT NULL,
+                batch_no VARCHAR(50),
+                notes TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS water_dip_cm NUMERIC(12, 3) DEFAULT 0.0",
             # 5-Year High Volume B-Tree Composite Indexes
             "CREATE INDEX IF NOT EXISTS idx_credit_sales_customer_date ON credit_sales (customer_id, date)",
             "CREATE INDEX IF NOT EXISTS idx_shift_meter_nozzle_shift ON shift_meter_readings (nozzle_id, shift_id)",
@@ -205,6 +286,8 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_shifts_date_status ON shifts (date, status)",
             "CREATE INDEX IF NOT EXISTS idx_decentro_txn_id_created ON decentro_transactions (decentro_txn_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_decentro_utr ON decentro_transactions (bank_reference_number)",
+            "CREATE INDEX IF NOT EXISTS idx_forecourt_logs_tx ON forecourt_controller_logs (tx_id)",
+            "CREATE INDEX IF NOT EXISTS idx_compliance_expiry ON statutory_compliance_licenses (expiry_date)",
         ]
         for query in migrations:
             try:
