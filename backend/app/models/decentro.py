@@ -10,6 +10,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from app.db.base import Base
 
@@ -54,10 +55,10 @@ class DecentroTransaction(Base):
     response_payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc), onupdate=func.now()
     )
 
     customer = relationship("Customer")
@@ -81,7 +82,7 @@ class CustomerVirtualAccount(Base):
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
     decentro_account_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     customer = relationship("Customer")
@@ -110,7 +111,7 @@ class SupplierPayout(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
     settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -123,7 +124,7 @@ class DecentroWebhookLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     received_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
     event_type: Mapped[str] = mapped_column(String(100), default="UNKNOWN")
     decentro_txn_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
@@ -152,7 +153,7 @@ class GstinVerificationAudit(Base):
     decentro_txn_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id"), nullable=True)
     verified_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     customer = relationship("Customer")

@@ -10,8 +10,10 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Index,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 from app.db.base import Base
 from app.core.time import today_ist
 
@@ -36,7 +38,7 @@ class FuelProduct(Base):
     cess_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     density_standard: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     tanks = relationship("Tank", back_populates="product")
@@ -51,8 +53,9 @@ class RateHistory(Base):
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("fuel_products.id"), nullable=False)
     rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     product = relationship("FuelProduct", back_populates="rates")
@@ -127,6 +130,10 @@ class Customer(Base):
     is_tanker: Mapped[bool] = mapped_column(Boolean, default=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    version_id: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
 
     vehicles = relationship("Vehicle", back_populates="customer", cascade="all, delete-orphan")
     credit_sales = relationship("CreditSale", back_populates="customer")
@@ -146,6 +153,9 @@ class Vehicle(Base):
 
 class Shift(Base):
     __tablename__ = "shifts"
+    __table_args__ = (
+        Index("ix_shifts_date_status", "date", "status"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     so_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
@@ -158,7 +168,7 @@ class Shift(Base):
     total_digital: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     handover_object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     meter_readings = relationship("ShiftMeterReading", back_populates="shift", cascade="all, delete-orphan")
@@ -196,6 +206,10 @@ class ShiftMeterReading(Base):
 
 class CreditSale(Base):
     __tablename__ = "credit_sales"
+    __table_args__ = (
+        Index("ix_credit_sales_customer_id_created_at", "customer_id", "created_at"),
+        Index("ix_credit_sales_customer_id_date", "customer_id", "date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
@@ -222,6 +236,9 @@ class CreditSale(Base):
     indent_slip_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
 
     shift = relationship("Shift", back_populates="credit_sales")
     customer = relationship("Customer", back_populates="credit_sales")
@@ -232,6 +249,10 @@ class CreditSale(Base):
 
 class PaymentReceipt(Base):
     __tablename__ = "payment_receipts"
+    __table_args__ = (
+        Index("ix_payment_receipts_customer_id_created_at", "customer_id", "created_at"),
+        Index("ix_payment_receipts_reference_no", "reference_no"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     receipt_no: Mapped[str] = mapped_column(String(50), unique=True, index=True)
@@ -243,10 +264,14 @@ class PaymentReceipt(Base):
     bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     receiving_account: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     cheque_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reference_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     tcs_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     tcs_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_cheque_bounced: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
 
     customer = relationship("Customer", back_populates="payments")
 
@@ -262,6 +287,9 @@ class Expense(Base):
     narration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     paid_to: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
 
     shift = relationship("Shift", back_populates="expenses")
 
@@ -281,7 +309,7 @@ class ShiftSettlement(Base):
     actual_cash: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     gap_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     settled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     shift = relationship("Shift", back_populates="settlement")
@@ -290,6 +318,10 @@ class ShiftSettlement(Base):
 
 class TankDipEntry(Base):
     __tablename__ = "tank_dip_entries"
+    __table_args__ = (
+        Index("ix_tank_dip_entries_tank_id_created_at", "tank_id", "created_at"),
+        Index("ix_tank_dip_entries_tank_id_date", "tank_id", "date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
@@ -311,6 +343,10 @@ class TankDipEntry(Base):
     receipt_photo_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    version_id: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
 
     tank = relationship("Tank", back_populates="dip_entries")
 
@@ -346,6 +382,9 @@ class PurchaseEntry(Base):
     tcs_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     freight: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     final_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
 
     product = relationship("FuelProduct")
     tank = relationship("Tank")
@@ -371,7 +410,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(50), default="cashier", nullable=False)  # admin, manager, cashier, attendant
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
 
@@ -394,7 +433,7 @@ class StationProfileSetting(Base):
     printer_paper_width: Mapped[str] = mapped_column(String(20), default="80mm")
     manager_pin: Mapped[str] = mapped_column(String(20), default="1234")
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc), onupdate=func.now()
     )
 
 
@@ -422,7 +461,7 @@ class NozzleMeterReplacement(Base):
     wm_seal_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     authorized_by: Mapped[str] = mapped_column(String(100), default="Manager")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     nozzle = relationship("Nozzle", back_populates="meter_swaps")
@@ -504,7 +543,7 @@ class SupervisorReversalVoucher(Base):
     authorized_by: Mapped[str] = mapped_column(String(100), default="Station Manager")
     manager_pin: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     shift = relationship("Shift")
@@ -521,7 +560,7 @@ class CardSettlement(Base):
     amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="SETTLED")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
 
@@ -536,7 +575,7 @@ class ContraTransfer(Base):
     reference_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="Contra Transfer")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     from_account = relationship("BankAccount", foreign_keys=[from_account_id])
@@ -558,7 +597,7 @@ class Quotation(Base):
     status: Mapped[str] = mapped_column(String(30), default="ISSUED")  # ISSUED, CONVERTED, EXPIRED, CANCELLED
     items_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
 
@@ -581,7 +620,7 @@ class RetailCashInvoice(Base):
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="PAID")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
 
@@ -598,7 +637,7 @@ class ShiftHandover(Base):
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     shift = relationship("Shift")
@@ -606,6 +645,10 @@ class ShiftHandover(Base):
 
 class TankDipLog(Base):
     __tablename__ = "tank_dip_logs"
+    __table_args__ = (
+        Index("ix_tank_dip_logs_tank_id_created_at", "tank_id", "created_at"),
+        Index("ix_tank_dip_logs_tank_id_date", "tank_id", "date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tank_id: Mapped[int] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=False, index=True)
@@ -619,8 +662,9 @@ class TankDipLog(Base):
     receipt_photo_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    version_id: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     tank = relationship("Tank")
@@ -642,7 +686,7 @@ class FleetInvoice(Base):
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="GENERATED")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     customer = relationship("Customer")
@@ -658,7 +702,7 @@ class ForecourtControllerLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     tx_id: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     event_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
     pump_id: Mapped[int] = mapped_column(Integer, nullable=False)
     nozzle_name: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -671,7 +715,7 @@ class ForecourtControllerLog(Base):
     controller_ip: Mapped[str] = mapped_column(String(100), default="192.168.1.150:4001")
     status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING, SYNCED, VOIDED
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
 
@@ -686,14 +730,14 @@ class ShiftCashDrop(Base):
     shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True, index=True)
     employee_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("employees.id"), nullable=True, index=True)
     drop_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
     amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     vault_account_id: Mapped[int] = mapped_column(Integer, ForeignKey("bank_accounts.id"), nullable=False, default=1)
     witness_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     shift = relationship("Shift")
@@ -717,7 +761,7 @@ class EmployeeAttendance(Base):
     opening_cash_float: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     employee = relationship("Employee")
@@ -742,7 +786,7 @@ class StatutoryComplianceLicense(Base):
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE")  # ACTIVE, EXPIRING_SOON, EXPIRED
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
 
@@ -763,9 +807,10 @@ class LubeInwardEntry(Base):
     batch_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
     lube_product = relationship("LubeProduct")
+
 
 

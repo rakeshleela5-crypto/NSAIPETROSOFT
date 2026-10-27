@@ -160,6 +160,7 @@ class FleetCustomer(SQLModel, table=True):
     virtual_account_upi_id: Optional[str] = Field(default=None)
     credit_limit: float = Field(default=0.0)
     current_outstanding: float = Field(default=0.0)
+    version_id: int = Field(default=1, nullable=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

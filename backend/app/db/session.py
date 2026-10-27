@@ -11,6 +11,7 @@ if not settings.SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
     engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
     engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
     engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT
+    engine_kwargs["pool_recycle"] = settings.DB_POOL_RECYCLE
 
 engine = create_async_engine(
     settings.SQLALCHEMY_DATABASE_URI,
@@ -288,6 +289,72 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_decentro_utr ON decentro_transactions (bank_reference_number)",
             "CREATE INDEX IF NOT EXISTS idx_forecourt_logs_tx ON forecourt_controller_logs (tx_id)",
             "CREATE INDEX IF NOT EXISTS idx_compliance_expiry ON statutory_compliance_licenses (expiry_date)",
+            # Phase 1 Production Hardening Migrations (#1, #20, #25, #39, #94, #100)
+            "ALTER TABLE rate_histories ADD COLUMN IF NOT EXISTS version_id INTEGER DEFAULT 1",
+            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS version_id INTEGER DEFAULT 1",
+            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE fleet_customers ADD COLUMN IF NOT EXISTS version_id INTEGER DEFAULT 1",
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS version_id INTEGER DEFAULT 1",
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE tank_dip_logs ADD COLUMN IF NOT EXISTS version_id INTEGER DEFAULT 1",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS reference_no VARCHAR(100)",
+            "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE purchase_entries ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+            "CREATE INDEX IF NOT EXISTS ix_shifts_date_status ON shifts (date, status)",
+            "CREATE INDEX IF NOT EXISTS ix_credit_sales_customer_id_created_at ON credit_sales (customer_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_payment_receipts_customer_id_created_at ON payment_receipts (customer_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_payment_receipts_reference_no ON payment_receipts (reference_no)",
+            "CREATE INDEX IF NOT EXISTS ix_tank_dip_entries_tank_id_created_at ON tank_dip_entries (tank_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_tank_dip_logs_tank_id_created_at ON tank_dip_logs (tank_id, created_at)",
+            """
+            CREATE TABLE IF NOT EXISTS idempotency_keys (
+                key VARCHAR(128) PRIMARY KEY,
+                endpoint VARCHAR(255) NOT NULL,
+                request_hash VARCHAR(64) NOT NULL,
+                response_status INTEGER DEFAULT 200 NOT NULL,
+                response_body JSON,
+                status VARCHAR(50) DEFAULT 'PROCESSING' NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                expires_at TIMESTAMP WITH TIME ZONE
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS dead_letter_events (
+                id SERIAL PRIMARY KEY,
+                event_type VARCHAR(100) NOT NULL,
+                payload JSON,
+                headers JSON,
+                error_message TEXT,
+                traceback TEXT,
+                status VARCHAR(50) DEFAULT 'PENDING_REPLAY' NOT NULL,
+                retry_count INTEGER DEFAULT 0 NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                last_attempt_at TIMESTAMP WITH TIME ZONE
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS financial_audit_logs (
+                id SERIAL PRIMARY KEY,
+                actor_id VARCHAR(100),
+                role VARCHAR(50),
+                action VARCHAR(100) NOT NULL,
+                entity_type VARCHAR(100) NOT NULL,
+                entity_id VARCHAR(100),
+                before_state JSON,
+                after_state JSON,
+                ip_address VARCHAR(50),
+                request_id VARCHAR(128),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_idempotency_keys_status ON idempotency_keys (status)",
+            "CREATE INDEX IF NOT EXISTS ix_idempotency_keys_expires_at ON idempotency_keys (expires_at)",
+            "CREATE INDEX IF NOT EXISTS ix_dead_letter_events_status ON dead_letter_events (status)",
+            "CREATE INDEX IF NOT EXISTS ix_dead_letter_events_event_type ON dead_letter_events (event_type)",
+            "CREATE INDEX IF NOT EXISTS ix_financial_audit_logs_action_created_at ON financial_audit_logs (action, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_financial_audit_logs_entity ON financial_audit_logs (entity_type, entity_id)",
         ]
         for query in migrations:
             try:

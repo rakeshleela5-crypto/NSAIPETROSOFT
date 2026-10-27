@@ -37,6 +37,11 @@ from app.models.decentro import (
     GstinVerificationAudit,
     SupplierPayout,
 )
+from app.models.audit import (
+    IdempotencyKey,
+    DeadLetterEvent,
+    FinancialAuditLog,
+)
 from app.models.banking import (
     CollectionLedgerEntry,
     DecentroWebhookAudit,
@@ -92,6 +97,9 @@ __all__ = [
     "EmployeeAttendance",
     "StatutoryComplianceLicense",
     "LubeInwardEntry",
+    "IdempotencyKey",
+    "DeadLetterEvent",
+    "FinancialAuditLog",
 ]
 
 
