@@ -153,32 +153,40 @@ export async function syncOfflineQueue(
   let synced = 0;
   let failed = 0;
 
-  // Dynamically import client functions to avoid circular deps
+  // 1. Sync any pending offline Blobs/photos to Cloudflare R2 first
+  const { syncPendingMediaToR2, substituteOfflineKeysInPayload } =
+    await import('./offlineMediaQueue');
+  const { keyMap } = await syncPendingMediaToR2();
   const client = await import('../api/client');
 
   for (const record of queue) {
     try {
+      // Substitute any offline:// media keys with genuine Cloudflare R2 object_keys
+      const payload = Object.keys(keyMap).length > 0
+        ? substituteOfflineKeysInPayload(record.payload, keyMap)
+        : record.payload;
+
       let res: any;
       if (record.type === 'CREDIT_SALE') {
-        res = await client.createCreditSale(record.payload);
+        res = await client.createCreditSale(payload);
       } else if (record.type === 'SHIFT_METERS') {
-        res = await client.saveShiftMeters(record.payload);
+        res = await client.saveShiftMeters(payload);
       } else if (record.type === 'DIP_ENTRY') {
-        res = await client.createTankDip(record.payload);
+        res = await client.createTankDip(payload);
       } else if (record.type === 'LUBE_SALE') {
-        res = await client.recordLubeSaleApi(record.payload);
+        res = await client.recordLubeSaleApi(payload);
       } else if (record.type === 'EXPENSE') {
-        res = await client.createExpense(record.payload);
+        res = await client.createExpense(payload);
       } else if (record.type === 'PAYMENT_RECEIPT') {
-        res = await client.createPaymentReceipt(record.payload);
+        res = await client.createPaymentReceipt(payload);
       } else if (record.type === 'CONTRA_TRANSFER') {
-        res = await client.createTransfer(record.payload);
+        res = await client.createTransfer(payload);
       } else if (record.type === 'PURCHASE_DECANTING') {
-        res = await client.createPurchase(record.payload);
+        res = await client.createPurchase(payload);
       } else if (record.type === 'SHIFT_SETTLEMENT') {
-        res = await client.saveShiftSettlement(record.payload);
+        res = await client.saveShiftSettlement(payload);
       } else if (record.type === 'CARD_SETTLEMENT') {
-        res = await client.createCardSettlement(record.payload);
+        res = await client.createCardSettlement(payload);
       }
 
       removeOfflineRecord(record.id);

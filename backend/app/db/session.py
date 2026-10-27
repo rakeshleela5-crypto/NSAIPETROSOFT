@@ -72,6 +72,63 @@ async def init_db() -> None:
             "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS observed_density NUMERIC(12, 3)",
             "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS observed_temp NUMERIC(12, 3)",
             "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS density_15c NUMERIC(12, 3)",
+            # Cloudflare R2 Object Storage Schema Upgrades (Direct S3 Keys)
+            "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS object_key VARCHAR(500)",
+            "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS handover_object_key VARCHAR(500)",
+            "ALTER TABLE shift_meter_readings ADD COLUMN IF NOT EXISTS closing_photo_key VARCHAR(500)",
+            "ALTER TABLE shift_meter_readings ADD COLUMN IF NOT EXISTS object_key VARCHAR(500)",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS indent_slip_key VARCHAR(500)",
+            "ALTER TABLE credit_sales ADD COLUMN IF NOT EXISTS object_key VARCHAR(500)",
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS receipt_photo_key VARCHAR(500)",
+            "ALTER TABLE tank_dip_entries ADD COLUMN IF NOT EXISTS object_key VARCHAR(500)",
+            "ALTER TABLE retail_cash_invoices ADD COLUMN IF NOT EXISTS object_key VARCHAR(500)",
+            """
+            CREATE TABLE IF NOT EXISTS shift_handovers (
+                id SERIAL PRIMARY KEY,
+                shift_id INTEGER NOT NULL REFERENCES shifts(id),
+                attendant_name VARCHAR(100) NOT NULL,
+                date DATE NOT NULL,
+                shift_name VARCHAR(50) DEFAULT 'First',
+                closing_photo_key VARCHAR(500),
+                handover_pdf_key VARCHAR(500),
+                object_key VARCHAR(500),
+                notes TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS tank_dip_logs (
+                id SERIAL PRIMARY KEY,
+                tank_id INTEGER NOT NULL REFERENCES tanks(id),
+                shift_id INTEGER REFERENCES shifts(id),
+                date DATE NOT NULL,
+                dip_cm NUMERIC(12, 3) DEFAULT 0.0,
+                water_dip_cm NUMERIC(12, 3) DEFAULT 0.0,
+                stock_liters NUMERIC(12, 3) DEFAULT 0.0,
+                density_15c NUMERIC(12, 3),
+                temp_c NUMERIC(12, 3),
+                receipt_photo_key VARCHAR(500),
+                object_key VARCHAR(500),
+                notes TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS fleet_invoices (
+                id SERIAL PRIMARY KEY,
+                invoice_no VARCHAR(50) UNIQUE NOT NULL,
+                customer_id INTEGER NOT NULL REFERENCES customers(id),
+                period_start DATE NOT NULL,
+                period_end DATE NOT NULL,
+                total_amount NUMERIC(12, 2) DEFAULT 0.0,
+                total_liters NUMERIC(12, 3) DEFAULT 0.0,
+                gst_amount NUMERIC(12, 2) DEFAULT 0.0,
+                pdf_object_key VARCHAR(500),
+                object_key VARCHAR(500),
+                status VARCHAR(30) DEFAULT 'GENERATED',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
             # Shift Immutability & Supervisor Reversal Vouchers Table
             """
             CREATE TABLE IF NOT EXISTS supervisor_reversal_vouchers (

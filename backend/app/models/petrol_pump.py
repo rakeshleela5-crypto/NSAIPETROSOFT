@@ -156,6 +156,7 @@ class Shift(Base):
     total_cash: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     total_credit: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     total_digital: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    handover_object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -185,6 +186,8 @@ class ShiftMeterReading(Base):
     max_meter_digits: Mapped[int] = mapped_column(Integer, default=6)
     split_closing_meter: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
     split_rate: Mapped[Optional[float]] = mapped_column(DECIMAL_CURRENCY, nullable=True)
+    closing_photo_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     shift = relationship("Shift", back_populates="meter_readings")
     nozzle = relationship("Nozzle")
@@ -216,6 +219,8 @@ class CreditSale(Base):
     driver_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     driver_mobile: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     indent_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    indent_slip_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     shift = relationship("Shift", back_populates="credit_sales")
@@ -256,6 +261,7 @@ class Expense(Base):
     amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     narration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     paid_to: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     shift = relationship("Shift", back_populates="expenses")
 
@@ -301,6 +307,8 @@ class TankDipEntry(Base):
     observed_density: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
     observed_temp: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
     density_15c: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
+    receipt_photo_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     tank = relationship("Tank", back_populates="dip_entries")
@@ -569,8 +577,72 @@ class RetailCashInvoice(Base):
     payment_mode: Mapped[str] = mapped_column(String(30), default="CASH")  # CASH, UPI, SPLIT, CREDIT
     split_details: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     driver_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="PAID")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class ShiftHandover(Base):
+    __tablename__ = "shift_handovers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    shift_id: Mapped[int] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=False, index=True)
+    attendant_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    shift_name: Mapped[str] = mapped_column(String(50), default="First")
+    closing_photo_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    handover_pdf_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    shift = relationship("Shift")
+
+
+class TankDipLog(Base):
+    __tablename__ = "tank_dip_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tank_id: Mapped[int] = mapped_column(Integer, ForeignKey("tanks.id"), nullable=False, index=True)
+    shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    dip_cm: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    water_dip_cm: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    stock_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    density_15c: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
+    temp_c: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
+    receipt_photo_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    tank = relationship("Tank")
+    shift = relationship("Shift")
+
+
+class FleetInvoice(Base):
+    __tablename__ = "fleet_invoices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    invoice_no: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    total_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    total_liters: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
+    gst_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    pdf_object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="GENERATED")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    customer = relationship("Customer")
 

@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Optional, Union
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -30,11 +30,12 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
-    # Cloudflare R2 Object Storage for Automated Database Backups
+    # Cloudflare R2 Object Storage for Forecourt Documents, Invoices & Automated Backups
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
-    R2_BUCKET_NAME: str = "nsaipetrosoft-backups"
+    R2_BUCKET_NAME: str = "nsaipetrosoft-storage"
+    R2_PUBLIC_DOMAIN: Optional[str] = None
     R2_ENDPOINT_URL: str = ""
 
     # Decentro Banking-as-a-Service (BaaS) Configurations

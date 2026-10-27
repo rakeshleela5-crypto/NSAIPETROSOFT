@@ -21,6 +21,9 @@ from app.models.petrol_pump import (
     StationProfileSetting,
     ContraTransfer,
     Quotation,
+    ShiftHandover,
+    TankDipLog,
+    FleetInvoice,
 )
 from app.models.decentro import (
     CustomerVirtualAccount,
