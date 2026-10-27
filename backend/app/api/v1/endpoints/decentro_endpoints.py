@@ -19,7 +19,7 @@ from app.models.decentro import (
     GstinVerificationAudit,
     SupplierPayout,
 )
-from app.models.petrol_pump import BankAccount, Customer, User
+from app.models.petrol_pump import BankAccount, Customer, Nozzle, Shift, User
 from app.schemas.decentro import (
     DecentroWebhookPayload,
     GstinVerifyRequest,
@@ -71,6 +71,26 @@ async def generate_upi_qr(
     txn_status = data.get("transactionStatus", "PENDING")
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=req.expiry_minutes)
 
+    # Validate shift, nozzle, and customer FK existences in DB to avoid asyncpg type errors or Foreign Key violations
+    valid_shift_id: Optional[int] = int(req.shift_id) if (req.shift_id is not None and str(req.shift_id).isdigit()) else None
+    valid_nozzle_id: Optional[int] = int(req.nozzle_id) if (req.nozzle_id is not None and str(req.nozzle_id).isdigit()) else None
+    valid_customer_id: Optional[int] = int(req.customer_id) if (req.customer_id is not None and str(req.customer_id).isdigit()) else None
+
+    if valid_shift_id is not None:
+        shift_check = await db.get(Shift, valid_shift_id)
+        if not shift_check:
+            valid_shift_id = None
+
+    if valid_nozzle_id is not None:
+        nozzle_check = await db.get(Nozzle, valid_nozzle_id)
+        if not nozzle_check:
+            valid_nozzle_id = None
+
+    if valid_customer_id is not None:
+        customer_check = await db.get(Customer, valid_customer_id)
+        if not customer_check:
+            valid_customer_id = None
+
     # Persist in Decentro Transactions table
     txn_record = DecentroTransaction(
         reference_id=ref_id,
@@ -82,9 +102,9 @@ async def generate_upi_qr(
         qr_code_base64=qr_code_base64,
         lane_id=req.lane_id,
         bill_no=req.bill_no,
-        nozzle_id=req.nozzle_id,
-        customer_id=req.customer_id,
-        shift_id=req.shift_id,
+        nozzle_id=valid_nozzle_id,
+        customer_id=valid_customer_id,
+        shift_id=valid_shift_id,
         request_payload=json.dumps(req.model_dump(), default=str),
         response_payload=json.dumps(api_response, default=str),
     )

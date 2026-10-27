@@ -13,9 +13,9 @@ class UpiQrGenerateRequest(BaseModel):
     )
     lane_id: Optional[str] = Field(None, description="Forecourt Fuel Lane identifier e.g. 'LANE-1'")
     bill_no: Optional[str] = Field(None, description="ERP Bill or Slip Number e.g. 'BILL-1049'")
-    nozzle_id: Optional[int] = Field(None, description="Dispensing Nozzle ID")
-    customer_id: Optional[int] = Field(None, description="Fleet Customer ID if credit billing")
-    shift_id: Optional[int] = Field(None, description="Active Shift ID")
+    nozzle_id: Optional[Any] = Field(None, description="Dispensing Nozzle ID or code")
+    customer_id: Optional[Any] = Field(None, description="Fleet Customer ID if credit billing")
+    shift_id: Optional[Any] = Field(None, description="Active Shift ID or code")
     expiry_minutes: int = Field(default=10, ge=1, le=60, description="QR Expiry in minutes")
     reference_id: Optional[str] = Field(None, description="Client-side unique reference ID")
 
