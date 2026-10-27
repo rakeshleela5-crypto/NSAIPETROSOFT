@@ -8,6 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.idempotency import verify_idempotency_key
 from app.core.logging_config import decentro_logger
 from app.core.security import get_current_user_optional
 from app.core.security_decentro import verify_decentro_webhook_signature
@@ -47,6 +48,7 @@ router = APIRouter()
     response_model=UpiQrGenerateResponse,
     summary="Generate Dynamic UPI QR Code per Fuel Lane or Bill",
     description="Creates a unique collect/intent dynamic UPI QR code bound to an exact amount, fuel lane, or transaction bill.",
+    dependencies=[Depends(verify_idempotency_key)],
 )
 async def generate_upi_qr(
     req: UpiQrGenerateRequest,
@@ -342,6 +344,7 @@ async def handle_incoming_decentro_webhook(
     response_model=SupplierPayoutResponse,
     summary="Automate Supplier / Oil Company Disbursements with Idempotency",
     description="Disburses funds to vendor bank accounts via IMPS/NEFT/RTGS. Enforces idempotency keys to strictly prevent duplicate transfers.",
+    dependencies=[Depends(verify_idempotency_key)],
 )
 async def initiate_supplier_payout(
     req: SupplierPayoutRequest,

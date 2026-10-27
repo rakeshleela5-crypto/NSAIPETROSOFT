@@ -11,6 +11,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.idempotency import verify_idempotency_key
 from app.core.logging_config import decentro_logger
 from app.core.security_decentro import verify_decentro_webhook_signature
 from app.db.session import get_db
@@ -192,6 +193,7 @@ GSTINVerifyRequest = GstinKycRequest
     response_model=DynamicUpiQrResponse,
     summary="Generate Nozzle/Shift Dynamic UPI QR Code",
     description="Generates a unique dynamic UPI QR code linked to the station collection virtual account.",
+    dependencies=[Depends(verify_idempotency_key)],
 )
 async def create_dynamic_upi_qr(
     req: DynamicUpiQrRequest,
@@ -753,6 +755,12 @@ async def decentro_collections_webhook(
     cleared_invoices = []
     receipt_no = None
     if customer and amount > 0 and txn_status in ("SUCCESS", "COMPLETED"):
+        # Pessimistic row locking on Customer record (Lock hierarchy: CustomerAccount)
+        lock_cust_stmt = select(Customer).where(Customer.id == customer.id).with_for_update()
+        customer = (await db.execute(lock_cust_stmt)).scalar_one_or_none()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found during lock acquisition")
+
         prev_outstanding = float(customer.current_outstanding)
         remaining_payment = amount
 
@@ -886,6 +894,7 @@ async def decentro_collections_webhook(
     response_model=SupplierPayoutResponse,
     summary="OMC & Fuel Tanker Supplier Payout with Idempotency",
     description="Disburses high-value RTGS/NEFT/IMPS payments to oil marketing companies with idempotency keys.",
+    dependencies=[Depends(verify_idempotency_key)],
 )
 async def create_supplier_payout(
     req: SupplierPayoutCreateRequest,

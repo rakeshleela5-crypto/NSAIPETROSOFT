@@ -12,6 +12,7 @@ from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.idempotency import verify_idempotency_key
 from app.core.security import get_current_user_optional, require_roles
 from app.core.time import today_ist, now_ist
 from app.db.session import get_db
@@ -38,6 +39,7 @@ from app.models.petrol_pump import (
     PurchaseEntry,
     RateHistory,
     Shift,
+    ShiftHandover,
     ShiftMeterReading,
     ShiftSettlement,
     Tank,
@@ -606,9 +608,54 @@ async def get_current_shift(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/shifts/save", summary="Save Shift Nozzle Meter Readings")
+@router.post(
+    "/shifts/save",
+    summary="Save Shift Nozzle Meter Readings",
+    dependencies=[Depends(verify_idempotency_key)],
+)
 async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(get_db)):
     today_dt = data.date or today_ist()
+
+    # Pre-flight discovery of affected resources to enforce strict lock hierarchy (Tank -> Nozzle -> Shift)
+    incoming_noz_ids = [r.nozzle_id for r in data.readings]
+    noz_meta_res = await db.execute(select(Nozzle.id, Nozzle.tank_id).where(Nozzle.id.in_(incoming_noz_ids)))
+    incoming_noz_tanks = {row[0]: row[1] for row in noz_meta_res.all()}
+
+    pre_shift_res = await db.execute(
+        select(Shift.id).where(Shift.date == today_dt, Shift.shift_name == data.shift_name)
+    )
+    existing_shift_id = pre_shift_res.scalar_one_or_none()
+
+    old_noz_tanks = {}
+    if existing_shift_id:
+        old_meta_res = await db.execute(
+            select(ShiftMeterReading.nozzle_id, Nozzle.tank_id)
+            .join(Nozzle, ShiftMeterReading.nozzle_id == Nozzle.id)
+            .where(ShiftMeterReading.shift_id == existing_shift_id)
+        )
+        old_noz_tanks = {row[0]: row[1] for row in old_meta_res.all()}
+
+    all_tank_ids = sorted({t for t in list(incoming_noz_tanks.values()) + list(old_noz_tanks.values()) if t is not None})
+    all_nozzle_ids = sorted(set(incoming_noz_ids) | set(old_noz_tanks.keys()))
+
+    # STRICT LOCK ACQUISITION HIERARCHY:
+    # 1. Tanks in ascending ID order (SELECT ... FOR UPDATE)
+    tanks_locked: Dict[int, Tank] = {}
+    for t_id in all_tank_ids:
+        t_stmt = select(Tank).where(Tank.id == t_id).with_for_update()
+        t_obj = (await db.execute(t_stmt)).scalar_one_or_none()
+        if t_obj:
+            tanks_locked[t_id] = t_obj
+
+    # 2. Nozzles in ascending ID order (SELECT ... FOR UPDATE)
+    nozzles_locked: Dict[int, Nozzle] = {}
+    for n_id in all_nozzle_ids:
+        n_stmt = select(Nozzle).where(Nozzle.id == n_id).with_for_update()
+        n_obj = (await db.execute(n_stmt)).scalar_one_or_none()
+        if n_obj:
+            nozzles_locked[n_id] = n_obj
+
+    # 3. Shift (SELECT ... FOR UPDATE)
     shift_stmt = (
         select(Shift)
         .where(Shift.date == today_dt, Shift.shift_name == data.shift_name)
@@ -658,11 +705,9 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
     old_readings = old_readings_res.scalars().all()
     for old_r in old_readings:
         if old_r.sale_qty > 0:
-            old_nozzle = await db.get(Nozzle, old_r.nozzle_id)
+            old_nozzle = nozzles_locked.get(old_r.nozzle_id)
             if old_nozzle and old_nozzle.tank_id:
-                old_tank_stmt = select(Tank).where(Tank.id == old_nozzle.tank_id).with_for_update()
-                old_tank_res = await db.execute(old_tank_stmt)
-                old_tank = old_tank_res.scalar_one_or_none()
+                old_tank = tanks_locked.get(old_nozzle.tank_id)
                 if old_tank:
                     old_tank.current_stock = round(old_tank.current_stock + old_r.sale_qty, 2)
 
@@ -672,9 +717,7 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
     total_vat_amt = 0.0
 
     for r in data.readings:
-        nozzle_stmt = select(Nozzle).where(Nozzle.id == r.nozzle_id).with_for_update()
-        nozzle_res = await db.execute(nozzle_stmt)
-        nozzle = nozzle_res.scalar_one_or_none()
+        nozzle = nozzles_locked.get(r.nozzle_id)
         if not nozzle:
             continue
 
@@ -709,11 +752,9 @@ async def save_shift_meters(data: ShiftSaveRequest, db: AsyncSession = Depends(g
         # Update nozzle current meter
         nozzle.current_meter = r.closing_meter
 
-        # Atomically deduct tank stock
+        # Atomically deduct tank stock (using row-locked tank)
         if nozzle.tank_id and sale_qty > 0:
-            tank_stmt = select(Tank).where(Tank.id == nozzle.tank_id).with_for_update()
-            tank_res = await db.execute(tank_stmt)
-            tank = tank_res.scalar_one_or_none()
+            tank = tanks_locked.get(nozzle.tank_id)
             if tank:
                 tank.current_stock = max(0.0, round(tank.current_stock - sale_qty, 2))
 
@@ -760,7 +801,11 @@ class ReversalVoucherCreate(BaseModel):
     authorized_by: str = "Station Manager"
 
 
-@router.post("/shifts/{shift_id}/close", summary="Finalize & Close Shift (Enforce Immutability)")
+@router.post(
+    "/shifts/{shift_id}/close",
+    summary="Finalize & Close Shift (Enforce Immutability)",
+    dependencies=[Depends(verify_idempotency_key)],
+)
 async def close_shift_endpoint(
     shift_id: int,
     request: Request,
@@ -943,7 +988,11 @@ async def list_credit_sales(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("/credit-sales", summary="Create Credit Slip Sale & WhatsApp Delivery")
+@router.post(
+    "/credit-sales",
+    summary="Create Credit Slip Sale & WhatsApp Delivery",
+    dependencies=[Depends(verify_idempotency_key)],
+)
 async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(get_db)):
     if data.qty <= 0 or data.qty > 50000:
         raise HTTPException(status_code=400, detail="Fuel quantity must be greater than zero and within physical delivery limits (max 50,000 Liters)")
@@ -954,7 +1003,45 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
     if data.odometer_km is not None and data.odometer_km < 0:
         raise HTTPException(status_code=400, detail="Odometer reading cannot be negative")
 
-    # Concurrency Lock: Lock customer row to guarantee atomic balance update
+    # 1. Pre-flight resolve target resource IDs for strict deadlock prevention hierarchy
+    target_tank_id = None
+    if data.nozzle_id:
+        noz_peek = (await db.execute(select(Nozzle.tank_id).where(Nozzle.id == data.nozzle_id))).scalar_one_or_none()
+        target_tank_id = noz_peek
+
+    active_shift_id = None
+    if not data.shift_id:
+        sh_peek = (await db.execute(select(Shift.id).where(Shift.status == "Open").order_by(desc(Shift.id)).limit(1))).scalar_one_or_none()
+        active_shift_id = sh_peek
+    target_shift_id = data.shift_id or active_shift_id
+
+    # STRICT LOCK ACQUISITION HIERARCHY: Station -> Tank -> Nozzle -> Shift -> CustomerAccount
+    # Step 1: Tank Lock (SELECT ... FOR UPDATE)
+    tank = None
+    if target_tank_id:
+        tank_stmt = select(Tank).where(Tank.id == target_tank_id).with_for_update()
+        tank = (await db.execute(tank_stmt)).scalar_one_or_none()
+
+    # Step 2: Nozzle Lock (SELECT ... FOR UPDATE)
+    nozzle = None
+    if data.nozzle_id:
+        noz_stmt = select(Nozzle).where(Nozzle.id == data.nozzle_id).with_for_update()
+        nozzle = (await db.execute(noz_stmt)).scalar_one_or_none()
+
+    # Step 3: Shift Lock (SELECT ... FOR UPDATE)
+    shift_obj = None
+    if target_shift_id:
+        sh_stmt = select(Shift).where(Shift.id == target_shift_id).with_for_update()
+        sh_res = await db.execute(sh_stmt)
+        shift_obj = sh_res.scalar_one_or_none()
+        if shift_obj and shift_obj.status in ("Closed", "Settled"):
+            if not await verify_manager_pin(data.manager_override_pin, db):
+                raise HTTPException(
+                    status_code=403,
+                    detail="SHIFT IMMUTABILITY ENFORCED: Target shift is finalized and closed. Cannot append credit slip to a closed shift without supervisor authorization PIN.",
+                )
+
+    # Step 4: Customer Account Lock (SELECT ... FOR UPDATE)
     customer_stmt = select(Customer).where(Customer.id == data.customer_id).with_for_update()
     customer_res = await db.execute(customer_stmt)
     customer = customer_res.scalar_one_or_none()
@@ -1046,32 +1133,11 @@ async def create_credit_sale(data: CreditSaleCreate, db: AsyncSession = Depends(
             if km_run > 0 and data.qty > 0:
                 mileage_kml = round(km_run / data.qty, 2)
 
-    # Auto-associate with current open shift if available
-    active_shift_res = await db.execute(
-        select(Shift).where(Shift.status == "Open").order_by(desc(Shift.id)).limit(1)
-    )
-    active_shift = active_shift_res.scalar_one_or_none()
-    shift_id = data.shift_id or (active_shift.id if active_shift else None)
-    if shift_id:
-        sh_stmt = select(Shift).where(Shift.id == shift_id).with_for_update()
-        sh_res = await db.execute(sh_stmt)
-        sh_obj = sh_res.scalar_one_or_none()
-        if sh_obj and sh_obj.status in ("Closed", "Settled"):
-            if not await verify_manager_pin(data.manager_override_pin, db):
-                raise HTTPException(
-                    status_code=403,
-                    detail="SHIFT IMMUTABILITY ENFORCED: Target shift is finalized and closed. Cannot append credit slip to a closed shift without supervisor authorization PIN.",
-                )
+    shift_id = target_shift_id
 
-    # Optional tank stock atomic deduction
-    if data.nozzle_id:
-        nozzle = await db.get(Nozzle, data.nozzle_id)
-        if nozzle and nozzle.tank_id:
-            tank_stmt = select(Tank).where(Tank.id == nozzle.tank_id).with_for_update()
-            tank_res = await db.execute(tank_stmt)
-            tank = tank_res.scalar_one_or_none()
-            if tank:
-                tank.current_stock = max(0.0, round(tank.current_stock - data.qty, 2))
+    # Deduct tank stock atomically using row-locked tank
+    if tank and data.qty > 0:
+        tank.current_stock = max(0.0, round(tank.current_stock - data.qty, 2))
 
     sale = CreditSale(
         shift_id=shift_id,
@@ -1277,7 +1343,11 @@ async def list_payments(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("/payments", summary="Record Customer Payment Receipt")
+@router.post(
+    "/payments",
+    summary="Record Customer Payment Receipt",
+    dependencies=[Depends(verify_idempotency_key)],
+)
 async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = Depends(get_db)):
     if data.amount <= 0:
         raise HTTPException(status_code=400, detail="Payment receipt amount must be greater than zero")
@@ -1951,7 +2021,9 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     if data.opening_stock < 0 or data.closing_stock < 0 or data.receipt_liters < 0:
         raise HTTPException(status_code=400, detail="Stock quantities and inward receipts cannot be negative")
 
-    tank = await db.get(Tank, data.tank_id)
+    # Pessimistic row locking on underground storage tank (Hierarchy: Tank)
+    tank_stmt = select(Tank).where(Tank.id == data.tank_id).with_for_update()
+    tank = (await db.execute(tank_stmt)).scalar_one_or_none()
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
 
@@ -2125,7 +2197,11 @@ class SettlementSaveRequest(BaseModel):
     reversal_reason: Optional[str] = None
 
 
-@router.post("/settlements/save", summary="Persist Cashier Shift Settlement to Database")
+@router.post(
+    "/settlements/save",
+    summary="Persist Cashier Shift Settlement to Database",
+    dependencies=[Depends(verify_idempotency_key)],
+)
 async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depends(get_db)):
     if data.actual_cash < 0 or data.cash_total < 0 or data.digital_total < 0 or data.credit_total < 0 or data.expense_total < 0:
         raise HTTPException(
@@ -2133,7 +2209,7 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
             detail="Cashier settlement breakdown amounts and cash physical counts cannot be negative",
         )
 
-    # 1. Resolve or create shift with row-level lock
+    # 1. Resolve or create shift with row-level lock (Hierarchy: Shift)
     shift = None
     if data.shift_id:
         shift_res = await db.execute(
@@ -2207,7 +2283,8 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
     # Automatically post cashier shortage to Employee Shortage & Recovery Ledger
     shortage_posted = 0.0
     if data.gap_amount < 0 and data.employee_id:
-        emp = await db.get(Employee, data.employee_id)
+        emp_stmt = select(Employee).where(Employee.id == data.employee_id).with_for_update()
+        emp = (await db.execute(emp_stmt)).scalar_one_or_none()
         if emp:
             shortage_posted = abs(round(data.gap_amount, 2))
             emp.shortage_balance = round((emp.shortage_balance or 0.0) + shortage_posted, 2)
@@ -5771,9 +5848,15 @@ async def list_fleet_invoices(
     ]
 
 
-@router.post("/fleet-invoices", summary="Generate Consolidated Fleet Invoice from Indents")
+@router.post(
+    "/fleet-invoices",
+    summary="Generate Consolidated Fleet Invoice from Indents",
+    dependencies=[Depends(verify_idempotency_key)],
+)
 async def create_fleet_invoice(data: FleetInvoiceCreate, db: AsyncSession = Depends(get_db)):
-    cust = await db.get(Customer, data.customer_id)
+    # Concurrency Lock: Lock Customer row (Hierarchy: CustomerAccount)
+    cust_stmt = select(Customer).where(Customer.id == data.customer_id).with_for_update()
+    cust = (await db.execute(cust_stmt)).scalar_one_or_none()
     if not cust:
         raise HTTPException(status_code=404, detail="Fleet customer not found")
 
@@ -5840,4 +5923,89 @@ async def get_fleet_invoice(invoice_id: int, db: AsyncSession = Depends(get_db))
         "pdf_object_key": inv.pdf_object_key or inv.object_key,
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
     }
+
+
+# -------------------------------------------------------------
+# 24. Shift Handover & Cashier Sign-Off API
+# -------------------------------------------------------------
+class ShiftHandoverCreate(BaseModel):
+    shift_id: int
+    attendant_name: str = "Duty Attendant"
+    shift_name: str = "First"
+    date: Optional[date] = None
+    closing_photo_key: Optional[str] = None
+    handover_pdf_key: Optional[str] = None
+    object_key: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.post(
+    "/shifts/handover",
+    summary="Submit Shift Handover and Cashier Sign-Off",
+    dependencies=[Depends(verify_idempotency_key)],
+)
+@router.post(
+    "/shifts/{shift_id}/handover",
+    summary="Submit Shift Handover for Specific Shift",
+    dependencies=[Depends(verify_idempotency_key)],
+)
+async def submit_shift_handover(
+    data: ShiftHandoverCreate,
+    shift_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    target_shift_id = shift_id or data.shift_id
+    # Pessimistic row locking on target Shift (Hierarchy: Shift)
+    shift_stmt = select(Shift).where(Shift.id == target_shift_id).with_for_update()
+    shift = (await db.execute(shift_stmt)).scalar_one_or_none()
+    if not shift:
+        raise HTTPException(status_code=404, detail="Target shift not found")
+
+    handover = ShiftHandover(
+        shift_id=shift.id,
+        attendant_name=data.attendant_name,
+        shift_name=data.shift_name or shift.shift_name,
+        date=data.date or shift.date or today_ist(),
+        closing_photo_key=data.closing_photo_key,
+        handover_pdf_key=data.handover_pdf_key or data.object_key,
+        object_key=data.object_key or data.handover_pdf_key,
+        notes=data.notes,
+    )
+    db.add(handover)
+    if data.object_key or data.handover_pdf_key:
+        shift.handover_object_key = data.object_key or data.handover_pdf_key
+    await db.commit()
+    await db.refresh(handover)
+
+    return {
+        "status": "success",
+        "message": f"Shift handover record #{handover.id} recorded for Shift #{shift.so_number}",
+        "handover_id": handover.id,
+        "shift_id": shift.id,
+        "attendant_name": handover.attendant_name,
+        "created_at": handover.created_at.isoformat() if handover.created_at else None,
+    }
+
+
+@router.get("/shifts/{shift_id}/handover", summary="Get Shift Handover Record")
+async def get_shift_handover(shift_id: int, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(ShiftHandover).where(ShiftHandover.shift_id == shift_id).order_by(desc(ShiftHandover.id)).limit(1)
+    )
+    record = res.scalar_one_or_none()
+    if not record:
+        raise HTTPException(status_code=404, detail="No shift handover record found for this shift")
+    return {
+        "id": record.id,
+        "shift_id": record.shift_id,
+        "attendant_name": record.attendant_name,
+        "shift_name": record.shift_name,
+        "date": str(record.date),
+        "closing_photo_key": record.closing_photo_key,
+        "handover_pdf_key": record.handover_pdf_key,
+        "object_key": record.object_key,
+        "notes": record.notes,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+    }
+
 

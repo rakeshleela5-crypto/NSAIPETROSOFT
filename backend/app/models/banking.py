@@ -163,6 +163,8 @@ class FleetCustomer(SQLModel, table=True):
     version_id: int = Field(default=1, nullable=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    __mapper_args__ = {"version_id_col": "version_id"}
+
 
 class NozzleUPITransaction(SQLModel, table=True):
     """Dynamic UPI QR collections per Nozzle / Attendant Shift"""

@@ -58,6 +58,8 @@ class RateHistory(Base):
         DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
 
+    __mapper_args__ = {"version_id_col": version_id}
+
     product = relationship("FuelProduct", back_populates="rates")
 
 
@@ -134,6 +136,8 @@ class Customer(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
+
+    __mapper_args__ = {"version_id_col": version_id}
 
     vehicles = relationship("Vehicle", back_populates="customer", cascade="all, delete-orphan")
     credit_sales = relationship("CreditSale", back_populates="customer")
@@ -347,6 +351,8 @@ class TankDipEntry(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
+
+    __mapper_args__ = {"version_id_col": version_id}
 
     tank = relationship("Tank", back_populates="dip_entries")
 
@@ -666,6 +672,8 @@ class TankDipLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
+
+    __mapper_args__ = {"version_id_col": version_id}
 
     tank = relationship("Tank")
     shift = relationship("Shift")

@@ -12,18 +12,32 @@ export const API_BASE_URL = sanitizedUrl
 /**
  * Executes a fetch request with a strict AbortController timeout (default 2500ms).
  * Prevents UI preloader deadlocks on Cloudflare Pages when the Railway backend is asleep/down.
+ * Automatically attaches an X-Idempotency-Key header with crypto.randomUUID() on all state-mutating requests (POST, PUT, PATCH).
  */
 export async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
   timeoutMs: number = 2500
 ): Promise<Response> {
+  const method = (options.method || 'GET').toUpperCase();
+  const headers = new Headers(options.headers || {});
+
+  // Automatically attach X-Idempotency-Key on state-mutating requests (POST, PUT, PATCH)
+  if (['POST', 'PUT', 'PATCH'].includes(method) && !headers.has('X-Idempotency-Key')) {
+    const idempotencyKey =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : 'idem-' + Math.random().toString(36).substring(2, 10) + '-' + Date.now();
+    headers.set('X-Idempotency-Key', idempotencyKey);
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       credentials: 'include',
       ...options,
+      headers,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);

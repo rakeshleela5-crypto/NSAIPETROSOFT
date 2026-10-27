@@ -69,6 +69,10 @@ app.add_middleware(
 from app.core.security_decentro import DecentroWebhookSignatureMiddleware
 app.add_middleware(DecentroWebhookSignatureMiddleware)
 
+# Financial & Concurrency Idempotency Middleware
+from app.core.idempotency import IdempotencyMiddleware, IdempotencyCachedResponse
+app.add_middleware(IdempotencyMiddleware)
+
 # Direct root & health endpoints (convenient for Railway health checks)
 @app.get("/", tags=["Root"])
 async def root():
@@ -80,12 +84,38 @@ async def root():
     }
 
 
+from starlette.requests import Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm.exc import StaleDataError
+
+@app.exception_handler(IdempotencyCachedResponse)
+async def idempotency_cached_response_handler(request: Request, exc: IdempotencyCachedResponse):
+    """Replays exact status and cached body for duplicate requests with completed idempotency keys."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.response_body,
+        headers={"X-Cache-Lookup": "HIT", "X-Idempotent-Replay": "true"},
+    )
+
+
+@app.exception_handler(StaleDataError)
+async def stale_data_error_handler(request: Request, exc: StaleDataError):
+    """Returns HTTP 409 Conflict when optimistic locking version_id detects concurrent modifications."""
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Conflict: Record has been modified by another manager or concurrent transaction. Please refresh the page and retry.",
+            "error": "STALE_DATA_ERROR",
+            "path": request.url.path,
+        },
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc: Exception):
     import traceback
     err_tb = traceback.format_exc()
     print(f"ERROR on {request.method} {request.url.path}: {exc}\n{err_tb}")
-    from fastapi.responses import JSONResponse
     detail_msg = "An internal server error occurred." if settings.ENVIRONMENT == "production" else str(exc)
     return JSONResponse(
         status_code=500,
