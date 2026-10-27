@@ -40,6 +40,8 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
   const [formDeadStock, setFormDeadStock] = useState<number>(500);
   const [formCurrentStock, setFormCurrentStock] = useState<number>(10000);
   const [formConnectedNozzles, setFormConnectedNozzles] = useState<string>('N5, N6');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Live Strapping Chart Calibration State
   const [selectedChartTankId, setSelectedChartTankId] = useState<number>(tanks[0]?.id || 1);
@@ -156,9 +158,33 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
 
   const handleSaveTank = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim()) return;
+    if (!formName.trim()) {
+      if (showToast) showToast('❌ Tank name is required');
+      return;
+    }
+    setIsSubmitting(true);
+    setSubmitError(null);
 
     try {
+      if (navigator.onLine) {
+        if (editTankId) {
+          await updateTankApi(editTankId, {
+            tank_name: formName.trim(),
+            product_code: formCode,
+            capacity_liters: formCapacity,
+            current_stock: formCurrentStock,
+          });
+        } else {
+          await createTankApi({
+            tank_name: formName.trim(),
+            product_code: formCode,
+            capacity_liters: formCapacity,
+            current_stock: formCurrentStock,
+          });
+        }
+      }
+
+      // Mutate local store ONLY after confirmed in PostgreSQL
       erpStore.saveTank({
         id: editTankId || undefined,
         name: formName.trim(),
@@ -175,32 +201,14 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
           .filter(Boolean),
       });
 
-      // Synchronize to PostgreSQL Backend
-      try {
-        if (editTankId) {
-          await updateTankApi(editTankId, {
-            tank_name: formName.trim(),
-            product_code: formCode,
-            capacity_liters: formCapacity,
-            current_stock: formCurrentStock,
-          });
-        } else {
-          await createTankApi({
-            tank_name: formName.trim(),
-            product_code: formCode,
-            capacity_liters: formCapacity,
-            current_stock: formCurrentStock,
-          });
-        }
-      } catch (apiErr) {
-        console.warn('Backend tank sync deferred/offline:', apiErr);
-      }
-
-      if (showToast) showToast(`✔ Tank "${formName}" saved successfully to Database & Store!`);
+      if (showToast) showToast(`✔ Tank "${formName}" committed to PostgreSQL database successfully!`);
       setIsEditing(false);
       await loadAllErpData();
     } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+      setSubmitError(err.message || 'Failed to save tank to database');
+      if (showToast) showToast(`❌ Error saving tank: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -353,6 +361,11 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
               </div>
 
               <form onSubmit={handleSaveTank}>
+                {submitError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#991b1b', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', marginBottom: '10px' }}>
+                    ⚠️ <b>PostgreSQL Save Error:</b> {submitError}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                   <div className="win-form-row">
                     <span className="win-label" style={{ width: '80px' }}>Tank Name</span>
@@ -387,8 +400,8 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
 
                 <div className="win-actions-row" style={{ marginTop: '10px' }}>
                   <button type="button" className="win-btn-classic" onClick={() => setIsEditing(false)}>Cancel</button>
-                  <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
-                    💾 Save Tank Configuration
+                  <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
+                    {isSubmitting ? 'Saving...' : '💾 Save Tank Configuration'}
                   </button>
                 </div>
               </form>

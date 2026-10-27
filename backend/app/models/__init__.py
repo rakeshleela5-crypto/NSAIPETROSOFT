@@ -24,6 +24,11 @@ from app.models.petrol_pump import (
     ShiftHandover,
     TankDipLog,
     FleetInvoice,
+    ForecourtControllerLog,
+    ShiftCashDrop,
+    EmployeeAttendance,
+    StatutoryComplianceLicense,
+    LubeInwardEntry,
 )
 from app.models.decentro import (
     CustomerVirtualAccount,
@@ -79,5 +84,14 @@ __all__ = [
     "SupplierPayoutOrder",
     "GstinVerificationRecord",
     "DecentroWebhookAudit",
+    "ShiftHandover",
+    "TankDipLog",
+    "FleetInvoice",
+    "ForecourtControllerLog",
+    "ShiftCashDrop",
+    "EmployeeAttendance",
+    "StatutoryComplianceLicense",
+    "LubeInwardEntry",
 ]
+
 

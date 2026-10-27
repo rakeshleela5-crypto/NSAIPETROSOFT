@@ -17,7 +17,8 @@ export interface QueuedOfflineRecord {
     | 'CONTRA_TRANSFER'
     | 'PURCHASE_DECANTING'
     | 'SHIFT_SETTLEMENT'
-    | 'CARD_SETTLEMENT';
+    | 'CARD_SETTLEMENT'
+    | 'RETAIL_CASH_BILL';
   payload: any;
   created_at: string;
   retry_count: number;
@@ -187,6 +188,8 @@ export async function syncOfflineQueue(
         res = await client.saveShiftSettlement(payload);
       } else if (record.type === 'CARD_SETTLEMENT') {
         res = await client.createCardSettlement(payload);
+      } else if (record.type === 'RETAIL_CASH_BILL') {
+        res = await client.saveCashBillApi(payload);
       }
 
       removeOfflineRecord(record.id);

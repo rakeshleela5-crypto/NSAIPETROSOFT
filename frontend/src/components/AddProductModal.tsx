@@ -26,6 +26,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [salePrice, setSalePrice] = useState<number>(360.0);
   const [openingStock, setOpeningStock] = useState<number>(24);
   const [reorderLevel, setReorderLevel] = useState<number>(10);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -36,6 +38,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       return;
     }
 
+    setIsSubmitting(true);
+    setSubmitError(null);
     try {
       await saveLubeProductApi({
         product_code: productCode.trim().toUpperCase(),
@@ -67,7 +71,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       await loadAllErpData();
       onClose();
     } catch (err: any) {
-      showToast(`❌ Database Error saving product: ${err.message || 'Server rejected product'}`);
+      const msg = err.message || 'Server rejected product';
+      setSubmitError(msg);
+      showToast(`❌ Database Error saving product: ${msg}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -83,6 +91,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         </div>
 
         <div className="win-dialog-body">
+          {submitError && (
+            <div style={{ background: '#f8d7da', color: '#721c24', padding: '6px 10px', marginBottom: '8px', border: '1px solid #f5c6cb', fontSize: '11px', fontWeight: 600 }}>
+              ❌ Error: {submitError}
+            </div>
+          )}
           <form onSubmit={handleSaveProduct}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div className="win-form-row">
@@ -230,9 +243,9 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
             <div className="win-actions-row" style={{ marginTop: '16px' }}>
               <button type="button" className="win-btn-classic" onClick={onClose}>Cancel</button>
-              <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
+              <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
                 <span>💾</span>
-                <span>Save Product to Master</span>
+                <span>{isSubmitting ? 'Saving to DB...' : 'Save Product to Master'}</span>
               </button>
             </div>
           </form>

@@ -1393,13 +1393,13 @@ export default function App() {
     const prodName = ratesList.find((p) => p.id === rateProduct)?.name || 'Fuel';
     requestManagerAuthorization(`Change ${prodName} Retail Rate to ₹${rateValue.toFixed(2)}`, async () => {
       try {
-        erpStore.updateFuelRate(rateProduct, rateValue);
         await updateRate(rateProduct, rateValue);
-        showToast(`✔ ${prodName} rate updated successfully to ₹${rateValue.toFixed(2)}!`);
+        erpStore.updateFuelRate(rateProduct, rateValue);
+        showToast(`✔ ${prodName} rate updated successfully to ₹${rateValue.toFixed(2)} in PostgreSQL!`);
         openRateMaster();
         await loadAllErpData();
       } catch (err: any) {
-        showToast(err.message || 'Error updating rate');
+        showToast(`❌ Database Error updating rate: ${err.message || 'Operation failed'}`);
       }
     });
   };
@@ -1655,15 +1655,6 @@ export default function App() {
       }
     }
     requestManagerAuthorization(`Update Dispenser Meter Totalizers (${shiftName} Shift)`, async () => {
-      // Record into centralized ACID store immediately (Half-up exact math & Tank Book Stock deduction)
-      erpStore.recordShiftNozzleSales(salesReadings.map((r, i) => ({
-        nozzle_id: r.nozzle_id || (i + 1),
-        closing_meter: r.close,
-        testing_qty: r.test,
-        is_rollover: r.close < r.open && r.open > 0,
-        employee_name: r.emp,
-      })));
-
       const payload = {
         shift_name: shiftName,
         readings: salesReadings.map((r, i) => ({
@@ -1680,11 +1671,25 @@ export default function App() {
         if (!navigator.onLine) {
           enqueueOfflineRecord('SHIFT_METERS', payload);
           setOfflineQueueCount(getOfflineQueueCount());
+          erpStore.recordShiftNozzleSales(salesReadings.map((r, i) => ({
+            nozzle_id: r.nozzle_id || (i + 1),
+            closing_meter: r.close,
+            testing_qty: r.test,
+            is_rollover: r.close < r.open && r.open > 0,
+            employee_name: r.emp,
+          })));
           showToast(`💾 Offline Mode: Shift meter readings buffered locally. Will auto-sync.`);
           return;
         }
         await saveShiftMeters(payload);
-        showToast('✔ Shift meter readings saved and totalizers updated!');
+        erpStore.recordShiftNozzleSales(salesReadings.map((r, i) => ({
+          nozzle_id: r.nozzle_id || (i + 1),
+          closing_meter: r.close,
+          testing_qty: r.test,
+          is_rollover: r.close < r.open && r.open > 0,
+          employee_name: r.emp,
+        })));
+        showToast('✔ Shift meter readings saved and totalizers updated in PostgreSQL!');
         await loadAllErpData();
       } catch (err: any) {
         if (!navigator.onLine || err.message?.includes('Failed to fetch')) {
@@ -1707,17 +1712,20 @@ export default function App() {
       paid_to: expPaidTo,
     };
     try {
-      erpStore.recordExpense({
-        ...expPayload,
-        paid_from_account_id: 1,
-      });
-
       if (!navigator.onLine) {
         enqueueOfflineRecord('EXPENSE', expPayload);
         setOfflineQueueCount(getOfflineQueueCount());
+        erpStore.recordExpense({
+          ...expPayload,
+          paid_from_account_id: 1,
+        });
         showToast(`💾 Offline Forecourt: Shift expense of ₹${expAmount} saved to local queue.`);
       } else {
         await createExpense(expPayload);
+        erpStore.recordExpense({
+          ...expPayload,
+          paid_from_account_id: 1,
+        });
       }
 
       showToast(`✔ Shift Expense of ₹${expAmount} recorded to PostgreSQL! Cashier liability reduced in real time.`);
@@ -1758,13 +1766,14 @@ export default function App() {
       remarks: transferRemarks.trim() || 'Contra Transfer',
     };
     try {
-      erpStore.recordTransfer(transferPayload);
       if (!navigator.onLine) {
         enqueueOfflineRecord('CONTRA_TRANSFER', transferPayload);
         setOfflineQueueCount(getOfflineQueueCount());
+        erpStore.recordTransfer(transferPayload);
         showToast(`💾 Offline Forecourt: Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} buffered locally.`);
       } else {
         await createTransfer(transferPayload);
+        erpStore.recordTransfer(transferPayload);
       }
       showToast(`✔ Contra Transfer of ₹${transferAmt.toLocaleString('en-IN')} permanently committed to PostgreSQL!`);
       setTransferRemarks('');
@@ -1817,21 +1826,27 @@ export default function App() {
       closing_stock: dipCloseStock,
       observed_density: dipObservedDensity,
       observed_temp: dipObservedTemp,
+      water_dip_cm: 0,
     };
     try {
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('DIP_ENTRY', dipPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        erpStore.recordDip({
+          tank_id: dipTankId,
+          dip_cm: dipCloseCm,
+          water_dip_mm: 0,
+        });
+        showToast(`💾 Offline Forecourt: Tank #${dipTankId} dip recorded in local buffer.`);
+        return;
+      }
+      const res = await createTankDip(dipPayload);
       erpStore.recordDip({
         tank_id: dipTankId,
         dip_cm: dipCloseCm,
         water_dip_mm: 0,
       });
-      if (!navigator.onLine) {
-        enqueueOfflineRecord('DIP_ENTRY', dipPayload);
-        setOfflineQueueCount(getOfflineQueueCount());
-        showToast(`💾 Offline Forecourt: Tank #${dipTankId} dip recorded in local buffer.`);
-        return;
-      }
-      const res = await createTankDip(dipPayload);
-      showToast(`✔ Dip & ASTM 53B Density recorded! Variation: ${res.variation_liters} L (Tolerance: ${res.tolerance_limit} L)`);
+      showToast(`✔ Dip & ASTM 53B Density recorded to PostgreSQL! Variation: ${res.variation_liters} L (Tolerance: ${res.tolerance_limit} L)`);
       await loadAllErpData();
     } catch (err: any) {
       if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
@@ -1910,14 +1925,14 @@ export default function App() {
     e.preventDefault();
     if (!newBankName) return;
     try {
-      erpStore.saveBankAccount({
-        name: newBankName.toUpperCase(),
-        type: newBankType,
-        balance: newBankBalance,
-      });
       await createBankAccount({
         account_name: newBankName.toUpperCase(),
         account_type: newBankType,
+        balance: newBankBalance,
+      });
+      erpStore.saveBankAccount({
+        name: newBankName.toUpperCase(),
+        type: newBankType,
         balance: newBankBalance,
       });
       showToast(`✔ Bank Account "${newBankName.toUpperCase()}" saved to PostgreSQL!`);
@@ -1925,8 +1940,7 @@ export default function App() {
       setNewBankBalance(0);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`✔ Bank Account saved locally. Note: ${err.message || 'Database sync pending'}`);
-      await loadAllErpData();
+      showToast(`❌ Cannot save Bank Account: ${err.message || 'Database sync failed'}`);
     }
   };
 
@@ -1973,6 +1987,24 @@ export default function App() {
       amount: cardBatchTotal,
     };
     try {
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('CARD_SETTLEMENT', cardPayload);
+        setOfflineQueueCount(getOfflineQueueCount());
+        erpStore.recordCardSettlement(cardPayload);
+        const newEntry = {
+          machine: cardMachine,
+          batch: cardBatchNo,
+          slips: cardSlipsCount,
+          amount: cardBatchTotal,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'SETTLED',
+        };
+        setCardSettlements((prev) => [newEntry, ...prev]);
+        showToast(`💾 Offline Forecourt: EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} buffered locally.`);
+        return;
+      }
+
+      await createCardSettlement(cardPayload);
       erpStore.recordCardSettlement(cardPayload);
       const newEntry = {
         machine: cardMachine,
@@ -1983,16 +2015,7 @@ export default function App() {
         status: 'SETTLED',
       };
       setCardSettlements((prev) => [newEntry, ...prev]);
-
-      if (!navigator.onLine) {
-        enqueueOfflineRecord('CARD_SETTLEMENT', cardPayload);
-        setOfflineQueueCount(getOfflineQueueCount());
-        showToast(`💾 Offline Forecourt: EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} buffered locally.`);
-        return;
-      }
-
-      await createCardSettlement(cardPayload);
-      showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled!`);
+      showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} settled in PostgreSQL!`);
       await loadAllErpData();
     } catch (err: any) {
       if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
@@ -2000,7 +2023,7 @@ export default function App() {
         setOfflineQueueCount(getOfflineQueueCount());
         showToast(`💾 Offline Buffer: EDC Batch #${cardBatchNo} queued for auto-sync.`);
       } else {
-        showToast(`✔ EDC Batch #${cardBatchNo} for ₹${cardBatchTotal.toFixed(2)} recorded locally!`);
+        showToast(`❌ EDC Settlement Error: ${err.message || 'Database rejected settlement'}`);
       }
     }
   };
@@ -2024,27 +2047,28 @@ export default function App() {
   // Station Control Actions
   const handleCloseShift = () => {
     requestManagerAuthorization(`Close Shift ${shiftName} & Lock Dispensers`, async (pin) => {
-      setShiftStatus('CLOSED');
-      setDispenserLocked(true);
-      erpStore.hydrateFromBackend({
-        activeShift: {
-          so_number: `SO-${shiftNumber}`,
-          shift_name: shiftName,
-          status: 'CLOSED',
-          dispenser_locked: true,
-        },
-      });
       try {
         await closeShiftApi(currentShiftDatabaseId, pin || '1234');
-      } catch (cErr) {
-        console.warn('Backend shift close sync note:', cErr);
-      }
-      showToast(`✔ Shift ${shiftName} CLOSED. Dispenser meters locked!`);
-      try {
-        const res = await triggerCreateBackup();
-        showToast(`☁ Shift archive snapshot created: ${res.filename}`);
-      } catch (bErr) {
-        console.warn('Shift auto-backup note:', bErr);
+        setShiftStatus('CLOSED');
+        setDispenserLocked(true);
+        erpStore.hydrateFromBackend({
+          activeShift: {
+            so_number: `SO-${shiftNumber}`,
+            shift_name: shiftName,
+            status: 'CLOSED',
+            dispenser_locked: true,
+          },
+        });
+        showToast(`✔ Shift ${shiftName} CLOSED in PostgreSQL. Dispenser meters locked!`);
+        try {
+          const res = await triggerCreateBackup();
+          showToast(`☁ Shift archive snapshot created: ${res.filename}`);
+        } catch (bErr) {
+          console.warn('Shift auto-backup note:', bErr);
+        }
+        await loadAllErpData();
+      } catch (cErr: any) {
+        showToast(`❌ Cannot close shift: ${cErr.message || 'Server rejected close action'}`);
       }
     });
   };

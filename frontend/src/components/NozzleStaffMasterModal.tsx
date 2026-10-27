@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { NozzleMasterItem, TankMasterItem } from '../store/erpStore';
 import type { LubeProductItem } from '../models';
 import { erpStore } from '../store/erpStore';
@@ -11,6 +11,8 @@ import {
   createEmployeeApi,
   updateEmployeeApi,
   deleteEmployeeApi,
+  fetchAttendanceApi,
+  recordAttendanceApi,
 } from '../api/client';
 
 interface NozzleStaffMasterModalProps {
@@ -36,7 +38,9 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
   loadAllErpData,
   requestManagerAuthorization,
 }) => {
-  const [activeTab, setActiveTab] = useState<'nozzles' | 'staff' | 'lubes'>('nozzles');
+  const [activeTab, setActiveTab] = useState<'nozzles' | 'staff' | 'lubes' | 'attendance'>('nozzles');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Nozzle Form State
   const [editingNozzleId, setEditingNozzleId] = useState<number | null>(null);
@@ -65,6 +69,22 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
   const [lubeHsn, setLubeHsn] = useState<string>('2710');
   const [lubeGst, setLubeGst] = useState<number>(18);
 
+  // Attendance Form State
+  const [attendanceDate, setAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [attShift, setAttShift] = useState<string>('Day');
+  const [attEmployeeId, setAttEmployeeId] = useState<number>(employees[0]?.id || 1);
+  const [attStatus, setAttStatus] = useState<string>('PRESENT');
+  const [attRemarks, setAttRemarks] = useState<string>('');
+  const [attendanceList, setAttendanceList] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'attendance') {
+      fetchAttendanceApi({ attendance_date: attendanceDate })
+        .then((data) => setAttendanceList(data || []))
+        .catch(() => setAttendanceList([]));
+    }
+  }, [isOpen, activeTab, attendanceDate]);
+
   if (!isOpen) return null;
 
   const handleSaveNozzle = async (e: React.FormEvent) => {
@@ -72,9 +92,32 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     if (!nozName.trim()) return;
 
     const tank = tanks.find((t) => t.id === nozTankId) || tanks[0];
+    setIsSubmitting(true);
+    setSubmitError(null);
+
     try {
+      // 1. Direct Cloud PostgreSQL Persistence (Strict Fail-Closed)
+      let backendNozzleId = editingNozzleId;
+      if (editingNozzleId) {
+        await updateNozzleApi(editingNozzleId, {
+          nozzle_name: nozName.trim(),
+          machine_name: nozMachine.trim(),
+          tank_id: nozTankId,
+          current_meter: nozOpening,
+        });
+      } else {
+        const created = await createNozzleApi({
+          nozzle_name: nozName.trim(),
+          machine_name: nozMachine.trim(),
+          tank_id: nozTankId,
+          current_meter: nozOpening,
+        });
+        if (created?.id) backendNozzleId = created.id;
+      }
+
+      // 2. Only mutate store and clear form after PostgreSQL commit succeeds
       erpStore.saveNozzle({
-        id: editingNozzleId || undefined,
+        id: backendNozzleId || undefined,
         name: nozName.trim(),
         machine_name: nozMachine.trim(),
         product_name: tank ? tank.product : 'Motor Spirit',
@@ -84,33 +127,16 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
         rate: nozRate,
       });
 
-      // Synchronize with PostgreSQL Backend
-      try {
-        if (editingNozzleId) {
-          await updateNozzleApi(editingNozzleId, {
-            nozzle_name: nozName.trim(),
-            machine_name: nozMachine.trim(),
-            tank_id: nozTankId,
-            current_meter: nozOpening,
-          });
-        } else {
-          await createNozzleApi({
-            nozzle_name: nozName.trim(),
-            machine_name: nozMachine.trim(),
-            tank_id: nozTankId,
-            current_meter: nozOpening,
-          });
-        }
-      } catch (apiErr) {
-        console.warn('Backend nozzle sync deferred/offline:', apiErr);
-      }
-
-      if (showToast) showToast(`✔ Nozzle "${nozName}" saved to Database & Store!`);
+      if (showToast) showToast(`✔ Nozzle "${nozName}" saved to PostgreSQL!`);
       setEditingNozzleId(null);
       setNozName('');
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+      const msg = err.message || 'Database rejected nozzle configuration';
+      setSubmitError(msg);
+      if (showToast) showToast(`❌ Database Error: ${msg}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -119,7 +145,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
       try {
         await deleteNozzleApi(nozzleId, pin);
         erpStore.deleteNozzle(nozzleId);
-        if (showToast) showToast('✔ Nozzle deleted successfully!');
+        if (showToast) showToast('✔ Nozzle deleted successfully from PostgreSQL!');
         if (loadAllErpData) await loadAllErpData();
       } catch (err: any) {
         if (showToast) showToast(`❌ Cannot delete nozzle: ${err.message || 'Operation failed'}`);
@@ -138,43 +164,51 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     e.preventDefault();
     if (!staffName.trim()) return;
 
-    const newEmp = {
-      id: editingStaffId || Date.now(),
-      name: staffName.trim().toUpperCase(),
-      code: staffCode.trim().toUpperCase() || `EMP0${employees.length + 1}`,
-      mobile: staffMobile.trim(),
-    };
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    const empName = staffName.trim().toUpperCase();
+    const empCode = staffCode.trim().toUpperCase() || `EMP0${employees.length + 1}`;
+    const empPhone = staffMobile.trim();
 
     try {
-      erpStore.saveEmployee(newEmp);
-
-      // Synchronize with PostgreSQL Backend
-      try {
-        if (editingStaffId) {
-          await updateEmployeeApi(editingStaffId, {
-            name: newEmp.name,
-            code: newEmp.code,
-            phone: newEmp.mobile,
-          });
-        } else {
-          await createEmployeeApi({
-            name: newEmp.name,
-            code: newEmp.code,
-            phone: newEmp.mobile,
-          });
-        }
-      } catch (apiErr) {
-        console.warn('Backend employee sync deferred/offline:', apiErr);
+      // 1. Direct Cloud PostgreSQL Persistence (Strict Fail-Closed)
+      let backendStaffId = editingStaffId;
+      if (editingStaffId) {
+        await updateEmployeeApi(editingStaffId, {
+          name: empName,
+          code: empCode,
+          phone: empPhone,
+        });
+      } else {
+        const created = await createEmployeeApi({
+          name: empName,
+          code: empCode,
+          phone: empPhone,
+        });
+        if (created?.id) backendStaffId = created.id;
       }
 
-      if (showToast) showToast(`✔ Staff Member "${newEmp.name}" saved to Database & Store!`);
+      // 2. Only mutate store and clear form after PostgreSQL commit succeeds
+      erpStore.saveEmployee({
+        id: backendStaffId || Date.now(),
+        name: empName,
+        code: empCode,
+        mobile: empPhone,
+      });
+
+      if (showToast) showToast(`✔ Staff Member "${empName}" saved to PostgreSQL!`);
       setEditingStaffId(null);
       setStaffName('');
       setStaffCode('');
       setStaffMobile('');
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+      const msg = err.message || 'Database rejected staff member registration';
+      setSubmitError(msg);
+      if (showToast) showToast(`❌ Database Error: ${msg}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -184,7 +218,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
       try {
         await deleteEmployeeApi(empId, pin);
         erpStore.deleteEmployee(empId);
-        if (showToast) showToast(`✔ Staff member "${staffTitle}" removed!`);
+        if (showToast) showToast(`✔ Staff member "${staffTitle}" removed from PostgreSQL!`);
         if (loadAllErpData) await loadAllErpData();
       } catch (err: any) {
         if (showToast) showToast(`❌ Cannot remove staff member: ${err.message || 'Operation failed'}`);
@@ -203,49 +237,57 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     e.preventDefault();
     if (!lubeName.trim()) return;
 
-    try {
-      const payload = {
-        code: lubeCode.trim().toUpperCase() || `LUB-${Date.now().toString().slice(-4)}`,
-        name: lubeName.trim().toUpperCase(),
-        category: lubeCategory,
-        package_size: lubePkg,
-        mrp: lubeMrp,
-        cost_price: lubeCost,
-        sale_price: lubeSale,
-        current_stock_units: lubeStock,
-        reorder_level: lubeReorder,
-        hsn_code: lubeHsn.trim() || '2710',
-        gst_percent: lubeGst,
-      };
+    setIsSubmitting(true);
+    setSubmitError(null);
 
+    const payload = {
+      code: lubeCode.trim().toUpperCase() || `LUB-${Date.now().toString().slice(-4)}`,
+      name: lubeName.trim().toUpperCase(),
+      category: lubeCategory,
+      package_size: lubePkg,
+      mrp: lubeMrp,
+      cost_price: lubeCost,
+      sale_price: lubeSale,
+      current_stock_units: lubeStock,
+      reorder_level: lubeReorder,
+      hsn_code: lubeHsn.trim() || '2710',
+      gst_percent: lubeGst,
+    };
+
+    try {
+      // 1. Direct Cloud PostgreSQL Persistence (Strict Fail-Closed)
+      await saveLubeProductApi({
+        product_code: payload.code,
+        product_name: payload.name,
+        item_code: payload.code,
+        item_name: payload.name,
+        category: payload.category,
+        pack_size: payload.package_size,
+        mrp: payload.mrp,
+        cost_price: payload.cost_price,
+        sale_price: payload.sale_price,
+        stock_qty: payload.current_stock_units,
+        reorder_level: payload.reorder_level,
+        hsn_code: payload.hsn_code,
+        tax_rate: payload.gst_percent,
+        gst_percent: payload.gst_percent,
+      });
+
+      // 2. Only mutate store and clear form after PostgreSQL commit succeeds
       erpStore.saveLubeProduct(payload);
 
-      try {
-        await saveLubeProductApi({
-          item_code: payload.code,
-          item_name: payload.name,
-          category: payload.category,
-          pack_size: payload.package_size,
-          mrp: payload.mrp,
-          cost_price: payload.cost_price,
-          sale_price: payload.sale_price,
-          stock_qty: payload.current_stock_units,
-          reorder_level: payload.reorder_level,
-          hsn_code: payload.hsn_code,
-          tax_rate: payload.gst_percent,
-        });
-      } catch (apiErr) {
-        console.warn('Backend lube sync warning:', apiErr);
-      }
-
-      if (showToast) showToast(`✔ Lube product "${lubeName}" added!`);
+      if (showToast) showToast(`✔ Lube product "${payload.name}" saved to PostgreSQL!`);
       setLubeName('');
       setLubeCode('');
       setLubeHsn('2710');
       setLubeGst(18);
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+      const msg = err.message || 'Database rejected lube product';
+      setSubmitError(msg);
+      if (showToast) showToast(`❌ Database Error: ${msg}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -254,7 +296,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
       try {
         await deleteLubeProductApi(prodId, pin);
         erpStore.deleteLubeProduct(prodId);
-        if (showToast) showToast(`✔ Product "${prodName}" deleted.`);
+        if (showToast) showToast(`✔ Product "${prodName}" deleted from PostgreSQL.`);
         if (loadAllErpData) await loadAllErpData();
       } catch (err: any) {
         if (showToast) showToast(`❌ Cannot delete product: ${err.message || 'Operation failed'}`);
@@ -269,13 +311,38 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     }
   };
 
+  const handleSaveAttendance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await recordAttendanceApi({
+        employee_id: attEmployeeId,
+        attendance_date: attendanceDate,
+        shift_name: attShift,
+        status: attStatus,
+        remarks: attRemarks.trim() || undefined,
+      });
+      if (showToast) showToast(`✔ Attendance marked as ${attStatus} in PostgreSQL!`);
+      const data = await fetchAttendanceApi({ attendance_date: attendanceDate });
+      setAttendanceList(data || []);
+      setAttRemarks('');
+    } catch (err: any) {
+      const msg = err.message || 'Failed to record attendance';
+      setSubmitError(msg);
+      if (showToast) showToast(`❌ Attendance Error: ${msg}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="win-modal-overlay">
       <div className="win-form-dialog" style={{ width: '920px', maxHeight: '92vh', overflowY: 'auto' }}>
         <div className="win-dialog-titlebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span>🚰</span>
-            <span>Nozzles, DSM Attendants & Non-Fuel Inventory Master</span>
+            <span>Nozzles, DSM Attendants & Non-Fuel Inventory Master (PostgreSQL-Backed)</span>
           </div>
           <button className="win-btn" onClick={onClose}>✕</button>
         </div>
@@ -285,25 +352,38 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
           <button
             type="button"
             className={`win-tab-btn ${activeTab === 'nozzles' ? 'active' : ''}`}
-            onClick={() => setActiveTab('nozzles')}
+            onClick={() => { setActiveTab('nozzles'); setSubmitError(null); }}
           >
             🚰 Nozzles & Dispensers ({nozzles.length})
           </button>
           <button
             type="button"
             className={`win-tab-btn ${activeTab === 'staff' ? 'active' : ''}`}
-            onClick={() => setActiveTab('staff')}
+            onClick={() => { setActiveTab('staff'); setSubmitError(null); }}
           >
             👨‍💼 DSM Staff Attendants ({employees.length})
           </button>
           <button
             type="button"
             className={`win-tab-btn ${activeTab === 'lubes' ? 'active' : ''}`}
-            onClick={() => setActiveTab('lubes')}
+            onClick={() => { setActiveTab('lubes'); setSubmitError(null); }}
           >
             🛢️ Lube & Packed Products ({products.length})
           </button>
+          <button
+            type="button"
+            className={`win-tab-btn ${activeTab === 'attendance' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('attendance'); setSubmitError(null); }}
+          >
+            📅 DSM Attendance ({attendanceList.length})
+          </button>
         </div>
+
+        {submitError && (
+          <div style={{ background: '#f8d7da', color: '#721c24', padding: '8px 12px', borderBottom: '1px solid #f5c6cb', fontSize: '11px', fontWeight: 600 }}>
+            ❌ Error: {submitError}
+          </div>
+        )}
 
         <div className="win-dialog-body">
           {/* TAB 1: NOZZLES */}
@@ -399,9 +479,9 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                       {editingNozzleId && (
                         <button type="button" className="win-btn-classic" onClick={() => { setEditingNozzleId(null); setNozName(''); }}>Cancel</button>
                       )}
-                      <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
+                      <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
                         <span>💾</span>
-                        <span>Save Nozzle</span>
+                        <span>{isSubmitting ? 'Saving to DB...' : 'Save Nozzle'}</span>
                       </button>
                     </div>
                   </form>
@@ -451,7 +531,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                                 type="button"
                                 className="win-btn-classic"
                                 style={{ fontSize: '10px', height: '19px', padding: '0 4px', color: '#c0392b' }}
-                                onClick={() => handleDeleteStaff(emp.id)}
+                                onClick={() => handleDeleteStaff(emp.id, emp.name)}
                               >
                                 🗑️
                               </button>
@@ -466,7 +546,7 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
 
               <div style={{ background: '#f5f5f5', border: '1px solid #7f9db9', padding: '12px', borderRadius: '4px' }}>
                 <div style={{ fontWeight: 700, fontSize: '12.5px', marginBottom: '8px', color: '#0a246a' }}>
-                  ➕ Enroll DSM Staff Attendant
+                  {editingStaffId ? '✏️ Edit DSM Attendant' : '➕ Enroll DSM Staff Attendant'}
                 </div>
                 <form onSubmit={handleSaveStaff}>
                   <div className="win-form-row">
@@ -482,9 +562,12 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                     <input type="text" className="win-input" placeholder="9879012345" value={staffMobile} onChange={(e) => setStaffMobile(e.target.value)} style={{ flex: 1 }} />
                   </div>
                   <div className="win-actions-row" style={{ marginTop: '12px' }}>
-                    <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
+                    {editingStaffId && (
+                      <button type="button" className="win-btn-classic" onClick={() => { setEditingStaffId(null); setStaffName(''); setStaffCode(''); setStaffMobile(''); }}>Cancel</button>
+                    )}
+                    <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
                       <span>💾</span>
-                      <span>Register Staff Attendant</span>
+                      <span>{isSubmitting ? 'Saving...' : 'Register Staff Attendant'}</span>
                     </button>
                   </div>
                 </form>
@@ -603,9 +686,106 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
                     <input type="number" className="win-input" value={lubeReorder} onChange={(e) => setLubeReorder(parseInt(e.target.value, 10) || 0)} style={{ flex: 1 }} />
                   </div>
                   <div className="win-actions-row" style={{ marginTop: '12px' }}>
-                    <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
+                    <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
                       <span>💾</span>
-                      <span>Save Product</span>
+                      <span>{isSubmitting ? 'Saving...' : 'Save Product'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: DSM ATTENDANCE */}
+          {activeTab === 'attendance' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '12px' }}>
+              <div>
+                <div style={{ border: '1px solid #7f9db9', background: '#fff', maxHeight: '380px', overflowY: 'auto' }}>
+                  <table className="win-datagrid">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>DSM Name</th>
+                        <th>Shift</th>
+                        <th>Status</th>
+                        <th>Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attendanceList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: '12px' }}>
+                            No attendance records found for {attendanceDate}.
+                          </td>
+                        </tr>
+                      ) : (
+                        attendanceList.map((att: any, idx: number) => {
+                          const emp = employees.find((e) => e.id === att.employee_id);
+                          return (
+                            <tr key={idx}>
+                              <td>{att.attendance_date}</td>
+                              <td style={{ fontWeight: 700, color: '#0a246a' }}>{emp?.name || `Employee #${att.employee_id}`}</td>
+                              <td>{att.shift_name}</td>
+                              <td>
+                                <span style={{
+                                  fontWeight: 700,
+                                  color: att.status === 'PRESENT' ? '#27ae60' : att.status === 'ABSENT' ? '#c0392b' : '#d35400'
+                                }}>
+                                  {att.status}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: '11px', color: '#666' }}>{att.remarks || '-'}</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ background: '#f5f5f5', border: '1px solid #7f9db9', padding: '12px', borderRadius: '4px' }}>
+                <div style={{ fontWeight: 700, fontSize: '12.5px', marginBottom: '8px', color: '#0a246a' }}>
+                  📅 Mark DSM Forecourt Attendance
+                </div>
+                <form onSubmit={handleSaveAttendance}>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ width: '90px' }}>Date</span>
+                    <input type="date" className="win-input" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} style={{ flex: 1 }} />
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ width: '90px' }}>DSM Staff</span>
+                    <select className="win-select" value={attEmployeeId} onChange={(e) => setAttEmployeeId(Number(e.target.value))} style={{ flex: 1 }}>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>{emp.name} ({emp.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ width: '90px' }}>Shift</span>
+                    <select className="win-select" value={attShift} onChange={(e) => setAttShift(e.target.value)} style={{ flex: 1 }}>
+                      <option value="First">First Shift</option>
+                      <option value="Second">Second Shift</option>
+                      <option value="General">General / Day</option>
+                    </select>
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ width: '90px' }}>Status</span>
+                    <select className="win-select" value={attStatus} onChange={(e) => setAttStatus(e.target.value)} style={{ flex: 1, fontWeight: 700 }}>
+                      <option value="PRESENT">PRESENT</option>
+                      <option value="HALF_DAY">HALF DAY</option>
+                      <option value="LEAVE">LEAVE / CASUAL</option>
+                      <option value="ABSENT">ABSENT</option>
+                    </select>
+                  </div>
+                  <div className="win-form-row">
+                    <span className="win-label" style={{ width: '90px' }}>Remarks</span>
+                    <input type="text" className="win-input" placeholder="On duty / Dispenser 2" value={attRemarks} onChange={(e) => setAttRemarks(e.target.value)} style={{ flex: 1 }} />
+                  </div>
+                  <div className="win-actions-row" style={{ marginTop: '12px' }}>
+                    <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
+                      <span>💾</span>
+                      <span>{isSubmitting ? 'Recording...' : 'Mark Attendance in PostgreSQL'}</span>
                     </button>
                   </div>
                 </form>

@@ -463,6 +463,7 @@ export interface DipRegisterItem {
   receipt: number;
   closing_dip: number;
   closing_stock: number;
+  water_dip_cm?: number;
   dip_sale: number;
   meter_sale: number;
   variation: number;
@@ -482,6 +483,7 @@ export async function createTankDip(data: {
   receipt_liters: number;
   closing_dip: number;
   closing_stock: number;
+  water_dip_cm?: number;
   notes?: string;
   observed_density?: number;
   observed_temp?: number;
@@ -491,7 +493,10 @@ export async function createTankDip(data: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Create dip failed: ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Create dip failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -1929,6 +1934,411 @@ export async function deleteExpenseApi(expenseId: number): Promise<any> {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Delete expense failed: ${res.status}`);
   }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Forecourt Automation Dispenser Controller API
+// ---------------------------------------------------------------------------
+export interface ForecourtLogItem {
+  id: number;
+  tx_id: string;
+  event_time: string;
+  pump_id: number;
+  nozzle_name: string;
+  product_name: string;
+  product_code: string;
+  liters: number;
+  rate: number;
+  amount: number;
+  protocol: string;
+  controller_ip: string;
+  status: string;
+  created_at: string;
+}
+
+export async function fetchForecourtLogsApi(status?: string, limit: number = 50): Promise<ForecourtLogItem[]> {
+  const q = status ? `?status=${encodeURIComponent(status)}&limit=${limit}` : `?limit=${limit}`;
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/automation/logs${q}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Forecourt logs failed: ${res.status}`);
+  return res.json();
+}
+
+export async function simulateForecourtDropApi(data: {
+  pump_id: number;
+  nozzle_name: string;
+  product_name: string;
+  product_code?: string;
+  liters: number;
+  rate: number;
+  protocol?: string;
+  controller_ip?: string;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/automation/simulate-drop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Simulate dispenser drop failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function pushForecourtLogToPosApi(data: {
+  log_id: number;
+  payment_mode?: string;
+  customer_name?: string;
+  vehicle_no?: string;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/automation/push-to-pos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Push to POS failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Shift Cash Safe Drops API
+// ---------------------------------------------------------------------------
+export interface ShiftCashDropItem {
+  id: number;
+  shift_id?: number;
+  employee_id?: number;
+  employee_name: string;
+  drop_time: string;
+  amount: number;
+  vault_account_id: number;
+  vault_name: string;
+  witness_name?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export async function fetchCashDropsApi(shiftId?: number): Promise<ShiftCashDropItem[]> {
+  const q = shiftId ? `?shift_id=${shiftId}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/cash-drops${q}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Cash drops API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function recordCashDropApi(data: {
+  shift_id?: number;
+  employee_id?: number;
+  amount: number;
+  vault_account_id?: number;
+  witness_name?: string;
+  notes?: string;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/cash-drops`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Safe drop failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteCashDropApi(dropId: number, managerPin?: string): Promise<any> {
+  const q = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/cash-drops/${dropId}${q}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Void safe drop failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// DSM Employee Attendance & Cash Float API
+// ---------------------------------------------------------------------------
+export interface EmployeeAttendanceItem {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  shift_id?: number;
+  date: string;
+  status: string;
+  in_time?: string;
+  out_time?: string;
+  opening_cash_float: number;
+  remarks?: string;
+  created_at: string;
+}
+
+export async function fetchAttendanceApi(
+  shiftIdOrOptions?: number | { shift_id?: number; attendance_date?: string; target_date?: string },
+  dateStr?: string
+): Promise<EmployeeAttendanceItem[]> {
+  const params = new URLSearchParams();
+  if (typeof shiftIdOrOptions === 'object' && shiftIdOrOptions !== null) {
+    if (shiftIdOrOptions.shift_id) params.append('shift_id', String(shiftIdOrOptions.shift_id));
+    const d = shiftIdOrOptions.target_date || shiftIdOrOptions.attendance_date;
+    if (d) params.append('target_date', d);
+  } else {
+    if (shiftIdOrOptions) params.append('shift_id', String(shiftIdOrOptions));
+    if (dateStr) params.append('target_date', dateStr);
+  }
+  const q = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/attendance${q}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Attendance API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function recordAttendanceApi(data: {
+  employee_id: number;
+  shift_id?: number;
+  date?: string;
+  attendance_date?: string;
+  shift_name?: string;
+  status?: string;
+  in_time?: string;
+  out_time?: string;
+  opening_cash_float?: number;
+  remarks?: string;
+}): Promise<any> {
+  const payload = {
+    employee_id: data.employee_id,
+    shift_id: data.shift_id,
+    date: data.date || data.attendance_date,
+    status: data.status,
+    in_time: data.in_time,
+    out_time: data.out_time,
+    opening_cash_float: data.opening_cash_float,
+    remarks: data.remarks,
+  };
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/employees/attendance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Record attendance failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Statutory Compliance Licenses API
+// ---------------------------------------------------------------------------
+export interface StatutoryLicenseItem {
+  id: number;
+  license_name: string;
+  license_number: string;
+  issuing_authority: string;
+  issue_date: string;
+  expiry_date: string;
+  reminder_days_before: number;
+  days_remaining: number;
+  document_key?: string;
+  status: string;
+  remarks?: string;
+  created_at: string;
+}
+
+export async function fetchStatutoryLicensesApi(): Promise<StatutoryLicenseItem[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/compliance/licenses`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Compliance licenses API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createStatutoryLicenseApi(data: {
+  license_type?: string;
+  license_name: string;
+  license_number: string;
+  issuing_authority?: string;
+  issue_date: string;
+  expiry_date: string;
+  reminder_days_before?: number;
+  alert_days_before?: number;
+  document_key?: string;
+  remarks?: string;
+}): Promise<any> {
+  const payload = {
+    license_name: data.license_name,
+    license_number: data.license_number,
+    issuing_authority: data.issuing_authority,
+    issue_date: data.issue_date,
+    expiry_date: data.expiry_date,
+    reminder_days_before: data.reminder_days_before ?? data.alert_days_before ?? 30,
+    document_key: data.document_key,
+    remarks: data.remarks,
+  };
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/compliance/licenses`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Create compliance license failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateStatutoryLicenseApi(licenseId: number, data: Partial<StatutoryLicenseItem>): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/compliance/licenses/${licenseId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Update compliance license failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteStatutoryLicenseApi(licenseId: number, managerPin?: string): Promise<any> {
+  const q = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/compliance/licenses/${licenseId}${q}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Delete compliance license failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Packaged Lube Stock Inward API
+// ---------------------------------------------------------------------------
+export interface LubeInwardItem {
+  id: number;
+  invoice_no: string;
+  date: string;
+  supplier_name: string;
+  lube_product_id: number;
+  product_name: string;
+  category?: string;
+  package_size?: string;
+  qty_units: number;
+  cost_price: number;
+  total_amount: number;
+  batch_no?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export async function fetchLubeInwardApi(limit: number = 50): Promise<LubeInwardItem[]> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes/inward?limit=${limit}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Lube inward API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function recordLubeInwardApi(data: {
+  invoice_no?: string;
+  invoice_number?: string;
+  date?: string;
+  invoice_date?: string;
+  supplier_name?: string;
+  lube_product_id: number;
+  qty_units?: number;
+  qty_received?: number;
+  cost_price?: number;
+  unit_cost?: number;
+  batch_no?: string;
+  notes?: string;
+  remarks?: string;
+}): Promise<any> {
+  const payload = {
+    invoice_no: data.invoice_no || data.invoice_number || `INV-${Date.now().toString().slice(-4)}`,
+    date: data.date || data.invoice_date,
+    supplier_name: data.supplier_name,
+    lube_product_id: data.lube_product_id,
+    qty_units: data.qty_units ?? data.qty_received ?? 1,
+    cost_price: data.cost_price ?? data.unit_cost ?? 0,
+    batch_no: data.batch_no,
+    notes: data.notes || data.remarks,
+  };
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/lubes/inward`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Record lube inward failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Fleet & Credit Party B2B Invoices API
+// ---------------------------------------------------------------------------
+export interface FleetInvoiceItem {
+  id: number;
+  invoice_no: string;
+  customer_id: number;
+  customer_name: string;
+  period_start: string;
+  period_end: string;
+  total_amount: number;
+  total_liters: number;
+  gst_amount: number;
+  status: string;
+  pdf_object_key?: string;
+  created_at: string;
+}
+
+export async function fetchFleetInvoicesApi(customerId?: number): Promise<FleetInvoiceItem[]> {
+  const q = customerId ? `?customer_id=${customerId}` : '';
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/fleet-invoices${q}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Fleet invoices API failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createFleetInvoiceApi(data: {
+  customer_id: number;
+  period_start: string;
+  period_end: string;
+  credit_sale_ids?: number[];
+  invoice_no?: string;
+}): Promise<any> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/fleet-invoices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Generate fleet invoice failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getFleetInvoiceApi(invoiceId: number): Promise<FleetInvoiceItem> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/fleet-invoices/${invoiceId}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) throw new Error(`Get fleet invoice failed: ${res.status}`);
   return res.json();
 }
 

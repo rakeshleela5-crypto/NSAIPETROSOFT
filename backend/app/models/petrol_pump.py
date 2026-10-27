@@ -307,6 +307,7 @@ class TankDipEntry(Base):
     observed_density: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
     observed_temp: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
     density_15c: Mapped[Optional[float]] = mapped_column(DECIMAL_LITERS, nullable=True)
+    water_dip_cm: Mapped[float] = mapped_column(DECIMAL_LITERS, default=0.0)
     receipt_photo_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     object_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -645,4 +646,126 @@ class FleetInvoice(Base):
     )
 
     customer = relationship("Customer")
+
+
+class ForecourtControllerLog(Base):
+    """
+    Forecourt Automation & Dispenser Controller event log.
+    Real-time logging of nozzle pick up, meter dispensing, and POS integration.
+    """
+    __tablename__ = "forecourt_controller_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    tx_id: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    event_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    pump_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    nozzle_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    product_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    product_code: Mapped[str] = mapped_column(String(20), default="MS")
+    liters: Mapped[float] = mapped_column(DECIMAL_LITERS, nullable=False)
+    rate: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    protocol: Mapped[str] = mapped_column(String(100), default="DOMS PSS 5000 (Ethernet TCP/IP)")
+    controller_ip: Mapped[str] = mapped_column(String(100), default="192.168.1.150:4001")
+    status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING, SYNCED, VOIDED
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ShiftCashDrop(Base):
+    """
+    Shift Cash Drop (Safe Drop) ledger.
+    Attendants deposit cash into the station safe vault mid-shift to reduce robbery and pocket liability.
+    """
+    __tablename__ = "shift_cash_drops"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True, index=True)
+    employee_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("employees.id"), nullable=True, index=True)
+    drop_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    vault_account_id: Mapped[int] = mapped_column(Integer, ForeignKey("bank_accounts.id"), nullable=False, default=1)
+    witness_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    shift = relationship("Shift")
+    employee = relationship("Employee")
+    vault_account = relationship("BankAccount")
+
+
+class EmployeeAttendance(Base):
+    """
+    Driveway Salesmen (DSM) daily shift attendance and opening cash float.
+    """
+    __tablename__ = "employee_attendance"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, ForeignKey("employees.id"), nullable=False, index=True)
+    shift_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("shifts.id"), nullable=True, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    status: Mapped[str] = mapped_column(String(30), default="PRESENT")  # PRESENT, ABSENT, HALF_DAY, LEAVE
+    in_time: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    out_time: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    opening_cash_float: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
+    remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    employee = relationship("Employee")
+    shift = relationship("Shift")
+
+
+class StatutoryComplianceLicense(Base):
+    """
+    Station Statutory Compliance Licenses & Expiry Alerts:
+    PESO Explosives Form XIV, W&M Stamping, Pollution Control Board NOC, Fire Safety NOC, Factory License.
+    """
+    __tablename__ = "statutory_compliance_licenses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    license_name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    license_number: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    issuing_authority: Mapped[str] = mapped_column(String(150), default="PESO / Govt of Gujarat")
+    issue_date: Mapped[date] = mapped_column(Date, nullable=False)
+    expiry_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    reminder_days_before: Mapped[int] = mapped_column(Integer, default=30)
+    document_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="ACTIVE")  # ACTIVE, EXPIRING_SOON, EXPIRED
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class LubeInwardEntry(Base):
+    """
+    Packaged Lubricants, Greases & DEF Inward Stock Receiving Purchase Ledger.
+    """
+    __tablename__ = "lube_inward_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    invoice_no: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, default=today_ist)
+    supplier_name: Mapped[str] = mapped_column(String(150), default="BHARAT PETROLEUM CORP LTD (LUBE DIV)")
+    lube_product_id: Mapped[int] = mapped_column(Integer, ForeignKey("lube_products.id"), nullable=False, index=True)
+    qty_units: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost_price: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    total_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
+    batch_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    lube_product = relationship("LubeProduct")
+
 

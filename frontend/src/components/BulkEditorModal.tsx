@@ -33,6 +33,7 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
 
   const [hasChanges, setHasChanges] = useState<boolean>(false);
   const [isImporting, setIsImporting] = useState<boolean>(false);
+  const [isCommitting, setIsCommitting] = useState<boolean>(false);
   const csvFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -141,8 +142,9 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
   };
 
   const handleCommitAll = async () => {
+    setIsCommitting(true);
     try {
-      erpStore.bulkUpdateProducts(gridData);
+      const succeededItems: typeof gridData = [];
       let failedCount = 0;
       for (const item of gridData) {
         try {
@@ -154,20 +156,29 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
             stock_qty: item.current_stock_units,
             reorder_level: item.reorder_level,
           });
+          succeededItems.push(item);
         } catch {
           failedCount++;
         }
       }
+
+      if (succeededItems.length > 0) {
+        erpStore.bulkUpdateProducts(succeededItems);
+      }
+
       if (failedCount === 0) {
         if (showToast) showToast(`✔ Committed updates across ${gridData.length} products directly to PostgreSQL!`);
+        setHasChanges(false);
+        if (loadAllErpData) await loadAllErpData();
+        onClose();
       } else {
-        if (showToast) showToast(`⚠ Committed with ${failedCount} failures out of ${gridData.length} items. Check network.`);
+        if (showToast) showToast(`❌ Committed with ${failedCount} failures out of ${gridData.length} items. Remaining items left in editor.`);
+        if (loadAllErpData) await loadAllErpData();
       }
-      setHasChanges(false);
-      if (loadAllErpData) await loadAllErpData();
-      onClose();
     } catch (err: any) {
       if (showToast) showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setIsCommitting(false);
     }
   };
 
@@ -326,10 +337,11 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
               type="button"
               className="win-btn-classic win-btn-primary"
               onClick={handleCommitAll}
+              disabled={isCommitting || !hasChanges}
               style={{ fontWeight: 700 }}
             >
               <span>💾</span>
-              <span>Commit All Changes</span>
+              <span>{isCommitting ? 'Committing to PostgreSQL...' : 'Commit All Changes'}</span>
             </button>
           </div>
         </div>

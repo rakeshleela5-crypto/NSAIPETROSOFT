@@ -40,6 +40,8 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
 
   // Form state
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [editCustId, setEditCustId] = useState<number | null>(null);
   const [formName, setFormName] = useState<string>('');
   const [formMobile, setFormMobile] = useState<string>('');
@@ -240,6 +242,8 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
       }
     }
 
+    setIsSubmitting(true);
+    setSubmitError(null);
     try {
       // 1. Direct Cloud PostgreSQL Persistence (Strict Fail-Closed)
       let persistedCustId = editCustId;
@@ -297,7 +301,11 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
       setIsEditing(false);
       await loadAllErpData();
     } catch (err: any) {
-      showToast(`❌ Database Error: ${err.message || 'Failed to save customer to PostgreSQL'}`);
+      const msg = err.message || 'Failed to save customer to PostgreSQL';
+      setSubmitError(msg);
+      showToast(`❌ Database Error: ${msg}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -525,6 +533,12 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                 <button type="button" className="win-btn-classic" onClick={() => setIsEditing(false)}>✕ Cancel</button>
               </div>
 
+              {submitError && (
+                <div style={{ background: '#f8d7da', color: '#721c24', padding: '6px 10px', marginBottom: '8px', border: '1px solid #f5c6cb', fontSize: '11px', fontWeight: 600 }}>
+                  ❌ Error: {submitError}
+                </div>
+              )}
+
               <form onSubmit={handleSaveCustomer}>
                 <div className="win-form-row">
                   <span className="win-label" style={{ width: '100px' }}>Firm Name *</span>
@@ -619,9 +633,9 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
 
                 <div className="win-actions-row" style={{ marginTop: '12px' }}>
                   <button type="button" className="win-btn-classic" onClick={() => setIsEditing(false)}>Cancel</button>
-                  <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
+                  <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
                     <span>💾</span>
-                    <span>Save Customer</span>
+                    <span>{isSubmitting ? 'Saving to DB...' : 'Save Customer'}</span>
                   </button>
                 </div>
               </form>

@@ -50,6 +50,8 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
   const [purObservedTemp, setPurObservedTemp] = useState<number>(29.5);
   const [densityCheckResult, setDensityCheckResult] = useState<DensityVerificationResult | null>(null);
   const [isVerifyingDensity, setIsVerifyingDensity] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [purWoodenSeals, setPurWoodenSeals] = useState({ s1: 'W-901', s2: 'W-902', s3: 'W-903', s4: 'W-904' });
   const [purAlumSeals, setPurAlumSeals] = useState({ s1: 'AL-4011', s2: 'AL-4012', s3: 'AL-4013', s4: 'AL-4014' });
   const [purChargeCode, setPurChargeCode] = useState<string>('01');
@@ -132,23 +134,9 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
   };
 
   const executeAtomicSave = async (overridePin?: string) => {
-    // 1. Atomically record into local state store (updates tank stock, ullage, purchase ledger)
-    erpStore.recordPurchaseDecantation({
-      invoice_no: purInvoiceNo,
-      dealer_name: purDealer,
-      tanker_vehicle_no: purVehicleNo,
-      tank_id: selectedTankId,
-      product_id: purChargeCode === '01' ? 2 : 1,
-      qty_kl: purQtyKl,
-      rate_per_kl: purRateKl,
-      freight: purFreight,
-      sample_density: purSampleDensity,
-      observed_density: purObservedDensity,
-      observed_temp: purObservedTemp,
-      manager_override_pin: overridePin,
-    });
+    setIsSubmitting(true);
+    setSubmitError(null);
 
-    // 2. Also persist to PostgreSQL backend if reachable
     const purchasePayload = {
       invoice_no: purInvoiceNo,
       dealer_name: purDealer,
@@ -165,24 +153,58 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
       manager_override_pin: overridePin,
     };
 
-    if (!navigator.onLine) {
-      enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
-      showToast(`💾 Offline Forecourt: Inward decanting #${purInvoiceNo} buffered locally. Will auto-sync.`);
-    } else {
-      try {
+    try {
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
+        erpStore.recordPurchaseDecantation({
+          invoice_no: purInvoiceNo,
+          dealer_name: purDealer,
+          tanker_vehicle_no: purVehicleNo,
+          tank_id: selectedTankId,
+          product_id: purChargeCode === '01' ? 2 : 1,
+          qty_kl: purQtyKl,
+          rate_per_kl: purRateKl,
+          freight: purFreight,
+          sample_density: purSampleDensity,
+          observed_density: purObservedDensity,
+          observed_temp: purObservedTemp,
+          manager_override_pin: overridePin,
+        });
+        showToast(`💾 Offline Forecourt: Inward decanting #${purInvoiceNo} buffered locally. Will auto-sync.`);
+      } else {
+        // Persist to PostgreSQL backend via ACID transaction
         await createPurchase(purchasePayload);
-      } catch (e: any) {
-        if (!navigator.onLine || e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
-          enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
-          showToast(`💾 Offline Buffer: Decanting purchase queued for auto-sync.`);
-        } else {
-          console.warn('Backend purchase sync deferred or offline:', e);
-        }
-      }
-    }
 
-    showToast(`✔ Inward Decanting #${purInvoiceNo} Recorded! ${incomingLitres.toLocaleString('en-IN')} L added to ${targetTank?.name || 'Tank'}.`);
-    await loadAllErpData();
+        // Mutate store ONLY after PostgreSQL confirms row commitment
+        erpStore.recordPurchaseDecantation({
+          invoice_no: purInvoiceNo,
+          dealer_name: purDealer,
+          tanker_vehicle_no: purVehicleNo,
+          tank_id: selectedTankId,
+          product_id: purChargeCode === '01' ? 2 : 1,
+          qty_kl: purQtyKl,
+          rate_per_kl: purRateKl,
+          freight: purFreight,
+          sample_density: purSampleDensity,
+          observed_density: purObservedDensity,
+          observed_temp: purObservedTemp,
+          manager_override_pin: overridePin,
+        });
+
+        showToast(`✔ Inward Decanting #${purInvoiceNo} Recorded in PostgreSQL! ${incomingLitres.toLocaleString('en-IN')} L added to ${targetTank?.name || 'Tank'}.`);
+        await loadAllErpData();
+      }
+    } catch (e: any) {
+      if (!navigator.onLine || e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
+        enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
+        showToast(`💾 Offline Buffer: Decanting purchase queued for auto-sync.`);
+      } else {
+        setSubmitError(e.message || 'Failed to save purchase to database');
+        showToast(`❌ Decanting save failed: ${e.message || 'Database error'}`);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAddPurchaseLine = async (e: React.FormEvent) => {
@@ -225,6 +247,11 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
         </div>
         <div className="win-dialog-body">
           <form onSubmit={handleSavePurchase}>
+            {submitError && (
+              <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#991b1b', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', marginBottom: '10px' }}>
+                ⚠️ <b>PostgreSQL Save Error:</b> {submitError}
+              </div>
+            )}
             {/* Top Details */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
               <div className="win-form-row">
@@ -663,9 +690,9 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                   <span>📥</span>
                   <span>Export to Excel (CSV)</span>
                 </button>
-                <button type="submit" className="win-btn-classic win-btn-primary">
+                <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting}>
                   <span>💾</span>
-                  <span>Save (F2)</span>
+                  <span>{isSubmitting ? 'Saving...' : 'Save (F2)'}</span>
                 </button>
                 <button type="button" className="win-btn-classic" onClick={() => { setPurQtyKl(4.0); setPurInvoiceNo('3215' + Math.floor(100 + Math.random() * 900)); showToast('New Purchase Slip ready'); }}>
                   <span>🔄</span>

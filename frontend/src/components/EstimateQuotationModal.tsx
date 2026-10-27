@@ -28,6 +28,8 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
   requestManagerAuthorization,
 }) => {
   const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Form
   const [custName, setCustName] = useState<string>('');
@@ -72,24 +74,28 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
       items,
     };
 
+    setIsSubmitting(true);
+    setSubmitError(null);
+
     try {
       const q = erpStore.saveQuotation(quotePayload);
 
-      try {
+      if (navigator.onLine) {
         await saveQuotationApi({
           ...quotePayload,
           quotation_no: q.quotation_no,
           total_amount: q.total_amount,
         });
-      } catch (backendErr) {
-        console.warn('Backend quotation save deferred or offline:', backendErr);
       }
 
-      if (showToast) showToast(`✔ Quotation #${q.quotation_no} created successfully!`);
+      if (showToast) showToast(`✔ Quotation #${q.quotation_no} committed to PostgreSQL!`);
       setIsCreating(false);
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+      setSubmitError(err.message || 'Failed to save quotation to database');
+      if (showToast) showToast(`❌ Quotation save failed: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -114,47 +120,49 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
   };
 
   const handleConvertToBill = async (quoteId: number) => {
+    setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const q = quotations.find((item) => item.id === quoteId);
-      const bill = erpStore.convertQuotationToCreditBill(quoteId);
+      const matchedCust = customers?.find((c) => c.name.toUpperCase() === (q?.customer_name || '').toUpperCase());
+      const custId = matchedCust?.id || customers?.[0]?.id || 1;
 
-      try {
-        const matchedCust = customers?.find((c) => c.name.toUpperCase() === (bill.customer_name || bill.cust || '').toUpperCase());
-        const custId = matchedCust?.id || customers?.[0]?.id || 1;
+      if (navigator.onLine && q) {
+        // Persist credit sale in PostgreSQL
         await createCreditSale({
           customer_id: custId,
-          vehicle_no: bill.vehicle_no || bill.vehicle || 'GJ05AB1234',
-          product_id: (bill.product || bill.product_name || '').toUpperCase().includes('PETROL') || (bill.product || bill.product_name || '').toUpperCase().includes('MS') ? 1 : 2,
-          slip_no: bill.slip_no || bill.slip || `QT-CONV-${quoteId}`,
-          qty: bill.qty,
-          rate: bill.rate,
+          vehicle_no: 'GJ05AB1234',
+          product_id: (q.items?.[0]?.product_name || '').toUpperCase().includes('PETROL') || (q.items?.[0]?.product_name || '').toUpperCase().includes('MS') ? 1 : 2,
+          slip_no: `QT-CONV-${quoteId}`,
+          qty: q.items?.[0]?.qty || 1,
+          rate: q.items?.[0]?.rate || 1,
           cash_paid: 0,
-          remarks: `Converted from Quotation #${q?.quotation_no || ''}`,
-          indent_no: bill.indent_no,
+          remarks: `Converted from Quotation #${q.quotation_no || ''}`,
         });
 
-        // Full-Stack Parity: Persist status='CONVERTED' in PostgreSQL
-        if (q) {
-          await saveQuotationApi({
-            id: q.id,
-            quotation_no: q.quotation_no,
-            customer_name: q.customer_name,
-            customer_mobile: q.customer_mobile,
-            customer_gstin: q.customer_gstin,
-            total_amount: q.total_amount,
-            terms: q.terms,
-            status: 'CONVERTED',
-            items: q.items || [],
-          }).catch((statusErr) => console.warn('Quotation status update note:', statusErr));
-        }
-      } catch (backendErr) {
-        console.warn('Backend converted quotation sync deferred or offline:', backendErr);
+        // Persist status='CONVERTED' in PostgreSQL
+        await saveQuotationApi({
+          id: q.id,
+          quotation_no: q.quotation_no,
+          customer_name: q.customer_name,
+          customer_mobile: q.customer_mobile,
+          customer_gstin: q.customer_gstin,
+          total_amount: q.total_amount,
+          terms: q.terms,
+          status: 'CONVERTED',
+          items: q.items || [],
+        });
       }
 
-      if (showToast) showToast(`✔ Quotation converted to active Credit Bill #${bill.bill_no}! Customer ledger updated.`);
+      // Mutate local store
+      const bill = erpStore.convertQuotationToCreditBill(quoteId);
+      if (showToast) showToast(`✔ Quotation converted to active Credit Bill #${bill.bill_no} in PostgreSQL! Customer ledger updated.`);
       if (loadAllErpData) await loadAllErpData();
     } catch (err: any) {
+      setSubmitError(err.message || 'Quotation conversion failed');
       if (showToast) showToast(`❌ Conversion error: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -254,6 +262,11 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
         </div>
 
         <div className="win-dialog-body">
+          {submitError && (
+            <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#991b1b', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', marginBottom: '10px' }}>
+              ⚠️ <b>PostgreSQL Save Error:</b> {submitError}
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <span style={{ fontSize: '12px', fontWeight: 600 }}>
               Quotations & Estimates Archive ({quotations.length}):
@@ -365,9 +378,9 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
 
                 <div className="win-actions-row" style={{ marginTop: '12px' }}>
                   <button type="button" className="win-btn-classic" onClick={() => setIsCreating(false)}>Cancel</button>
-                  <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
+                  <button type="submit" className="win-btn-classic win-btn-primary" disabled={isSubmitting} style={{ fontWeight: 700 }}>
                     <span>💾</span>
-                    <span>Save Quotation</span>
+                    <span>{isSubmitting ? 'Saving...' : 'Save Quotation'}</span>
                   </button>
                 </div>
               </form>

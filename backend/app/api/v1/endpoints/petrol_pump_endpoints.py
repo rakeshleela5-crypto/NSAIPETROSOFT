@@ -55,6 +55,12 @@ from app.models.petrol_pump import (
     ContraTransfer,
     Quotation,
     RetailCashInvoice,
+    FleetInvoice,
+    ForecourtControllerLog,
+    ShiftCashDrop,
+    EmployeeAttendance,
+    StatutoryComplianceLicense,
+    LubeInwardEntry,
 )
 router = APIRouter()
 
@@ -1903,6 +1909,7 @@ class TankDipCreate(BaseModel):
     receipt_liters: float = 0.0
     closing_dip: float
     closing_stock: float
+    water_dip_cm: float = 0.0
     notes: Optional[str] = None
     observed_density: Optional[float] = None
     observed_temp: Optional[float] = None
@@ -1924,6 +1931,7 @@ async def list_dips(db: AsyncSession = Depends(get_db)):
             "receipt": e.receipt_liters,
             "closing_dip": e.closing_dip,
             "closing_stock": e.closing_stock,
+            "water_dip_cm": e.water_dip_cm or 0.0,
             "dip_sale": e.dip_wise_sale,
             "meter_sale": e.meter_wise_sale,
             "variation": e.variation_liters,
@@ -1990,6 +1998,7 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
         receipt_liters=data.receipt_liters,
         closing_dip=data.closing_dip,
         closing_stock=data.closing_stock,
+        water_dip_cm=data.water_dip_cm,
         dip_wise_sale=dip_sale,
         meter_wise_sale=meter_sale,
         variation_liters=variation,
@@ -2013,6 +2022,7 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
         "variation_liters": variation,
         "tolerance_limit": tolerance_limit,
         "exceeds_tolerance": variation < tolerance_limit,
+        "water_dip_cm": data.water_dip_cm,
         "observed_density": data.observed_density,
         "observed_temp": data.observed_temp,
         "density_15c": density_15c,
@@ -5125,4 +5135,709 @@ async def delete_cash_bill(
     await db.delete(invoice)
     await db.commit()
     return {"message": f"Retail cash bill #{b_no} voided and stock/cash liability rolled back", "id": bill_id}
+
+
+# -------------------------------------------------------------
+# 18. Forecourt Automation Dispenser Hub & Controller Logs API
+# -------------------------------------------------------------
+class ForecourtLogCreate(BaseModel):
+    tx_id: Optional[str] = None
+    pump_id: int
+    nozzle_name: str
+    product_name: str
+    product_code: str = "MS"
+    liters: float
+    rate: float
+    amount: float
+    protocol: str = "DOMS PSS 5000 (Ethernet TCP/IP)"
+    controller_ip: str = "192.168.1.150:4001"
+
+
+class ForecourtPushToPos(BaseModel):
+    log_id: int
+    payment_mode: str = "CASH"
+    customer_name: Optional[str] = None
+    vehicle_no: Optional[str] = None
+
+
+@router.get("/automation/logs", summary="List Forecourt Automation Controller Logs")
+async def list_forecourt_logs(
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(ForecourtControllerLog).order_by(desc(ForecourtControllerLog.event_time)).limit(limit)
+    if status:
+        query = select(ForecourtControllerLog).where(ForecourtControllerLog.status == status.upper()).order_by(desc(ForecourtControllerLog.event_time)).limit(limit)
+    res = await db.execute(query)
+    logs = res.scalars().all()
+    return [
+        {
+            "id": l.id,
+            "tx_id": l.tx_id,
+            "event_time": l.event_time.isoformat() if l.event_time else None,
+            "pump_id": l.pump_id,
+            "nozzle_name": l.nozzle_name,
+            "product_name": l.product_name,
+            "product_code": l.product_code,
+            "liters": round(float(l.liters), 3),
+            "rate": round(float(l.rate), 2),
+            "amount": round(float(l.amount), 2),
+            "protocol": l.protocol,
+            "controller_ip": l.controller_ip,
+            "status": l.status,
+            "created_at": l.created_at.isoformat() if l.created_at else None,
+        }
+        for l in logs
+    ]
+
+
+@router.post("/automation/simulate-drop", summary="Simulate or Ingest Forecourt Controller Dispenser Drop")
+async def simulate_forecourt_drop(data: ForecourtLogCreate, db: AsyncSession = Depends(get_db)):
+    if data.liters <= 0 or data.rate <= 0:
+        raise HTTPException(status_code=400, detail="Dispensed volume (liters) and rate must be greater than zero")
+    amount = round(data.liters * data.rate, 2)
+    tx_id = data.tx_id or f"TX-{int(time.time()*1000)}"
+    log = ForecourtControllerLog(
+        tx_id=tx_id,
+        pump_id=data.pump_id,
+        nozzle_name=data.nozzle_name,
+        product_name=data.product_name,
+        product_code=data.product_code.upper(),
+        liters=round(data.liters, 3),
+        rate=round(data.rate, 2),
+        amount=amount,
+        protocol=data.protocol,
+        controller_ip=data.controller_ip,
+        status="PENDING",
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(log)
+    return {
+        "message": "Forecourt drop logged successfully",
+        "id": log.id,
+        "tx_id": log.tx_id,
+        "status": log.status,
+        "liters": log.liters,
+        "amount": log.amount,
+    }
+
+
+@router.post("/automation/push-to-pos", summary="Commit Forecourt Log to Retail POS / Cash Bill")
+async def push_forecourt_to_pos(data: ForecourtPushToPos, db: AsyncSession = Depends(get_db)):
+    log = await db.get(ForecourtControllerLog, data.log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Forecourt controller log not found")
+    if log.status == "SYNCED":
+        return {"message": "Transaction already pushed to POS", "id": log.id, "status": "SYNCED"}
+
+    bill_no = f"POS-{int(time.time()*1000)}"
+    bill = RetailCashInvoice(
+        bill_no=bill_no,
+        date=today_ist(),
+        driver_name=data.customer_name or "Walk-in Retail Customer",
+        vehicle_no=(data.vehicle_no or "WALK-IN").strip().upper(),
+        product_name=log.product_name,
+        product_code=log.product_code.upper(),
+        qty=log.liters,
+        rate=log.rate,
+        amount=log.amount,
+        payment_mode=data.payment_mode.upper(),
+        status="PAID",
+    )
+    db.add(bill)
+
+    # Deduct tank current stock if available
+    tank_res = await db.execute(
+        select(Tank).join(FuelProduct).where(FuelProduct.code == log.product_code.upper()).limit(1)
+    )
+    tank = tank_res.scalars().first()
+    if tank:
+        tank.current_stock = max(0.0, round(tank.current_stock - log.liters, 2))
+
+    # Credit Cash or Bank account
+    if data.payment_mode.upper() == "CASH":
+        cash_res = await db.execute(select(BankAccount).where(BankAccount.account_type == "CASH").limit(1))
+        cash_acc = cash_res.scalars().first()
+        if not cash_acc:
+            cash_acc = await db.get(BankAccount, 1)
+        if cash_acc:
+            cash_acc.balance = round(cash_acc.balance + log.amount, 2)
+
+    log.status = "SYNCED"
+    await db.commit()
+    await db.refresh(bill)
+    return {
+        "message": f"Dispenser transaction #{log.tx_id} successfully converted to Retail Bill #{bill.bill_no}",
+        "bill_id": bill.id,
+        "bill_no": bill.bill_no,
+        "amount": bill.amount,
+        "log_status": log.status,
+    }
+
+
+# -------------------------------------------------------------
+# 19. Shift Cash Drops (Safe Drops) API
+# -------------------------------------------------------------
+class ShiftCashDropCreate(BaseModel):
+    shift_id: Optional[int] = None
+    employee_id: Optional[int] = None
+    amount: float
+    vault_account_id: int = 1
+    witness_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.get("/cash-drops", summary="List Shift Cash Safe Drops")
+async def list_cash_drops(
+    shift_id: Optional[int] = Query(None),
+    limit: int = Query(50, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(ShiftCashDrop)
+        .options(selectinload(ShiftCashDrop.employee), selectinload(ShiftCashDrop.vault_account))
+        .order_by(desc(ShiftCashDrop.drop_time))
+        .limit(limit)
+    )
+    if shift_id:
+        query = (
+            select(ShiftCashDrop)
+            .where(ShiftCashDrop.shift_id == shift_id)
+            .options(selectinload(ShiftCashDrop.employee), selectinload(ShiftCashDrop.vault_account))
+            .order_by(desc(ShiftCashDrop.drop_time))
+            .limit(limit)
+        )
+    res = await db.execute(query)
+    drops = res.scalars().all()
+    return [
+        {
+            "id": d.id,
+            "shift_id": d.shift_id,
+            "employee_id": d.employee_id,
+            "employee_name": d.employee.name if d.employee else "General Attendant",
+            "drop_time": d.drop_time.isoformat() if d.drop_time else None,
+            "amount": round(float(d.amount), 2),
+            "vault_account_id": d.vault_account_id,
+            "vault_name": d.vault_account.account_name if d.vault_account else "Station Safe Vault",
+            "witness_name": d.witness_name,
+            "notes": d.notes,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in drops
+    ]
+
+
+@router.post("/cash-drops", summary="Record Cash Safe Drop from Attendant to Vault")
+async def record_cash_drop(data: ShiftCashDropCreate, db: AsyncSession = Depends(get_db)):
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="Safe drop amount must be greater than zero")
+
+    vault_acc = await db.get(BankAccount, data.vault_account_id)
+    if not vault_acc:
+        acc_res = await db.execute(select(BankAccount).limit(1))
+        vault_acc = acc_res.scalars().first()
+        if not vault_acc:
+            raise HTTPException(status_code=400, detail="No valid station vault / bank account found")
+
+    drop = ShiftCashDrop(
+        shift_id=data.shift_id,
+        employee_id=data.employee_id,
+        amount=round(data.amount, 2),
+        vault_account_id=vault_acc.id,
+        witness_name=data.witness_name,
+        notes=data.notes,
+    )
+    db.add(drop)
+    vault_acc.balance = round(vault_acc.balance + data.amount, 2)
+
+    await db.commit()
+    await db.refresh(drop)
+    return {
+        "message": f"Safe drop of ₹{drop.amount:,.2f} recorded into {vault_acc.account_name} successfully",
+        "id": drop.id,
+        "amount": drop.amount,
+        "vault_balance": vault_acc.balance,
+        "drop_time": drop.drop_time.isoformat() if drop.drop_time else None,
+    }
+
+
+@router.delete("/cash-drops/{drop_id}", summary="Void / Revert Shift Cash Drop")
+async def delete_cash_drop(
+    drop_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to void cash safe drops.",
+        )
+    drop = await db.get(ShiftCashDrop, drop_id)
+    if not drop:
+        raise HTTPException(status_code=404, detail="Cash drop record not found")
+
+    vault_acc = await db.get(BankAccount, drop.vault_account_id)
+    if vault_acc:
+        vault_acc.balance = max(0.0, round(vault_acc.balance - drop.amount, 2))
+
+    amt = drop.amount
+    await db.delete(drop)
+    await db.commit()
+    return {"message": f"Cash drop #{drop_id} of ₹{amt:,.2f} voided and vault balance adjusted", "id": drop_id}
+
+
+# -------------------------------------------------------------
+# 20. Driveway Salesmen (DSM) Shift Attendance & Float API
+# -------------------------------------------------------------
+class EmployeeAttendanceCreate(BaseModel):
+    employee_id: int
+    shift_id: Optional[int] = None
+    date: Optional[date] = None
+    status: str = "PRESENT"
+    in_time: Optional[str] = None
+    out_time: Optional[str] = None
+    opening_cash_float: float = 0.0
+    remarks: Optional[str] = None
+
+
+@router.get("/employees/attendance", summary="List Employee Attendance")
+async def list_attendance(
+    shift_id: Optional[int] = Query(None),
+    target_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(EmployeeAttendance)
+        .options(selectinload(EmployeeAttendance.employee))
+        .order_by(desc(EmployeeAttendance.date), desc(EmployeeAttendance.id))
+    )
+    if shift_id:
+        query = query.where(EmployeeAttendance.shift_id == shift_id)
+    if target_date:
+        query = query.where(EmployeeAttendance.date == target_date)
+    else:
+        query = query.limit(100)
+    res = await db.execute(query)
+    entries = res.scalars().all()
+    return [
+        {
+            "id": a.id,
+            "employee_id": a.employee_id,
+            "employee_name": a.employee.name if a.employee else "Staff Member",
+            "shift_id": a.shift_id,
+            "date": str(a.date),
+            "status": a.status,
+            "in_time": a.in_time,
+            "out_time": a.out_time,
+            "opening_cash_float": round(float(a.opening_cash_float), 2),
+            "remarks": a.remarks,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in entries
+    ]
+
+
+@router.post("/employees/attendance", summary="Record Employee Daily / Shift Attendance")
+async def record_attendance(data: EmployeeAttendanceCreate, db: AsyncSession = Depends(get_db)):
+    emp = await db.get(Employee, data.employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    att_date = data.date or today_ist()
+    q = select(EmployeeAttendance).where(
+        EmployeeAttendance.employee_id == data.employee_id,
+        EmployeeAttendance.date == att_date,
+    )
+    if data.shift_id:
+        q = q.where(EmployeeAttendance.shift_id == data.shift_id)
+    res = await db.execute(q)
+    existing = res.scalars().first()
+
+    if existing:
+        existing.status = data.status.upper()
+        if data.in_time:
+            existing.in_time = data.in_time
+        if data.out_time:
+            existing.out_time = data.out_time
+        if data.opening_cash_float >= 0:
+            existing.opening_cash_float = round(data.opening_cash_float, 2)
+        if data.remarks:
+            existing.remarks = data.remarks
+        await db.commit()
+        await db.refresh(existing)
+        return {"message": f"Attendance for {emp.name} updated", "id": existing.id, "status": existing.status}
+
+    new_att = EmployeeAttendance(
+        employee_id=data.employee_id,
+        shift_id=data.shift_id,
+        date=att_date,
+        status=data.status.upper(),
+        in_time=data.in_time or now_ist().strftime("%H:%M"),
+        out_time=data.out_time,
+        opening_cash_float=round(data.opening_cash_float, 2),
+        remarks=data.remarks,
+    )
+    db.add(new_att)
+    await db.commit()
+    await db.refresh(new_att)
+    return {"message": f"Attendance for {emp.name} recorded", "id": new_att.id, "status": new_att.status}
+
+
+# -------------------------------------------------------------
+# 21. Statutory Compliance Licenses & Expiry Tracking API
+# -------------------------------------------------------------
+class StatutoryLicenseCreate(BaseModel):
+    license_name: str
+    license_number: str
+    issuing_authority: str = "PESO / Govt of Gujarat"
+    issue_date: date
+    expiry_date: date
+    reminder_days_before: int = 30
+    document_key: Optional[str] = None
+    status: str = "ACTIVE"
+    remarks: Optional[str] = None
+
+
+class StatutoryLicenseUpdate(BaseModel):
+    license_name: Optional[str] = None
+    license_number: Optional[str] = None
+    issuing_authority: Optional[str] = None
+    issue_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    reminder_days_before: Optional[int] = None
+    document_key: Optional[str] = None
+    status: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+@router.get("/compliance/licenses", summary="List Statutory Compliance Licenses & Expiry Alerts")
+async def list_compliance_licenses(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(StatutoryComplianceLicense).order_by(StatutoryComplianceLicense.expiry_date.asc()))
+    licenses = res.scalars().all()
+    today = today_ist()
+    out = []
+    for lic in licenses:
+        days_left = (lic.expiry_date - today).days
+        current_status = lic.status
+        if days_left < 0:
+            current_status = "EXPIRED"
+        elif days_left <= lic.reminder_days_before:
+            current_status = "EXPIRING_SOON"
+        else:
+            current_status = "ACTIVE"
+
+        if lic.status != current_status:
+            lic.status = current_status
+
+        out.append({
+            "id": lic.id,
+            "license_name": lic.license_name,
+            "license_number": lic.license_number,
+            "issuing_authority": lic.issuing_authority,
+            "issue_date": str(lic.issue_date),
+            "expiry_date": str(lic.expiry_date),
+            "reminder_days_before": lic.reminder_days_before,
+            "days_remaining": days_left,
+            "document_key": lic.document_key,
+            "status": current_status,
+            "remarks": lic.remarks,
+            "created_at": lic.created_at.isoformat() if lic.created_at else None,
+        })
+    await db.commit()
+    return out
+
+
+@router.post("/compliance/licenses", summary="Register New Statutory License")
+async def create_compliance_license(data: StatutoryLicenseCreate, db: AsyncSession = Depends(get_db)):
+    if not data.license_name or not data.license_number:
+        raise HTTPException(status_code=400, detail="License name and number are mandatory")
+    existing_res = await db.execute(
+        select(StatutoryComplianceLicense).where(StatutoryComplianceLicense.license_number == data.license_number.strip())
+    )
+    if existing_res.scalars().first():
+        raise HTTPException(status_code=400, detail=f"License number '{data.license_number}' already registered")
+
+    today = today_ist()
+    days_left = (data.expiry_date - today).days
+    current_status = "EXPIRED" if days_left < 0 else ("EXPIRING_SOON" if days_left <= data.reminder_days_before else "ACTIVE")
+
+    lic = StatutoryComplianceLicense(
+        license_name=data.license_name.strip(),
+        license_number=data.license_number.strip(),
+        issuing_authority=data.issuing_authority.strip(),
+        issue_date=data.issue_date,
+        expiry_date=data.expiry_date,
+        reminder_days_before=data.reminder_days_before,
+        document_key=data.document_key,
+        status=current_status,
+        remarks=data.remarks,
+    )
+    db.add(lic)
+    await db.commit()
+    await db.refresh(lic)
+    return {"message": f"License '{lic.license_name}' registered successfully", "id": lic.id, "status": lic.status}
+
+
+@router.put("/compliance/licenses/{license_id}", summary="Update Statutory License")
+async def update_compliance_license(license_id: int, data: StatutoryLicenseUpdate, db: AsyncSession = Depends(get_db)):
+    lic = await db.get(StatutoryComplianceLicense, license_id)
+    if not lic:
+        raise HTTPException(status_code=404, detail="Statutory license not found")
+
+    if data.license_name:
+        lic.license_name = data.license_name.strip()
+    if data.license_number:
+        lic.license_number = data.license_number.strip()
+    if data.issuing_authority:
+        lic.issuing_authority = data.issuing_authority.strip()
+    if data.issue_date:
+        lic.issue_date = data.issue_date
+    if data.expiry_date:
+        lic.expiry_date = data.expiry_date
+    if data.reminder_days_before is not None:
+        lic.reminder_days_before = data.reminder_days_before
+    if data.document_key is not None:
+        lic.document_key = data.document_key
+    if data.remarks is not None:
+        lic.remarks = data.remarks
+
+    today = today_ist()
+    days_left = (lic.expiry_date - today).days
+    lic.status = "EXPIRED" if days_left < 0 else ("EXPIRING_SOON" if days_left <= lic.reminder_days_before else "ACTIVE")
+
+    await db.commit()
+    await db.refresh(lic)
+    return {"message": f"License '{lic.license_name}' updated successfully", "id": lic.id, "status": lic.status}
+
+
+@router.delete("/compliance/licenses/{license_id}", summary="Delete Statutory License")
+async def delete_compliance_license(
+    license_id: int,
+    request: Request,
+    manager_pin: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    if not await check_manager_authorized(manager_pin, db, current_user, request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Station Manager credentials or PIN required to remove compliance records.",
+        )
+    lic = await db.get(StatutoryComplianceLicense, license_id)
+    if not lic:
+        raise HTTPException(status_code=404, detail="License not found")
+    name = lic.license_name
+    await db.delete(lic)
+    await db.commit()
+    return {"message": f"License '{name}' removed", "id": license_id}
+
+
+# -------------------------------------------------------------
+# 22. Packaged Lubricants & DEF Stock Inward Receiving API
+# -------------------------------------------------------------
+class LubeInwardCreate(BaseModel):
+    invoice_no: str
+    date: Optional[date] = None
+    supplier_name: str = "BHARAT PETROLEUM CORP LTD (LUBE DIV)"
+    lube_product_id: int
+    qty_units: int
+    cost_price: float
+    batch_no: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.get("/lubes/inward", summary="List Packaged Lube Inward Receiving Entries")
+async def list_lube_inward(
+    limit: int = Query(50, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(LubeInwardEntry)
+        .options(selectinload(LubeInwardEntry.lube_product))
+        .order_by(desc(LubeInwardEntry.date), desc(LubeInwardEntry.id))
+        .limit(limit)
+    )
+    entries = res.scalars().all()
+    return [
+        {
+            "id": e.id,
+            "invoice_no": e.invoice_no,
+            "date": str(e.date),
+            "supplier_name": e.supplier_name,
+            "lube_product_id": e.lube_product_id,
+            "product_name": e.lube_product.name if e.lube_product else "Lube Item",
+            "category": e.lube_product.category if e.lube_product else None,
+            "package_size": e.lube_product.package_size if e.lube_product else None,
+            "qty_units": e.qty_units,
+            "cost_price": round(float(e.cost_price), 2),
+            "total_amount": round(float(e.total_amount), 2),
+            "batch_no": e.batch_no,
+            "notes": e.notes,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in entries
+    ]
+
+
+@router.post("/lubes/inward", summary="Record Packaged Lube / DEF Stock Inward Receipt")
+async def record_lube_inward(data: LubeInwardCreate, db: AsyncSession = Depends(get_db)):
+    if data.qty_units <= 0:
+        raise HTTPException(status_code=400, detail="Inward quantity units must be greater than zero")
+    if data.cost_price < 0:
+        raise HTTPException(status_code=400, detail="Cost price per unit cannot be negative")
+
+    prod = await db.get(LubeProduct, data.lube_product_id)
+    if not prod:
+        raise HTTPException(status_code=404, detail="Lube product SKU not found")
+
+    total_amount = round(data.qty_units * data.cost_price, 2)
+    entry = LubeInwardEntry(
+        invoice_no=data.invoice_no.strip(),
+        date=data.date or today_ist(),
+        supplier_name=data.supplier_name.strip(),
+        lube_product_id=prod.id,
+        qty_units=data.qty_units,
+        cost_price=round(data.cost_price, 2),
+        total_amount=total_amount,
+        batch_no=data.batch_no,
+        notes=data.notes,
+    )
+    db.add(entry)
+
+    # Atomically increment stock units and update purchase cost
+    prod.current_stock_units += data.qty_units
+    prod.cost_price = round(data.cost_price, 2)
+
+    await db.commit()
+    await db.refresh(entry)
+    await db.refresh(prod)
+
+    return {
+        "message": f"Received {data.qty_units} units of {prod.name}. Live stock updated to {prod.current_stock_units} units.",
+        "id": entry.id,
+        "product_name": prod.name,
+        "new_stock_units": prod.current_stock_units,
+        "total_amount": entry.total_amount,
+    }
+
+
+# -------------------------------------------------------------
+# 23. Fleet & Credit Party (Khata/B2B) Consolidated Invoicing API
+# -------------------------------------------------------------
+class FleetInvoiceCreate(BaseModel):
+    customer_id: int
+    period_start: date
+    period_end: date
+    credit_sale_ids: Optional[List[int]] = None
+    invoice_no: Optional[str] = None
+
+
+@router.get("/fleet-invoices", summary="List Fleet B2B Invoices")
+async def list_fleet_invoices(
+    customer_id: Optional[int] = Query(None),
+    limit: int = Query(50, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(FleetInvoice)
+        .options(selectinload(FleetInvoice.customer))
+        .order_by(desc(FleetInvoice.created_at))
+        .limit(limit)
+    )
+    if customer_id:
+        query = query.where(FleetInvoice.customer_id == customer_id)
+    res = await db.execute(query)
+    invoices = res.scalars().all()
+    return [
+        {
+            "id": inv.id,
+            "invoice_no": inv.invoice_no,
+            "customer_id": inv.customer_id,
+            "customer_name": inv.customer.name if inv.customer else "Fleet Client",
+            "period_start": str(inv.period_start),
+            "period_end": str(inv.period_end),
+            "total_amount": round(float(inv.total_amount), 2),
+            "total_liters": round(float(inv.total_liters), 3),
+            "gst_amount": round(float(inv.gst_amount), 2),
+            "status": inv.status,
+            "pdf_object_key": inv.pdf_object_key or inv.object_key,
+            "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        }
+        for inv in invoices
+    ]
+
+
+@router.post("/fleet-invoices", summary="Generate Consolidated Fleet Invoice from Indents")
+async def create_fleet_invoice(data: FleetInvoiceCreate, db: AsyncSession = Depends(get_db)):
+    cust = await db.get(Customer, data.customer_id)
+    if not cust:
+        raise HTTPException(status_code=404, detail="Fleet customer not found")
+
+    query = select(CreditSale).where(
+        CreditSale.customer_id == cust.id,
+        CreditSale.date >= data.period_start,
+        CreditSale.date <= data.period_end,
+    )
+    if data.credit_sale_ids:
+        query = query.where(CreditSale.id.in_(data.credit_sale_ids))
+    res = await db.execute(query)
+    sales = res.scalars().all()
+
+    total_amount = round(sum(s.amount for s in sales), 2)
+    total_liters = round(sum(s.liters for s in sales), 3)
+
+    inv_no = data.invoice_no or f"FLT-{cust.id}-{int(time.time()*1000)}"
+    inv = FleetInvoice(
+        invoice_no=inv_no,
+        customer_id=cust.id,
+        period_start=data.period_start,
+        period_end=data.period_end,
+        total_amount=total_amount,
+        total_liters=total_liters,
+        gst_amount=0.0,
+        status="GENERATED",
+    )
+    db.add(inv)
+    await db.commit()
+    await db.refresh(inv)
+
+    return {
+        "message": f"Consolidated fleet invoice #{inv.invoice_no} generated for {cust.name}",
+        "id": inv.id,
+        "invoice_no": inv.invoice_no,
+        "total_amount": inv.total_amount,
+        "total_liters": inv.total_liters,
+        "sales_count": len(sales),
+        "status": inv.status,
+    }
+
+
+@router.get("/fleet-invoices/{invoice_id}", summary="Get Fleet Invoice Details")
+async def get_fleet_invoice(invoice_id: int, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(FleetInvoice)
+        .options(selectinload(FleetInvoice.customer))
+        .where(FleetInvoice.id == invoice_id)
+    )
+    inv = res.scalars().first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Fleet invoice not found")
+    return {
+        "id": inv.id,
+        "invoice_no": inv.invoice_no,
+        "customer_id": inv.customer_id,
+        "customer_name": inv.customer.name if inv.customer else "Fleet Client",
+        "period_start": str(inv.period_start),
+        "period_end": str(inv.period_end),
+        "total_amount": round(float(inv.total_amount), 2),
+        "total_liters": round(float(inv.total_liters), 3),
+        "gst_amount": round(float(inv.gst_amount), 2),
+        "status": inv.status,
+        "pdf_object_key": inv.pdf_object_key or inv.object_key,
+        "created_at": inv.created_at.isoformat() if inv.created_at else None,
+    }
 

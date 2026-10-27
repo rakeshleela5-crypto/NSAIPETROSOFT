@@ -103,6 +103,8 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
   const [shortageLogs, setShortageLogs] = useState<any[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
   const [isSettling, setIsSettling] = useState<boolean>(false);
+  const [isSavingShiftSettlement, setIsSavingShiftSettlement] = useState<boolean>(false);
+  const [shiftSaveError, setShiftSaveError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -616,11 +618,18 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                     </button>
                   </div>
 
+                {shiftSaveError && (
+                  <div style={{ background: '#f8d7da', color: '#721c24', padding: '6px 10px', marginTop: '8px', border: '1px solid #f5c6cb', fontSize: '11px', fontWeight: 600 }}>
+                    ❌ Settlement Error: {shiftSaveError}
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                   <button
                     type="button"
                     className="win-btn-classic win-btn-primary"
                     style={{ flex: 1 }}
+                    disabled={isSavingShiftSettlement}
                     onClick={async () => {
                       const liveMeterTotal = (salesReadings.length > 0
                         ? salesReadings.reduce((acc, r) => acc + (r.amount || 0), 0)
@@ -649,6 +658,8 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                         gap_amount: gap,
                       };
 
+                      setIsSavingShiftSettlement(true);
+                      setShiftSaveError(null);
                       try {
                         // Persist all shift lube pack sales to PostgreSQL & decrement physical inventory
                         for (const item of empLubeItems) {
@@ -659,22 +670,18 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                               rate: item.rate,
                               payment_mode: 'CASH',
                             };
-                            try {
-                              if (navigator.onLine) {
-                                await recordLubeSaleApi(lubePayload);
-                              } else {
-                                enqueueOfflineRecord('LUBE_SALE', lubePayload);
-                              }
-                              erpStore.recordLubeSale({
-                                lube_product_id: item.lube_product_id || 1,
-                                product_name: item.product,
-                                qty_units: item.qty,
-                                rate: item.rate,
-                                payment_mode: 'CASH',
-                              });
-                            } catch (lubeErr) {
-                              console.warn('Lube sale backend record note:', lubeErr);
+                            if (navigator.onLine) {
+                              await recordLubeSaleApi(lubePayload);
+                            } else {
+                              enqueueOfflineRecord('LUBE_SALE', lubePayload);
                             }
+                            erpStore.recordLubeSale({
+                              lube_product_id: item.lube_product_id || 1,
+                              product_name: item.product,
+                              qty_units: item.qty,
+                              rate: item.rate,
+                              payment_mode: 'CASH',
+                            });
                           }
                         }
 
@@ -696,12 +703,16 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                           enqueueOfflineRecord('SHIFT_SETTLEMENT', payload);
                           showToast(`💾 Offline Buffer: Shift settlement queued for auto-sync.`);
                         } else {
-                          showToast(`⚠ Error saving shift settlement: ${err.message || 'Database error'}`);
+                          const msg = err.message || 'Database rejected shift settlement';
+                          setShiftSaveError(msg);
+                          showToast(`❌ Error saving shift settlement: ${msg}`);
                         }
+                      } finally {
+                        setIsSavingShiftSettlement(false);
                       }
                     }}
                   >
-                    Save Settlement (F2)
+                    {isSavingShiftSettlement ? 'Saving to DB...' : 'Save Settlement (F2)'}
                   </button>
                   <button
                     type="button"

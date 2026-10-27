@@ -12,6 +12,7 @@ import { getTodayErpDate } from '../utils/dateUtils';
 import { printThermalReceiptHtml, generateUpiQrUrl } from '../utils/thermalPrinter';
 import { calcSaleAmount, calcTaxSplit } from '../utils/mathEngine';
 import { exportToCsv } from '../utils/exportCsv';
+import { enqueueOfflineRecord } from '../utils/offlineQueue';
 
 interface CashBillModalProps {
   isOpen: boolean;
@@ -46,6 +47,8 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
   const [customerMobile, setCustomerMobile] = useState<string>('');
   const [scannedBarcode, setScannedBarcode] = useState<string>('');
   const [barcodeNotification, setBarcodeNotification] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Lube & Packaged Goods Barcode Catalog (Standard Indian Fuel Retail Barcodes)
   const LUBE_BARCODE_CATALOG = [
@@ -199,123 +202,14 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
     try {
       const state = erpStore.getState();
 
-      if (billMode === 'SPLIT') {
-        if (!isSplitValid) {
-          showToast(`❌ Multi-mode split mismatch: Allocated ₹${allocatedTender} vs Bill ₹${totalAmount}. Difference: ₹${tenderGap}`);
-          return;
-        }
-
-        // 1. Post Cash portion if > 0
-        if (splitCash > 0) {
-          erpStore.recordCashSale(splitCash);
-        }
-
-        // 2. Post Digital / UPI portion if > 0
-        if (splitUpi > 0) {
-          erpStore.recordCardSettlement({
-            machine_name: 'PHONEPE / PAYTM QR',
-            batch_no: `UPI-${cashMemoBillNo}`,
-            slip_count: 1,
-            amount: splitUpi,
-          });
-          try {
-            await createCardSettlement({
-              machine_name: 'PHONEPE / PAYTM QR',
-              batch_no: `UPI-${cashMemoBillNo}`,
-              slip_count: 1,
-              amount: splitUpi,
-            });
-          } catch (e) {
-            console.warn('Card settlement sync deferred:', e);
-          }
-        }
-
-        // 3. Post Credit portion if > 0
-        if (splitCredit > 0) {
-          const splitCreditQty = Math.round(((splitCredit / cashMemoRate) + Number.EPSILON) * 100) / 100;
-          erpStore.recordCreditBill({
-            customer_id: selectedCustomerId,
-            vehicle_no: cashMemoVehicle.toUpperCase(),
-            product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
-            qty: splitCreditQty,
-            rate: cashMemoRate,
-            slip_no: `SPLIT-${cashMemoBillNo}`,
-            driver_name: driverName || 'Driver',
-          });
-          try {
-            await createCreditSale({
-              customer_id: selectedCustomerId,
-              vehicle_no: cashMemoVehicle.toUpperCase(),
-              product_id: cashMemoProduct === 'MS' ? 1 : 2,
-              slip_no: `SPLIT-${cashMemoBillNo}`,
-              qty: splitCreditQty,
-              rate: cashMemoRate,
-              driver_name: driverName || 'Driver',
-            });
-          } catch (e) {
-            console.warn('Credit sale sync deferred:', e);
-          }
-        }
-
-        // 4. Atomically deduct total fuel volume from tank stock
-        const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
-        if (tank) {
-          tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
-          tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
-          erpStore.notify();
-        }
-
-        showToast(`✔ Multi-Mode Split Bill #${cashMemoBillNo} Saved (Cash: ₹${splitCash}, UPI: ₹${splitUpi}, Credit: ₹${splitCredit})!`);
-      } else if (billMode === 'CREDIT') {
-        erpStore.recordCreditBill({
-          customer_id: selectedCustomerId,
-          vehicle_no: cashMemoVehicle.toUpperCase(),
-          product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
-          qty: cashMemoLiters,
-          rate: cashMemoRate,
-          slip_no: `POS-${cashMemoBillNo}`,
-          driver_name: driverName || 'Driver',
-        });
-        try {
-          await createCreditSale({
-            customer_id: selectedCustomerId,
-            vehicle_no: cashMemoVehicle.toUpperCase(),
-            product_id: cashMemoProduct === 'MS' ? 1 : 2,
-            slip_no: `POS-${cashMemoBillNo}`,
-            qty: cashMemoLiters,
-            rate: cashMemoRate,
-            driver_name: driverName || 'Driver',
-          });
-        } catch (e) {
-          console.warn('Credit sale sync deferred:', e);
-        }
-        showToast(`✔ Credit Fleet Bill #${cashMemoBillNo} Saved for ${customers.find(c => c.id === selectedCustomerId)?.name || 'Fleet'}!`);
-      } else {
-        if (billMode === 'UPI') {
-          erpStore.recordCardSettlement({
-            machine_name: 'PHONEPE / PAYTM QR',
-            batch_no: `UPI-${cashMemoBillNo}`,
-            slip_count: 1,
-            amount: totalAmount,
-          });
-          erpStore.recordDigitalSale(totalAmount, cashMemoProduct, cashMemoLiters);
-          try {
-            await createCardSettlement({
-              machine_name: 'PHONEPE / PAYTM QR',
-              batch_no: `UPI-${cashMemoBillNo}`,
-              slip_count: 1,
-              amount: totalAmount,
-            });
-          } catch (e) {
-            console.warn('Card settlement sync deferred:', e);
-          }
-        } else {
-          erpStore.recordCashSale(totalAmount, cashMemoProduct, cashMemoLiters);
-        }
-        showToast(`✔ Retail Bill #${cashMemoBillNo} Saved (Mode: ${billMode})! Printing 80mm slip...`);
+      if (billMode === 'SPLIT' && !isSplitValid) {
+        showToast(`❌ Multi-mode split mismatch: Allocated ₹${allocatedTender} vs Bill ₹${totalAmount}. Difference: ₹${tenderGap}`);
+        return;
       }
 
-      // 5. Persist Immutable Retail Cash Memo in Store & PostgreSQL Database
+      setIsSubmitting(true);
+      setSubmitError(null);
+
       const cashBillPayload = {
         bill_no: cashMemoBillNo,
         date: getTodayErpDate(),
@@ -331,18 +225,100 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
         driver_name: driverName || undefined,
       };
 
-      erpStore.recordCashBill(cashBillPayload);
-      try {
+      if (!navigator.onLine) {
+        enqueueOfflineRecord('RETAIL_CASH_BILL', cashBillPayload);
+        erpStore.recordCashBill(cashBillPayload);
+        if (billMode === 'SPLIT') {
+          if (splitCash > 0) erpStore.recordCashSale(splitCash);
+          if (splitUpi > 0) {
+            erpStore.recordCardSettlement({ machine_name: 'PHONEPE / PAYTM QR', batch_no: `UPI-${cashMemoBillNo}`, slip_count: 1, amount: splitUpi });
+          }
+          if (splitCredit > 0) {
+            const splitCreditQty = Math.round(((splitCredit / cashMemoRate) + Number.EPSILON) * 100) / 100;
+            erpStore.recordCreditBill({ customer_id: selectedCustomerId, vehicle_no: cashMemoVehicle.toUpperCase(), product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel', qty: splitCreditQty, rate: cashMemoRate, slip_no: `SPLIT-${cashMemoBillNo}`, driver_name: driverName || 'Driver' });
+          }
+        } else if (billMode === 'CREDIT') {
+          erpStore.recordCreditBill({ customer_id: selectedCustomerId, vehicle_no: cashMemoVehicle.toUpperCase(), product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel', qty: cashMemoLiters, rate: cashMemoRate, slip_no: `POS-${cashMemoBillNo}`, driver_name: driverName || 'Driver' });
+        } else if (billMode === 'UPI') {
+          erpStore.recordCardSettlement({ machine_name: 'PHONEPE / PAYTM QR', batch_no: `UPI-${cashMemoBillNo}`, slip_count: 1, amount: totalAmount });
+          erpStore.recordDigitalSale(totalAmount, cashMemoProduct, cashMemoLiters);
+        } else {
+          erpStore.recordCashSale(totalAmount, cashMemoProduct, cashMemoLiters);
+        }
+        showToast(`💾 Offline Buffer: Retail Bill #${cashMemoBillNo} buffered locally. Will auto-sync.`);
+      } else {
+        // Persist to PostgreSQL backend via ACID transaction
         await saveCashBillApi(cashBillPayload);
-      } catch (apiErr) {
-        console.warn('Backend cash bill sync deferred/offline:', apiErr);
+
+        // If card or credit settlements needed, persist them as well
+        if (billMode === 'SPLIT') {
+          if (splitUpi > 0) {
+            await createCardSettlement({ machine_name: 'PHONEPE / PAYTM QR', batch_no: `UPI-${cashMemoBillNo}`, slip_count: 1, amount: splitUpi });
+          }
+          if (splitCredit > 0) {
+            const splitCreditQty = Math.round(((splitCredit / cashMemoRate) + Number.EPSILON) * 100) / 100;
+            await createCreditSale({ customer_id: selectedCustomerId, vehicle_no: cashMemoVehicle.toUpperCase(), product_id: cashMemoProduct === 'MS' ? 1 : 2, slip_no: `SPLIT-${cashMemoBillNo}`, qty: splitCreditQty, rate: cashMemoRate, driver_name: driverName || 'Driver' });
+          }
+        } else if (billMode === 'CREDIT') {
+          await createCreditSale({ customer_id: selectedCustomerId, vehicle_no: cashMemoVehicle.toUpperCase(), product_id: cashMemoProduct === 'MS' ? 1 : 2, slip_no: `POS-${cashMemoBillNo}`, qty: cashMemoLiters, rate: cashMemoRate, driver_name: driverName || 'Driver' });
+        } else if (billMode === 'UPI') {
+          await createCardSettlement({ machine_name: 'PHONEPE / PAYTM QR', batch_no: `UPI-${cashMemoBillNo}`, slip_count: 1, amount: totalAmount });
+        }
+
+        // Commit to in-memory store ONLY after backend confirms row commitment
+        erpStore.recordCashBill(cashBillPayload);
+        if (billMode === 'SPLIT') {
+          if (splitCash > 0) erpStore.recordCashSale(splitCash);
+          if (splitUpi > 0) erpStore.recordCardSettlement({ machine_name: 'PHONEPE / PAYTM QR', batch_no: `UPI-${cashMemoBillNo}`, slip_count: 1, amount: splitUpi });
+          if (splitCredit > 0) {
+            const splitCreditQty = Math.round(((splitCredit / cashMemoRate) + Number.EPSILON) * 100) / 100;
+            erpStore.recordCreditBill({ customer_id: selectedCustomerId, vehicle_no: cashMemoVehicle.toUpperCase(), product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel', qty: splitCreditQty, rate: cashMemoRate, slip_no: `SPLIT-${cashMemoBillNo}`, driver_name: driverName || 'Driver' });
+          }
+        } else if (billMode === 'CREDIT') {
+          erpStore.recordCreditBill({ customer_id: selectedCustomerId, vehicle_no: cashMemoVehicle.toUpperCase(), product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel', qty: cashMemoLiters, rate: cashMemoRate, slip_no: `POS-${cashMemoBillNo}`, driver_name: driverName || 'Driver' });
+        } else if (billMode === 'UPI') {
+          erpStore.recordCardSettlement({ machine_name: 'PHONEPE / PAYTM QR', batch_no: `UPI-${cashMemoBillNo}`, slip_count: 1, amount: totalAmount });
+          erpStore.recordDigitalSale(totalAmount, cashMemoProduct, cashMemoLiters);
+        } else {
+          erpStore.recordCashSale(totalAmount, cashMemoProduct, cashMemoLiters);
+        }
+
+        // Atomically deduct fuel from tank stock
+        const tank = state.tanks.find((t) => t.code === cashMemoProduct) || state.tanks[0];
+        if (tank) {
+          tank.current_stock = Math.max(0, Math.round((tank.current_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+          tank.book_stock = Math.max(0, Math.round((tank.book_stock - cashMemoLiters + Number.EPSILON) * 100) / 100);
+          erpStore.notify();
+        }
+
+        showToast(`✔ Retail Bill #${cashMemoBillNo} committed to PostgreSQL!`);
       }
 
       handlePrintThermalSlip();
       await loadAllErpData();
       setCashMemoBillNo(`POS-${Date.now().toString().slice(-4)}`);
     } catch (err: any) {
-      showToast(`❌ Error: ${err.message}`);
+      if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        enqueueOfflineRecord('RETAIL_CASH_BILL', {
+          bill_no: cashMemoBillNo,
+          date: getTodayErpDate(),
+          vehicle_no: cashMemoVehicle.toUpperCase() || 'WALK-IN',
+          product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
+          product_code: cashMemoProduct,
+          qty: cashMemoLiters,
+          rate: cashMemoRate,
+          amount: totalAmount,
+          tax_amount: taxSplit.taxAmount,
+          payment_mode: billMode,
+          driver_name: driverName || undefined,
+        });
+        showToast(`💾 Offline Buffer: Retail bill queued for cloud sync.`);
+      } else {
+        setSubmitError(err.message || 'Failed to save cash bill to database');
+        showToast(`❌ Retail Bill save failed: ${err.message || 'Database error'}`);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -528,6 +504,11 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
         </div>
 
         <div className="win-dialog-body win-pos-dialog-body">
+          {submitError && (
+            <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#991b1b', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', marginBottom: '10px' }}>
+              ⚠️ <b>PostgreSQL Save Error:</b> {submitError}
+            </div>
+          )}
           {/* Left: Input Form */}
           <div>
             <div className="win-actions-row win-pos-modes-row" style={{ marginBottom: '10px' }}>
@@ -796,15 +777,17 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
               <button
                 type="button"
                 className="win-btn-classic win-btn-primary"
+                disabled={isSubmitting}
                 onClick={handleExecuteSaveAndPrint}
                 style={{ flex: 1.2, fontSize: '12.5px', fontWeight: 700 }}
               >
                 <span>⚡</span>
-                <span>Save & Print Slip (F2)</span>
+                <span>{isSubmitting ? 'Saving...' : 'Save & Print Slip (F2)'}</span>
               </button>
               <button
                 type="button"
                 className="win-btn-classic"
+                disabled={isSubmitting}
                 onClick={() => {
                   handleExecuteSaveAndPrint();
                   handleSendWhatsApp();
@@ -820,7 +803,7 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
                 title="Save transaction and immediately open WhatsApp with formatted slip"
               >
                 <span>📱</span>
-                <span>Save & WhatsApp</span>
+                <span>{isSubmitting ? 'Saving...' : 'Save & WhatsApp'}</span>
               </button>
             </div>
           </div>

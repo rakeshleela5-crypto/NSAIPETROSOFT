@@ -53,6 +53,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   const [payMode, setPayMode] = useState<string>('CASH');
   const [payBank, setPayBank] = useState<string>(accountsList[0]?.name || 'CASH ON HAND');
   const [payAmount, setPayAmount] = useState<number>(0);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -133,6 +135,11 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
         </div>
 
         <div className="win-dialog-body payment-receipt-body">
+          {submitError && (
+            <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#991b1b', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', marginBottom: '10px' }}>
+              ⚠️ <b>PostgreSQL Save Error:</b> {submitError}
+            </div>
+          )}
           <div>
             <div className="win-form-row">
               <span className="win-label">Shift</span>
@@ -241,22 +248,17 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               <button
                 type="button"
                 className="win-btn-classic win-btn-primary payment-receipt-btn"
+                disabled={isSubmitting}
                 onClick={async () => {
                   if (!payAmount || payAmount <= 0) {
                     showToast('Please enter a valid payment amount');
                     return;
                   }
+                  setIsSubmitting(true);
+                  setSubmitError(null);
                   try {
                     const custObj = customers.find((c) => c.name === payCustName);
                     const custId = custObj ? custObj.id : (customers[0]?.id || 1);
-
-                    // Atomically decrement customer outstanding & increment receiving bank/cash ledger
-                    erpStore.recordPaymentReceipt({
-                      customer_name: custObj?.name || payCustName,
-                      amount: payAmount,
-                      payment_mode: payMode,
-                      bank_name: payBank,
-                    });
 
                     const pmtPayload = {
                       customer_id: custId,
@@ -267,30 +269,48 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
                     if (!navigator.onLine) {
                       enqueueOfflineRecord('PAYMENT_RECEIPT', pmtPayload);
+                      erpStore.recordPaymentReceipt({
+                        customer_name: custObj?.name || payCustName,
+                        amount: payAmount,
+                        payment_mode: payMode,
+                        bank_name: payBank,
+                      });
                       showToast(`💾 Offline Forecourt: Receipt of ₹${payAmount.toFixed(2)} buffered locally. Will auto-sync.`);
                     } else {
-                      try {
-                        await createPaymentReceipt(pmtPayload);
-                      } catch (backendErr: any) {
-                        if (!navigator.onLine || backendErr.message?.includes('Failed to fetch') || backendErr.message?.includes('NetworkError')) {
-                          enqueueOfflineRecord('PAYMENT_RECEIPT', pmtPayload);
-                          showToast(`💾 Offline Buffer: Payment receipt queued for cloud sync.`);
-                        } else {
-                          console.warn('Backend payment sync deferred or offline:', backendErr);
-                        }
-                      }
-                    }
+                      await createPaymentReceipt(pmtPayload);
 
-                    showToast(`✔ Receipt of ₹${payAmount.toFixed(2)} recorded! Customer outstanding decremented.`);
-                    setPayAmount(0);
-                    await loadAllErpData();
-                  } catch (err: any) {
-                    showToast(err.message || 'Error recording receipt');
+                      // Mutate store ONLY after PostgreSQL confirms row commitment
+                      erpStore.recordPaymentReceipt({
+                        customer_name: custObj?.name || payCustName,
+                        amount: payAmount,
+                        payment_mode: payMode,
+                        bank_name: payBank,
+                      });
+
+                      showToast(`✔ Receipt of ₹${payAmount.toFixed(2)} committed to PostgreSQL! Customer outstanding decremented.`);
+                      setPayAmount(0);
+                      await loadAllErpData();
+                    }
+                  } catch (backendErr: any) {
+                    if (!navigator.onLine || backendErr.message?.includes('Failed to fetch') || backendErr.message?.includes('NetworkError')) {
+                      enqueueOfflineRecord('PAYMENT_RECEIPT', {
+                        customer_id: customers.find((c) => c.name === payCustName)?.id || 1,
+                        amount: payAmount,
+                        payment_mode: payMode,
+                        bank_name: payBank,
+                      });
+                      showToast(`💾 Offline Buffer: Payment receipt queued for cloud sync.`);
+                    } else {
+                      setSubmitError(backendErr.message || 'Failed to save receipt to database');
+                      showToast(`❌ Receipt save failed: ${backendErr.message || 'Database error'}`);
+                    }
+                  } finally {
+                    setIsSubmitting(false);
                   }
                 }}
               >
                 <span>💾</span>
-                <span>Save (F2)</span>
+                <span>{isSubmitting ? 'Saving...' : 'Save (F2)'}</span>
               </button>
               <button
                 type="button"

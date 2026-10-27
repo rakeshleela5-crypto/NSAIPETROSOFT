@@ -195,7 +195,7 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
             amount: amt,
             paid_to: vendorName,
             narration: `${payoutTransferType} Payout via Decentro BaaS (Txn: ${resp.decentro_txn_id || idempKey}) - ${payoutPurpose}`,
-          }).catch((e) => console.warn('PostgreSQL expense record note:', e));
+          });
 
           erpStore.recordExpense({
             category: 'Supplier Payout (OMC)',
@@ -204,10 +204,10 @@ export const DecentroBankingModal: React.FC<DecentroBankingModalProps> = ({
             narration: `${payoutTransferType} Payout via Decentro BaaS (Txn: ${resp.decentro_txn_id || idempKey}) - ${payoutPurpose}`,
             paid_from_account_id: 1,
           });
-          if (showToast) showToast(`✔ Supplier payout of ₹${amt.toLocaleString('en-IN')} recorded in expense ledger!`);
+          if (showToast) showToast(`✔ Supplier payout of ₹${amt.toLocaleString('en-IN')} recorded in PostgreSQL expense ledger!`);
           if (loadAllErpData) await loadAllErpData();
-        } catch (e) {
-          console.warn('ERP store expense sync warning:', e);
+        } catch (e: any) {
+          if (showToast) showToast(`⚠ Payout processed, but expense ledger save failed: ${e.message}`);
         }
       }
     } catch (err: any) {
