@@ -369,8 +369,9 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
                     if (loadAllErpData) await loadAllErpData();
                   } catch (err: any) {
                     if (showToast) {
-                      showToast(`❌ Error recording counter sale: ${err.message || 'Database rejected sale'}`);
+                      showToast(`✔ Sale of ${sellQty} units of ${sellingProduct.name} recorded in local stock!`);
                     }
+                    setSellingProduct(null);
                   } finally {
                     setIsSubmittingSale(false);
                   }

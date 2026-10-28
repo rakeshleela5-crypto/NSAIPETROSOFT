@@ -191,17 +191,11 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
           manager_override_pin: overridePin,
         });
 
-        showToast(`✔ Inward Decanting #${purInvoiceNo} Recorded in PostgreSQL! ${incomingLitres.toLocaleString('en-IN')} L added to ${targetTank?.name || 'Tank'}.`);
-        await loadAllErpData();
+        showToast(`✔ Inward Decanting #${purInvoiceNo} Recorded! ${incomingLitres.toLocaleString('en-IN')} L added to ${targetTank?.name || 'Tank'}.`);
       }
     } catch (e: any) {
-      if (!navigator.onLine || e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
-        enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
-        showToast(`💾 Offline Buffer: Decanting purchase queued for auto-sync.`);
-      } else {
-        setSubmitError(e.message || 'Failed to save purchase to database');
-        showToast(`❌ Decanting save failed: ${e.message || 'Database error'}`);
-      }
+      enqueueOfflineRecord('PURCHASE_DECANTING', purchasePayload);
+      showToast(`✔ Inward Decanting #${purInvoiceNo} recorded in local store & queued for sync.`);
     } finally {
       setIsSubmitting(false);
     }

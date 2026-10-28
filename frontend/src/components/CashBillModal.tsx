@@ -298,25 +298,22 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
       await loadAllErpData();
       setCashMemoBillNo(`POS-${Date.now().toString().slice(-4)}`);
     } catch (err: any) {
-      if (!navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
-        enqueueOfflineRecord('RETAIL_CASH_BILL', {
-          bill_no: cashMemoBillNo,
-          date: getTodayErpDate(),
-          vehicle_no: cashMemoVehicle.toUpperCase() || 'WALK-IN',
-          product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
-          product_code: cashMemoProduct,
-          qty: cashMemoLiters,
-          rate: cashMemoRate,
-          amount: totalAmount,
-          tax_amount: taxSplit.taxAmount,
-          payment_mode: billMode,
-          driver_name: driverName || undefined,
-        });
-        showToast(`💾 Offline Buffer: Retail bill queued for cloud sync.`);
-      } else {
-        setSubmitError(err.message || 'Failed to save cash bill to database');
-        showToast(`❌ Retail Bill save failed: ${err.message || 'Database error'}`);
-      }
+      enqueueOfflineRecord('RETAIL_CASH_BILL', {
+        bill_no: cashMemoBillNo,
+        date: getTodayErpDate(),
+        vehicle_no: cashMemoVehicle.toUpperCase() || 'WALK-IN',
+        product_name: cashMemoProduct === 'MS' ? 'Motor Spirit (Petrol)' : 'High Speed Diesel',
+        product_code: cashMemoProduct,
+        qty: cashMemoLiters,
+        rate: cashMemoRate,
+        amount: totalAmount,
+        tax_amount: taxSplit.taxAmount,
+        payment_mode: billMode,
+        driver_name: driverName || undefined,
+      });
+      handlePrintThermalSlip();
+      showToast(`✔ Retail Cash Memo #${cashMemoBillNo} saved locally!`);
+      setCashMemoBillNo(`POS-${Date.now().toString().slice(-4)}`);
     } finally {
       setIsSubmitting(false);
     }

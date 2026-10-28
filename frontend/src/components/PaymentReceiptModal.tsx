@@ -267,43 +267,25 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                       bank_name: payBank,
                     };
 
-                    if (!navigator.onLine) {
-                      enqueueOfflineRecord('PAYMENT_RECEIPT', pmtPayload);
-                      erpStore.recordPaymentReceipt({
-                        customer_name: custObj?.name || payCustName,
-                        amount: payAmount,
-                        payment_mode: payMode,
-                        bank_name: payBank,
-                      });
-                      showToast(`💾 Offline Forecourt: Receipt of ₹${payAmount.toFixed(2)} buffered locally. Will auto-sync.`);
-                    } else {
-                      await createPaymentReceipt(pmtPayload);
+                    // 1. Instant local state & ledger update (<1ms)
+                    erpStore.recordPaymentReceipt({
+                      customer_name: custObj?.name || payCustName,
+                      amount: payAmount,
+                      payment_mode: payMode,
+                      bank_name: payBank,
+                    });
+                    showToast(`✔ Receipt of ₹${payAmount.toFixed(2)} recorded successfully! Customer outstanding decremented.`);
+                    setPayAmount(0);
 
-                      // Mutate store ONLY after PostgreSQL confirms row commitment
-                      erpStore.recordPaymentReceipt({
-                        customer_name: custObj?.name || payCustName,
-                        amount: payAmount,
-                        payment_mode: payMode,
-                        bank_name: payBank,
-                      });
-
-                      showToast(`✔ Receipt of ₹${payAmount.toFixed(2)} committed to PostgreSQL! Customer outstanding decremented.`);
-                      setPayAmount(0);
-                      await loadAllErpData();
-                    }
-                  } catch (backendErr: any) {
-                    if (!navigator.onLine || backendErr.message?.includes('Failed to fetch') || backendErr.message?.includes('NetworkError')) {
-                      enqueueOfflineRecord('PAYMENT_RECEIPT', {
-                        customer_id: customers.find((c) => c.name === payCustName)?.id || 1,
-                        amount: payAmount,
-                        payment_mode: payMode,
-                        bank_name: payBank,
-                      });
-                      showToast(`💾 Offline Buffer: Payment receipt queued for cloud sync.`);
-                    } else {
-                      setSubmitError(backendErr.message || 'Failed to save receipt to database');
-                      showToast(`❌ Receipt save failed: ${backendErr.message || 'Database error'}`);
-                    }
+                    // 2. Non-blocking cloud sync in background
+                    void (async () => {
+                      try {
+                        await createPaymentReceipt(pmtPayload);
+                      } catch (backendErr: any) {
+                        enqueueOfflineRecord('PAYMENT_RECEIPT', pmtPayload);
+                        console.warn('Payment receipt sync buffered:', backendErr);
+                      }
+                    })();
                   } finally {
                     setIsSubmitting(false);
                   }

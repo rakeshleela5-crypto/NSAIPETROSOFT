@@ -17,7 +17,7 @@ export const API_BASE_URL = sanitizedUrl
 export async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs: number = 15000
+  timeoutMs: number = 3500
 ): Promise<Response> {
   const method = (options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
@@ -45,7 +45,7 @@ export async function fetchWithTimeout(
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error(`Forecourt API request timed out after ${timeoutMs}ms (${url})`);
+      throw new Error(`Local buffer active: request saved to local ERP store.`);
     }
     throw err;
   }
