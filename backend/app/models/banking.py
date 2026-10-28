@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import Column
+from sqlalchemy import Column, column
 from sqlmodel import Field, SQLModel
 from app.core.encryption import EncryptedString
 
@@ -164,8 +164,6 @@ class FleetCustomer(SQLModel, table=True):
     current_outstanding: float = Field(default=0.0)
     version_id: int = Field(default=1, nullable=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    __mapper_args__ = {"version_id_col": "version_id"}
 
 
 class NozzleUPITransaction(SQLModel, table=True):

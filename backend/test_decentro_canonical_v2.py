@@ -41,6 +41,17 @@ async def test_canonical_decentro_v2_workflows():
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+
+    from app.core.security import get_current_user
+    from app.models.petrol_pump import User
+    import app.core.idempotency as idempotency_mod
+
+    mock_user = User(id=1, username="test_owner", full_name="Test Owner", role="OWNER", is_active=True)
+    async def override_current_user():
+        return mock_user
+
+    app.dependency_overrides[get_current_user] = override_current_user
+    idempotency_mod.AsyncSessionLocal = async_session
     transport = ASGITransport(app=app)
 
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -237,3 +248,5 @@ async def test_canonical_decentro_v2_workflows():
         assert data_gst["gstin"] == "21AABCK1234F1Z5"
         assert data_gst["legal_name"] is not None
         assert data_gst["registration_status"] == "ACTIVE"
+
+    app.dependency_overrides.clear()

@@ -1391,6 +1391,7 @@ class PaymentReceiptCreate(BaseModel):
     receiving_account: Optional[str] = None
     cheque_no: Optional[str] = None
     remarks: Optional[str] = None
+    receipt_no: Optional[str] = None
 
 
 @router.get("/payments", summary="List Customer Payment Receipts")
@@ -1432,7 +1433,10 @@ async def create_payment_receipt(data: PaymentReceiptCreate, db: AsyncSession = 
 
     max_id_res = await db.execute(select(func.coalesce(func.max(PaymentReceipt.id), 0)))
     next_id = (max_id_res.scalar() or 0) + 1
-    receipt_no = f"RCP-{next_id:04d}"
+    if data.receipt_no and data.receipt_no.strip():
+        receipt_no = data.receipt_no.strip()
+    else:
+        receipt_no = f"RCP-{next_id:04d}-{int(time.time()*1000)%100000:05d}"
 
     effective_bank = data.receiving_account or data.bank_name or "CASH ON HAND"
     receipt = PaymentReceipt(

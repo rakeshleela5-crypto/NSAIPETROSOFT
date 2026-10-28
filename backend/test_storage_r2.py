@@ -30,9 +30,23 @@ from app.models.petrol_pump import (
 )
 
 
+from app.core.security import get_current_user
+from app.models.petrol_pump import User
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def override_storage_auth():
+    mock_user = User(id=1, username="test_owner", full_name="Test Owner", role="OWNER", is_active=True)
+    async def mock_get_current_user():
+        return mock_user
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture

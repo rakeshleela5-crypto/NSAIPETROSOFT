@@ -46,6 +46,17 @@ async def test_decentro_integration_suite():
 
     app.dependency_overrides[get_db] = override_get_db
 
+    from app.core.security import get_current_user
+    from app.models.petrol_pump import User
+    import app.core.idempotency as idempotency_mod
+
+    mock_user = User(id=1, username="test_owner", full_name="Test Owner", role="OWNER", is_active=True)
+    async def override_current_user():
+        return mock_user
+
+    app.dependency_overrides[get_current_user] = override_current_user
+    idempotency_mod.AsyncSessionLocal = async_session
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         # Pre-seed a test Fleet Customer & Bank Account
@@ -253,6 +264,7 @@ async def test_decentro_integration_suite():
         print(f"[TEST 13] Transaction audit trail confirmed with {txns_res.json()['count']} logged records.")
 
     print("\n[SUCCESS] ALL 13 DECENTRO ENTERPRISE INTEGRATION TESTS PASSED WITH 100% SUCCESS!\n")
+    app.dependency_overrides.clear()
 
 
 if __name__ == "__main__":
