@@ -62,6 +62,7 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
   const handleStartAdd = () => {
     setIsEditing(true);
     setEditCustId(null);
+    setSubmitError(null);
     setFormName('');
     setFormMobile('');
     setFormCity('SURAT');
@@ -76,6 +77,7 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
   const handleStartEdit = (c: CustomerFull) => {
     setIsEditing(true);
     setEditCustId(c.id);
+    setSubmitError(null);
     setFormName(c.name);
     setFormMobile(c.mobile || '');
     setFormCity(c.city || 'SURAT');
@@ -536,7 +538,7 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                 <span style={{ fontWeight: 700, color: '#0a246a' }}>
                   {editCustId ? '✏️ Edit Customer & Fleet' : '➕ Add Fleet Customer'}
                 </span>
-                <button type="button" className="win-btn-classic" onClick={() => setIsEditing(false)}>✕ Cancel</button>
+                <button type="button" className="win-btn-classic" onClick={() => { setIsEditing(false); setSubmitError(null); }}>✕ Cancel</button>
               </div>
 
               {submitError && (
@@ -638,7 +640,7 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                 </div>
 
                 <div className="win-actions-row" style={{ marginTop: '12px' }}>
-                  <button type="button" className="win-btn-classic" onClick={() => setIsEditing(false)}>Cancel</button>
+                  <button type="button" className="win-btn-classic" onClick={() => { setIsEditing(false); setSubmitError(null); }}>Cancel</button>
                   <button type="submit" className="win-btn-classic win-btn-primary" style={{ fontWeight: 700 }}>
                     <span>💾</span>
                     <span>Save Customer & Fleet</span>

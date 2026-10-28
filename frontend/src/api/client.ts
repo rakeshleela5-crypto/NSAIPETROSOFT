@@ -10,14 +10,14 @@ export const API_BASE_URL = sanitizedUrl
   : 'https://nsaipetrosoft-production.up.railway.app';
 
 /**
- * Executes a fetch request with a strict AbortController timeout (default 2500ms).
- * Prevents UI preloader deadlocks on Cloudflare Pages when the Railway backend is asleep/down.
+ * Executes a fetch request with an AbortController timeout (default 15000ms).
+ * Prevents UI hangs while giving cloud-hosted endpoints sufficient latency margin.
  * Automatically attaches an X-Idempotency-Key header with crypto.randomUUID() on all state-mutating requests (POST, PUT, PATCH).
  */
 export async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs: number = 2500
+  timeoutMs: number = 15000
 ): Promise<Response> {
   const method = (options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
@@ -130,7 +130,7 @@ export interface HealthResponse {
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/health`);
+  const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {}, 5000);
   if (!response.ok) {
     throw new Error(`Health check failed with status: ${response.status}`);
   }
@@ -451,11 +451,15 @@ export async function updateCustomer(
     bill_period?: string;
   }
 ): Promise<any> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/pump/customers/${customerId}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    },
+    15000
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Update customer failed: ${res.status}`);
@@ -465,9 +469,13 @@ export async function updateCustomer(
 
 export async function deleteCustomer(customerId: number, managerPin?: string): Promise<any> {
   const pinParam = managerPin ? `?manager_pin=${encodeURIComponent(managerPin)}` : '';
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers/${customerId}${pinParam}`, {
-    method: 'DELETE',
-  });
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/pump/customers/${customerId}${pinParam}`,
+    {
+      method: 'DELETE',
+    },
+    15000
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Delete customer failed: ${res.status}`);
