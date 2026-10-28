@@ -18,24 +18,7 @@ from app.core.time import now_ist
 from app.db.session import init_db, AsyncSessionLocal
 
 
-async def nightly_backup_scheduler():
-    """
-    Automated background worker that periodically creates Cloudflare R2 snapshots.
-    Ensures a clean snapshot is saved daily during the night shift (23:45 IST).
-    """
-    await asyncio.sleep(60)  # Initial wait for server to settle
-    while True:
-        try:
-            current_time = now_ist()
-            # If during the night shift hour (23:00 IST)
-            if current_time.hour == 23 and current_time.minute >= 45:
-                from app.services.backup_service import create_and_store_backup
-                async with AsyncSessionLocal() as session:
-                    await create_and_store_backup(session)
-                await asyncio.sleep(3600)  # Sleep 1 hour so it only triggers once tonight
-        except Exception as exc:
-            print(f"Background nightly backup task note: {exc}")
-        await asyncio.sleep(1800)  # Check every 30 minutes
+from app.services.scheduler import background_cron_scheduler
 
 
 @asynccontextmanager
@@ -46,10 +29,10 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"Warning: Database initialization skipped or deferred: {exc}")
 
-    # Launch background automated backup worker
-    backup_task = asyncio.create_task(nightly_backup_scheduler())
+    # Launch background scheduler for anomaly detection & automated daily backups (#41, #97, #98, #104)
+    cron_task = asyncio.create_task(background_cron_scheduler(initial_delay_sec=30, interval_sec=1800))
     yield
-    backup_task.cancel()
+    cron_task.cancel()
 
 
 app = FastAPI(

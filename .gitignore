@@ -52,3 +52,5 @@ scratch/
 .agents/
 test-results/
 playwright-report/
+backups/
+*.enc

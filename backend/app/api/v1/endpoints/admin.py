@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging_config import decentro_logger
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.audit import DeadLetterEvent
+from app.models.audit import DeadLetterEvent, FinancialAuditLog
 from app.models.petrol_pump import User
 from app.routers.banking import (
     execute_collections_reconciliation,
@@ -236,3 +236,75 @@ async def get_dead_letter_event_detail(
             detail=f"DeadLetterEvent #{event_id} not found.",
         )
     return event
+
+
+class FinancialAuditLogItem(BaseModel):
+    id: int
+    actor_id: Optional[str] = None
+    role: Optional[str] = None
+    action: str
+    entity_type: str
+    entity_id: Optional[str] = None
+    before_state: Optional[Any] = None
+    after_state: Optional[Any] = None
+    ip_address: Optional[str] = None
+    request_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FinancialAuditLogListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: List[FinancialAuditLogItem]
+
+
+@router.get(
+    "/audit-logs",
+    response_model=FinancialAuditLogListResponse,
+    summary="Read-Only Financial & Forecourt Audit Logs (#100)",
+    description="Exposes immutable financial audit trail. Accessible strictly by the OWNER role.",
+)
+async def get_financial_audit_logs(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    action: Optional[str] = Query(None, description="Filter by action name, e.g. FUEL_PRICE_UPDATE"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type, e.g. FuelProduct, TankDipEntry"),
+    actor_id: Optional[str] = Query(None, description="Filter by actor ID"),
+    entity_id: Optional[str] = Query(None, description="Filter by entity ID"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("OWNER")),
+):
+    query = select(FinancialAuditLog)
+    count_query = select(func.count(FinancialAuditLog.id))
+
+    if action:
+        query = query.where(FinancialAuditLog.action.ilike(f"%{action.strip()}%"))
+        count_query = count_query.where(FinancialAuditLog.action.ilike(f"%{action.strip()}%"))
+    if entity_type:
+        query = query.where(FinancialAuditLog.entity_type.ilike(f"%{entity_type.strip()}%"))
+        count_query = count_query.where(FinancialAuditLog.entity_type.ilike(f"%{entity_type.strip()}%"))
+    if actor_id:
+        query = query.where(FinancialAuditLog.actor_id == actor_id.strip())
+        count_query = count_query.where(FinancialAuditLog.actor_id == actor_id.strip())
+    if entity_id:
+        query = query.where(FinancialAuditLog.entity_id == entity_id.strip())
+        count_query = count_query.where(FinancialAuditLog.entity_id == entity_id.strip())
+
+    total_count = (await db.execute(count_query)).scalar() or 0
+    logs = (
+        await db.execute(
+            query.order_by(desc(FinancialAuditLog.id)).offset(offset).limit(limit)
+        )
+    ).scalars().all()
+
+    return {
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "items": logs,
+    }
+

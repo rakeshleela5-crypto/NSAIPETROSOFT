@@ -25,6 +25,7 @@ from app.core.security import get_current_user_optional, require_roles
 from app.core.time import today_ist, now_ist
 from app.core.websocket_manager import ws_manager
 from app.db.session import get_db
+from app.services.audit_service import log_audit_event
 from app.services.thermal_printer import (
     generate_credit_slip_text,
     generate_thermal_slip_html,
@@ -404,11 +405,26 @@ async def update_rate(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    old_rate = product.current_rate
     eff_date = data.effective_date or today_ist()
     product.current_rate = data.rate
 
     entry = RateHistory(product_id=product.id, rate=data.rate, effective_date=eff_date)
     db.add(entry)
+
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user or "MANAGER_PIN",
+        action="FUEL_PRICE_UPDATE",
+        entity_type="FuelProduct",
+        entity_id=product.id,
+        old_val={"product_id": product.id, "product_name": product.name, "rate": old_rate},
+        new_val={"product_id": product.id, "product_name": product.name, "rate": data.rate, "effective_date": str(eff_date)},
+        request_ip=req_ip,
+    )
+
     await db.commit()
 
     # Instant TTL cache invalidation (#6, #7)
@@ -437,6 +453,7 @@ async def delete_rate_history(
 
     prod_id = entry.product_id
     product = await db.get(FuelProduct, prod_id)
+    deleted_rate = entry.rate
     await db.delete(entry)
     await db.flush()
 
@@ -451,6 +468,19 @@ async def delete_rate_history(
     latest_hist = latest_res.scalars().first()
     if product and latest_hist:
         product.current_rate = latest_hist.rate
+
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user or "MANAGER_PIN",
+        action="FUEL_PRICE_REVERT",
+        entity_type="RateHistory",
+        entity_id=history_id,
+        old_val={"history_id": history_id, "product_id": prod_id, "deleted_rate": deleted_rate},
+        new_val={"reverted_current_rate": product.current_rate if product else None},
+        request_ip=req_ip,
+    )
 
     await db.commit()
 
@@ -852,7 +882,22 @@ async def close_shift_endpoint(
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
 
+    old_status = shift.status
     shift.status = "Closed"
+
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user or "STATION_MANAGER",
+        action="SHIFT_CLOSE_FINALIZE",
+        entity_type="Shift",
+        entity_id=shift.id,
+        old_val={"shift_id": shift.id, "status": old_status},
+        new_val={"shift_id": shift.id, "status": "Closed", "so_number": shift.so_number},
+        request_ip=req_ip,
+    )
+
     await db.commit()
     return {
         "status": "success",
@@ -1728,7 +1773,12 @@ async def list_customers(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/customers", summary="Create Customer")
-async def create_customer(data: CustomerCreate, db: AsyncSession = Depends(get_db)):
+async def create_customer(
+    data: CustomerCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     count_res = await db.execute(select(func.count(Customer.id)))
     code = f"{(count_res.scalar() or 0) + 1}"
     initial_outstanding = float(data.current_outstanding or data.opening_balance or 0.0)
@@ -1746,6 +1796,21 @@ async def create_customer(data: CustomerCreate, db: AsyncSession = Depends(get_d
         bill_period=data.bill_period,
     )
     db.add(cust)
+    await db.flush()
+
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user or "SYSTEM",
+        action="CUSTOMER_CREATE",
+        entity_type="Customer",
+        entity_id=cust.id,
+        old_val=None,
+        new_val={"name": cust.name, "mobile": cust.mobile, "credit_limit": cust.credit_limit, "current_outstanding": cust.current_outstanding},
+        request_ip=req_ip,
+    )
+
     await db.commit()
     return {"message": "Customer created successfully", "id": cust.id, "code": cust.code, "name": cust.name, "current_outstanding": cust.current_outstanding}
 
@@ -1938,10 +2003,20 @@ class CustomerUpdate(BaseModel):
 
 
 @router.put("/customers/{customer_id}", summary="Update Customer")
-async def update_customer(customer_id: int, data: CustomerUpdate, db: AsyncSession = Depends(get_db)):
+async def update_customer(
+    customer_id: int,
+    data: CustomerUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     cust = await db.get(Customer, customer_id)
     if not cust:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    old_limit = cust.credit_limit
+    old_outstanding = cust.current_outstanding
+
     if data.name is not None:
         cust.name = data.name.strip()
     if data.mobile is not None:
@@ -1964,6 +2039,21 @@ async def update_customer(customer_id: int, data: CustomerUpdate, db: AsyncSessi
         cust.current_outstanding = float(data.opening_balance)
     if data.bill_period is not None:
         cust.bill_period = data.bill_period
+
+    # Immutable Financial Audit Trail for credit limit modifications (#100)
+    req_ip = request.client.host if request.client else None
+    if data.credit_limit is not None and data.credit_limit != old_limit:
+        await log_audit_event(
+            db=db,
+            actor=current_user or "STATION_MANAGER",
+            action="CREDIT_LIMIT_CHANGE",
+            entity_type="Customer",
+            entity_id=cust.id,
+            old_val={"customer_id": cust.id, "name": cust.name, "credit_limit": old_limit},
+            new_val={"customer_id": cust.id, "name": cust.name, "credit_limit": cust.credit_limit},
+            request_ip=req_ip,
+        )
+
     await db.commit()
     return {"message": "Customer updated successfully", "id": cust.id, "name": cust.name}
 
@@ -2042,7 +2132,12 @@ async def list_dips(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/dips", summary="Record Daily Tank Dip and Calculate Variation")
-async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db)):
+async def create_tank_dip(
+    data: TankDipCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     if data.opening_dip < 0 or data.closing_dip < 0:
         raise HTTPException(status_code=400, detail="Dip rod measurements (cm) cannot be negative")
     if data.opening_stock < 0 or data.closing_stock < 0 or data.receipt_liters < 0:
@@ -2108,6 +2203,29 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
         density_15c=density_15c,
     )
     db.add(entry)
+    await db.flush()
+
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user or "FORECOURT_ATTENDANT",
+        action="RECORD_TANK_DIP",
+        entity_type="TankDipEntry",
+        entity_id=entry.id,
+        old_val={"tank_id": tank.id, "previous_stock": tank.current_stock, "opening_dip": data.opening_dip, "opening_stock": data.opening_stock},
+        new_val={
+            "tank_id": tank.id,
+            "closing_dip": data.closing_dip,
+            "closing_stock": data.closing_stock,
+            "dip_sale": dip_sale,
+            "meter_sale": meter_sale,
+            "variation_liters": variation,
+            "tolerance_limit": tolerance_limit,
+        },
+        request_ip=req_ip,
+    )
+
     await db.commit()
     await db.refresh(entry)
 
@@ -2174,6 +2292,20 @@ async def delete_tank_dip(
     entry = await db.get(TankDipEntry, dip_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Tank dip reading not found")
+
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user or "MANAGER_PIN",
+        action="DELETE_TANK_DIP",
+        entity_type="TankDipEntry",
+        entity_id=dip_id,
+        old_val={"id": entry.id, "tank_id": entry.tank_id, "date": str(entry.date), "variation_liters": float(entry.variation_liters or 0.0)},
+        new_val={"deleted": True},
+        request_ip=req_ip,
+    )
+
     await db.delete(entry)
     await db.commit()
     return {"status": "success", "message": f"Tank dip entry #{dip_id} deleted"}
@@ -2259,7 +2391,12 @@ class SettlementSaveRequest(BaseModel):
     summary="Persist Cashier Shift Settlement to Database",
     dependencies=[Depends(verify_idempotency_key)],
 )
-async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depends(get_db)):
+async def save_settlement(
+    data: SettlementSaveRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     if data.actual_cash < 0 or data.cash_total < 0 or data.digital_total < 0 or data.credit_total < 0 or data.expense_total < 0:
         raise HTTPException(
             status_code=400,
@@ -2355,6 +2492,29 @@ async def save_settlement(data: SettlementSaveRequest, db: AsyncSession = Depend
                 notes=f"Cashier shortage from Shift #{shift.so_number} settlement handover",
             )
             db.add(shortage_entry)
+
+    await db.flush()
+
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user or (data.supervisor_pin and f"PIN:{data.supervisor_pin}") or data.employee_id or "CASHIER",
+        action="SHIFT_SETTLEMENT_APPROVAL",
+        entity_type="ShiftSettlement",
+        entity_id=settlement.id,
+        old_val={"shift_id": shift.id, "previous_status": shift.status},
+        new_val={
+            "shift_id": shift.id,
+            "status": "Settled",
+            "cash_total": data.cash_total,
+            "actual_cash": data.actual_cash,
+            "expected_cash": data.expected_cash,
+            "gap_amount": data.gap_amount,
+            "shortage_posted": shortage_posted,
+        },
+        request_ip=req_ip,
+    )
 
     await db.commit()
     return {

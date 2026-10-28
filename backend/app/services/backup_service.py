@@ -18,6 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.encryption import get_fernet
+from app.models.audit import FinancialAuditLog
 from app.models.petrol_pump import (
     BankAccount,
     Customer,
@@ -271,6 +273,7 @@ async def generate_database_snapshot(db: AsyncSession) -> Tuple[str, bytes, Dict
         "lube_products": LubeProduct,
         "lube_sale_entries": LubeSaleEntry,
         "supervisor_reversal_vouchers": SupervisorReversalVoucher,
+        "financial_audit_logs": FinancialAuditLog,
     }
 
     dump_data: Dict[str, Any] = {}
@@ -327,17 +330,46 @@ async def generate_database_snapshot(db: AsyncSession) -> Tuple[str, bytes, Dict
     return filename, compressed_bytes, meta
 
 
-async def create_and_store_backup(db: AsyncSession) -> Dict[str, Any]:
+async def create_and_store_backup(
+    db: AsyncSession,
+    encrypt: bool = True,
+    date_folder: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Creates a PostgreSQL database snapshot, attempts upload to Cloudflare R2,
-    and falls back/stores a local copy so backup is never lost.
+    Creates a PostgreSQL database snapshot, compresses with gzip,
+    optionally encrypts with Fernet (AES-128-CBC + HMAC-SHA256),
+    uploads directly to Cloudflare R2 under backups/YYYY-MM-DD/,
+    and stores a local fallback copy (#97, #98).
     """
     filename, file_bytes, meta = await generate_database_snapshot(db)
 
-    # Always save a local copy in backups directory
-    local_path = LOCAL_BACKUP_DIR / filename
+    day_folder = date_folder or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    folder_dir = LOCAL_BACKUP_DIR / day_folder
+    folder_dir.mkdir(parents=True, exist_ok=True)
+
+    bytes_to_store = file_bytes
+    final_filename = filename
+
+    if encrypt:
+        try:
+            fernet = get_fernet()
+            bytes_to_store = fernet.encrypt(file_bytes)
+            final_filename = f"{filename}.enc"
+            meta["encrypted"] = True
+            meta["encrypted_size_bytes"] = len(bytes_to_store)
+            meta["sha256"] = hashlib.sha256(bytes_to_store).hexdigest()
+        except Exception as enc_err:
+            logger.warning(f"Fernet encryption skipped due to error: {enc_err}")
+            meta["encrypted"] = False
+
+    # Save local copies: both in date folder and root LOCAL_BACKUP_DIR
+    local_path = folder_dir / final_filename
     with open(local_path, "wb") as f:
-        f.write(file_bytes)
+        f.write(bytes_to_store)
+
+    root_local_path = LOCAL_BACKUP_DIR / final_filename
+    with open(root_local_path, "wb") as f:
+        f.write(bytes_to_store)
 
     r2_status = r2_service.test_connection()
     uploaded_to_r2 = False
@@ -346,23 +378,24 @@ async def create_and_store_backup(db: AsyncSession) -> Dict[str, Any]:
 
     if r2_status.get("connected"):
         try:
-            month_folder = datetime.now(timezone.utc).strftime("%Y-%m")
-            r2_key = f"backups/{month_folder}/{filename}"
-            r2_service.upload_file(r2_key, file_bytes)
+            r2_key = f"backups/{day_folder}/{final_filename}"
+            r2_service.upload_file(r2_key, bytes_to_store)
             uploaded_to_r2 = True
-            r2_message = f"Successfully archived to Cloudflare R2 bucket '{r2_service.bucket_name}'!"
+            r2_message = f"Successfully archived snapshot to Cloudflare R2 bucket '{r2_service.bucket_name}' under {r2_key}!"
         except Exception as e:
             logger.error(f"Failed to upload backup to R2: {e}")
             r2_message = f"Saved locally. R2 upload failed: {str(e)}"
     else:
+        r2_key = f"backups/{day_folder}/{final_filename}"
         r2_message = "Saved locally. Cloudflare R2 credentials not configured on server."
 
     return {
         "status": "success",
-        "filename": filename,
-        "size_kb": round(meta["compressed_size_bytes"] / 1024, 2),
+        "filename": final_filename,
+        "size_kb": round(len(bytes_to_store) / 1024, 2),
         "total_records": meta["total_records"],
         "sha256": meta["sha256"],
+        "encrypted": meta.get("encrypted", False),
         "storage": "cloudflare_r2" if uploaded_to_r2 else "local_disk",
         "uploaded_to_r2": uploaded_to_r2,
         "r2_key": r2_key,
@@ -526,16 +559,18 @@ def list_all_backups() -> List[Dict[str, Any]]:
 
     local_backups = []
     if LOCAL_BACKUP_DIR.exists():
-        for f in LOCAL_BACKUP_DIR.glob("*.json.gz"):
-            stat = f.stat()
-            local_backups.append({
-                "key": f.name,
-                "filename": f.name,
-                "size_bytes": stat.st_size,
-                "size_kb": round(stat.st_size / 1024, 2),
-                "last_modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                "storage": "local_disk",
-            })
+        for f in LOCAL_BACKUP_DIR.glob("**/*"):
+            if f.is_file() and (".json.gz" in f.name):
+                stat = f.stat()
+                rel_path = str(f.relative_to(LOCAL_BACKUP_DIR)).replace("\\", "/")
+                local_backups.append({
+                    "key": rel_path,
+                    "filename": f.name,
+                    "size_bytes": stat.st_size,
+                    "size_kb": round(stat.st_size / 1024, 2),
+                    "last_modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                    "storage": "local_disk",
+                })
 
     # Combine: give preference to R2 entries, add unique local entries
     seen_filenames = set()

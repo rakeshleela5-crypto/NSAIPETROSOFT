@@ -20,6 +20,7 @@ from app.core.security_decentro import verify_decentro_webhook_signature
 from app.core.time import now_ist
 from app.core.websocket_manager import ws_manager
 from app.db.session import get_db
+from app.services.audit_service import log_audit_event
 from app.models.audit import DeadLetterEvent
 from app.models.banking import (
     CollectionLedgerEntry,
@@ -1102,6 +1103,27 @@ async def create_supplier_payout(
         if bank_acc:
             bank_acc.balance = round(float(bank_acc.balance) - req.amount, 2)
 
+    # Immutable Financial Audit Trail (#100)
+    req_ip = request.client.host if request.client else None
+    await log_audit_event(
+        db=db,
+        actor=current_user,
+        action="DECENTRO_PAYOUT_INITIATED",
+        entity_type="SupplierPayoutOrder",
+        entity_id=order.reference_id,
+        old_val=None,
+        new_val={
+            "reference_id": order.reference_id,
+            "vendor_name": order.vendor_name,
+            "amount": order.amount,
+            "transfer_type": order.transfer_type,
+            "status": status_str,
+            "decentro_txn_id": decentro_txn_id,
+            "bank_utr": utr,
+        },
+        request_ip=req_ip,
+    )
+
     await db.commit()
     await db.refresh(payout)
     await db.refresh(order)
@@ -1473,5 +1495,14 @@ async def get_reconciliation_by_utr(
 # Mount sub-routers into main router
 router.include_router(banking_router)
 router.include_router(webhooks_router)
+# Support both /api/v1/payouts and /api/v1/banking/payouts
+router.add_api_route(
+    "/payouts",
+    create_supplier_payout,
+    methods=["POST"],
+    response_model=SupplierPayoutResponse,
+    summary="OMC & Fuel Tanker Supplier Payout with Idempotency",
+    dependencies=[Depends(verify_idempotency_key)],
+)
 
 

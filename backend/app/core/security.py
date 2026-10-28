@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -246,11 +246,23 @@ async def get_current_user_optional(
     payload = decode_access_token(actual_token)
     if not payload:
         return None
-    username: Optional[str] = payload.get("sub")
-    if not username:
+    username: Optional[str] = payload.get("sub") or payload.get("username")
+    user_id_val = payload.get("user_id")
+    if not username and not user_id_val:
         return None
 
-    stmt = select(User).where(User.username == username, User.is_active.is_(True))
+    conditions = []
+    if username:
+        conditions.append(User.username == str(username))
+        if str(username).isdigit():
+            conditions.append(User.id == int(username))
+    if user_id_val is not None:
+        try:
+            conditions.append(User.id == int(user_id_val))
+        except (ValueError, TypeError):
+            pass
+
+    stmt = select(User).where(or_(*conditions), User.is_active.is_(True))
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -273,11 +285,23 @@ async def get_current_user(
     if payload is None:
         raise credentials_exception
 
-    username: Optional[str] = payload.get("sub")
-    if username is None:
+    username: Optional[str] = payload.get("sub") or payload.get("username")
+    user_id_val = payload.get("user_id")
+    if not username and not user_id_val:
         raise credentials_exception
 
-    stmt = select(User).where(User.username == username)
+    conditions = []
+    if username:
+        conditions.append(User.username == str(username))
+        if str(username).isdigit():
+            conditions.append(User.id == int(username))
+    if user_id_val is not None:
+        try:
+            conditions.append(User.id == int(user_id_val))
+        except (ValueError, TypeError):
+            pass
+
+    stmt = select(User).where(or_(*conditions))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if user is None:
