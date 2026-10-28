@@ -96,8 +96,6 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
   creditIndentNo,
   setCreditIndentNo,
 }) => {
-  if (!isOpen) return null;
-
   const [managerOverridePin, setManagerOverridePin] = React.useState<string>('');
 
   // Fleet Vehicle Index: Map vehicles across all accounts for fast vehicle-first entry
@@ -191,6 +189,8 @@ export const CreditCustomerSaleModal: React.FC<CreditCustomerSaleModalProps> = (
     `;
     printThermalReceiptHtml(html, { paperWidthMm: paperWidth });
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="win-modal-overlay">

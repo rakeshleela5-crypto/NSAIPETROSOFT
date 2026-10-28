@@ -57,8 +57,6 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
   const [newVehFuel, setNewVehFuel] = useState<string>('HSD');
   const [newVehDriver, setNewVehDriver] = useState<string>('');
 
-  if (!isOpen) return null;
-
   const handleStartAdd = () => {
     setIsEditing(true);
     setEditCustId(null);
@@ -376,6 +374,8 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
     });
     return cName.includes(s) || cCity.includes(s) || cMobile.includes(s) || cGst.includes(s) || vehMatch;
   });
+
+  if (!isOpen) return null;
 
   return (
     <div className="win-modal-overlay">
