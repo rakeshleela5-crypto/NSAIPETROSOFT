@@ -5,10 +5,11 @@ from datetime import date, datetime, timedelta, timezone
 import hmac
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import case, delete, desc, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1734,6 +1735,7 @@ async def delete_card_settlement(
 class CustomerCreate(BaseModel):
     name: str
     mobile: str
+    code: Optional[str] = None
     city: Optional[str] = None
     state: str = "Gujarat"
     address: Optional[str] = None
@@ -1749,6 +1751,28 @@ class VehicleCreate(BaseModel):
     customer_id: int
     vehicle_no: str
     vehicle_type: str = "Truck"
+
+
+async def get_next_customer_code(db: AsyncSession, reserved_codes: Optional[Set[str]] = None) -> str:
+    """
+    Computes the next collision-free customer code by finding the maximum integer
+    code currently in the database. Prevents PostgreSQL unique constraint violations
+    (ix_customers_code) when customer rows have gaps, deletions, or manual codes.
+    """
+    res = await db.execute(select(Customer.code))
+    existing_codes = {str(c).strip() for c in res.scalars().all() if c}
+    if reserved_codes:
+        existing_codes.update(reserved_codes)
+
+    max_num = 0
+    for c in existing_codes:
+        if c.isdigit():
+            max_num = max(max_num, int(c))
+
+    candidate = max(max_num + 1, 1)
+    while str(candidate) in existing_codes:
+        candidate += 1
+    return str(candidate)
 
 
 @router.get("/customers", summary="List All Customers")
@@ -1783,8 +1807,15 @@ async def create_customer(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    count_res = await db.execute(select(func.count(Customer.id)))
-    code = f"{(count_res.scalar() or 0) + 1}"
+    if data.code and data.code.strip():
+        req_code = data.code.strip().upper()
+        existing = await db.execute(select(Customer.id).where(Customer.code == req_code))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail=f"Customer code '{req_code}' already exists")
+        code = req_code
+    else:
+        code = await get_next_customer_code(db)
+
     initial_outstanding = float(data.current_outstanding or data.opening_balance or 0.0)
     cust = Customer(
         code=code,
@@ -1800,7 +1831,14 @@ async def create_customer(
         bill_period=data.bill_period,
     )
     db.add(cust)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as ie:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Database constraint violation while creating customer: {ie.orig or ie}",
+        )
 
     # Immutable Financial Audit Trail (#100)
     req_ip = request.client.host if request.client else None
@@ -1848,8 +1886,12 @@ async def bulk_import_customers_csv(payload: CustomerBulkImportRequest, db: Asyn
     vehicles_added = 0
     errors = []
 
-    count_res = await db.execute(select(func.count(Customer.id)))
-    next_code_num = (count_res.scalar() or 0) + 1
+    all_codes_res = await db.execute(select(Customer.code))
+    existing_codes = {str(c).strip() for c in all_codes_res.scalars().all() if c}
+    max_num = 0
+    for c in existing_codes:
+        if c.isdigit():
+            max_num = max(max_num, int(c))
 
     for idx, r in enumerate(rows, start=1):
         try:
@@ -1901,8 +1943,14 @@ async def bulk_import_customers_csv(payload: CustomerBulkImportRequest, db: Asyn
                 updated_count += 1
             else:
                 # Create new customer
-                assigned_code = code if code else f"{next_code_num}"
-                next_code_num += 1
+                if code and code not in existing_codes:
+                    assigned_code = code
+                else:
+                    max_num = max(max_num + 1, 1)
+                    while str(max_num) in existing_codes:
+                        max_num += 1
+                    assigned_code = str(max_num)
+                existing_codes.add(assigned_code)
                 cust = Customer(
                     code=assigned_code,
                     name=name,

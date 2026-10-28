@@ -391,7 +391,7 @@ export interface CustomerFull {
 }
 
 export async function fetchCustomers(): Promise<CustomerFull[]> {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers`);
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/v1/pump/customers`, {}, 10000);
   if (!res.ok) throw new Error(`Customers API failed: ${res.status}`);
   return res.json();
 }
@@ -399,6 +399,7 @@ export async function fetchCustomers(): Promise<CustomerFull[]> {
 export async function createCustomer(data: {
   name: string;
   mobile: string;
+  code?: string;
   city?: string;
   state?: string;
   address?: string;
@@ -413,8 +414,11 @@ export async function createCustomer(data: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`Create customer failed: ${res.status}`);
+  }, 10000);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Create customer failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -423,8 +427,11 @@ export async function addVehicle(customerId: number, vehicleNo: string): Promise
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ customer_id: customerId, vehicle_no: vehicleNo }),
-  });
-  if (!res.ok) throw new Error(`Add vehicle failed: ${res.status}`);
+  }, 10000);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Add vehicle failed: ${res.status}`);
+  }
   return res.json();
 }
 

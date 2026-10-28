@@ -484,5 +484,27 @@ async def test_parity_crud_endpoints():
         del_empty_lube = await client.delete(f"/api/v1/pump/lubes/{new_lube_id}?manager_pin=1234")
         assert del_empty_lube.status_code == 200
 
+        # 17. Test Customer Code Collision Prevention When Gaps or High Codes Exist
+        cust_high = await client.post(
+            "/api/v1/pump/customers",
+            json={"name": "HIGH CODE FLEET", "mobile": "9825100099", "code": "99", "credit_limit": 50000},
+        )
+        assert cust_high.status_code == 200
+        high_id = cust_high.json()["id"]
+        assert cust_high.json()["code"] == "99"
+
+        # Create an automatic customer without specifying code; must allocate >= 100 without 500 UniqueViolationError
+        cust_auto = await client.post(
+            "/api/v1/pump/customers",
+            json={"name": "AUTO NEXT FLEET", "mobile": "9825100100", "credit_limit": 50000},
+        )
+        assert cust_auto.status_code == 200
+        auto_id = cust_auto.json()["id"]
+        assert int(cust_auto.json()["code"]) >= 100
+
+        # Clean up
+        await client.delete(f"/api/v1/pump/customers/{high_id}?manager_pin=1234")
+        await client.delete(f"/api/v1/pump/customers/{auto_id}?manager_pin=1234")
+
 
 
