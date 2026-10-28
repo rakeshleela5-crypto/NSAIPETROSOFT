@@ -1807,38 +1807,46 @@ async def create_customer(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    if data.code and data.code.strip():
-        req_code = data.code.strip().upper()
-        existing = await db.execute(select(Customer.id).where(Customer.code == req_code))
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail=f"Customer code '{req_code}' already exists")
-        code = req_code
-    else:
-        code = await get_next_customer_code(db)
-
     initial_outstanding = float(data.current_outstanding or data.opening_balance or 0.0)
-    cust = Customer(
-        code=code,
-        name=data.name.strip(),
-        mobile=data.mobile.strip(),
-        city=data.city,
-        state=data.state,
-        address=data.address,
-        gst_no=data.gst_no,
-        pan_no=data.pan_no,
-        credit_limit=data.credit_limit,
-        current_outstanding=initial_outstanding,
-        bill_period=data.bill_period,
-    )
-    db.add(cust)
-    try:
-        await db.flush()
-    except IntegrityError as ie:
-        await db.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail=f"Database constraint violation while creating customer: {ie.orig or ie}",
+    cust = None
+
+    # Try up to 5 times in case of concurrent code allocation or unique constraint race
+    for attempt in range(5):
+        if data.code and data.code.strip() and attempt == 0:
+            req_code = data.code.strip().upper()
+            existing = await db.execute(select(Customer.id).where(Customer.code == req_code))
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail=f"Customer code '{req_code}' already exists")
+            code = req_code
+        else:
+            code = await get_next_customer_code(db)
+
+        cust = Customer(
+            code=code,
+            name=data.name.strip(),
+            mobile=data.mobile.strip(),
+            city=data.city,
+            state=data.state,
+            address=data.address,
+            gst_no=data.gst_no,
+            pan_no=data.pan_no,
+            credit_limit=data.credit_limit,
+            current_outstanding=initial_outstanding,
+            bill_period=data.bill_period,
         )
+        db.add(cust)
+        try:
+            await db.flush()
+            break
+        except IntegrityError as ie:
+            await db.rollback()
+            err_str = str(ie).lower()
+            if ("ix_customers_code" in err_str or "unique constraint" in err_str or "duplicate key" in err_str) and attempt < 4:
+                continue
+            raise HTTPException(
+                status_code=400,
+                detail=f"Database constraint violation while creating customer: {ie.orig or ie}",
+            )
 
     # Immutable Financial Audit Trail (#100)
     req_ip = request.client.host if request.client else None
