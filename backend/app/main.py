@@ -173,3 +173,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 # Mount Decentro webhooks directly at root (/webhooks/decentro/*)
 from app.routers.banking import webhooks_router
 app.include_router(webhooks_router)
+
+# Mount Real-Time Station WebSockets (/ws/station/{station_id}) (#54)
+from app.routers.websockets import router as ws_router
+app.include_router(ws_router)

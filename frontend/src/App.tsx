@@ -56,6 +56,7 @@ import {
   deleteRateHistoryApi,
   restoreBackupApi,
 } from './api/client';
+import { connectStationWebSocket } from './api/websocket';
 import { printThermalReceiptHtml } from './utils/thermalPrinter';
 import { exportToCsv } from './utils/exportCsv';
 import {
@@ -961,6 +962,44 @@ export default function App() {
       }
     });
 
+    // Real-Time Station WebSocket Stream (#54): Live events with zero polling
+    const unsubscribeWs = connectStationWebSocket({
+      stationId: '1',
+      onEvent: (event) => {
+        if (event.event === 'PAYMENT_RECEIVED') {
+          const { amount = 0, utr = '', payer_name = 'Customer' } = event.data || {};
+          showToast(`✔ Real-Time Payment: ₹${Number(amount).toLocaleString('en-IN')} received from ${payer_name}! (UTR: ${utr || 'N/A'})`);
+          // Live state update on dashboard without polling
+          setDashboard((prev: any) => {
+            if (!prev) return prev;
+            const updatedBreakdown = prev.breakdown ? {
+              ...prev.breakdown,
+              digital: (prev.breakdown.digital || 0) + Number(amount),
+            } : prev.breakdown;
+            return {
+              ...prev,
+              breakdown: updatedBreakdown,
+              today_digital_collection: (prev.today_digital_collection || 0) + Number(amount),
+            };
+          });
+          loadAllErpData();
+        } else if (event.event === 'SHIFT_HANDOVER') {
+          const { attendant_name = 'Attendant', shift_so = '' } = event.data || {};
+          showToast(`📋 Real-Time: Shift Handover submitted by ${attendant_name} for Shift #${shift_so}`);
+          loadAllErpData();
+        } else if (event.event === 'TANK_VARIANCE_ALERT') {
+          const { tank_name = 'Tank', variation_liters = 0, tolerance_limit = 0 } = event.data || {};
+          showToast(`🚨 CRITICAL VARIANCE ALERT: ${tank_name} variance of ${variation_liters} L exceeds statutory limit of ${tolerance_limit} L!`);
+          loadAllErpData();
+        }
+      },
+      onStatusChange: (status) => {
+        if (status === 'CONNECTED') {
+          console.log('[WebSocket] Live Forecourt stream connected for Station #1');
+        }
+      },
+    });
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setActiveDialog(null);
@@ -1002,6 +1041,7 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
       unsubscribeOffline();
       unsubscribeStore();
+      unsubscribeWs();
     };
   }, []);
 

@@ -17,6 +17,8 @@ from app.core.limiter import limiter
 from app.core.logging_config import decentro_logger
 from app.core.security import require_roles
 from app.core.security_decentro import verify_decentro_webhook_signature
+from app.core.time import now_ist
+from app.core.websocket_manager import ws_manager
 from app.db.session import get_db
 from app.models.audit import DeadLetterEvent
 from app.models.banking import (
@@ -877,6 +879,33 @@ async def execute_collections_reconciliation(
     audit.status = "PROCESSED"
     audit.result_summary = f"Callback processed: UTR {bank_utr}, Status: {txn_status}"
     await db.commit()
+
+    # Real-Time WebSocket Broadcast to connected forecourt dashboards (#54)
+    if txn_status in ("SUCCESS", "COMPLETED", "PAID"):
+        try:
+            asyncio.create_task(
+                ws_manager.broadcast_to_station(
+                    "1",
+                    {
+                        "event": "PAYMENT_RECEIVED",
+                        "data": {
+                            "amount": float(amount),
+                            "utr": bank_utr,
+                            "decentro_txn_id": decentro_txn_id,
+                            "payer_name": payload.get("payer_name") or payload.get("payerName") or "Customer",
+                            "payer_vpa": payer_vpa,
+                            "receipt_no": receipt_no,
+                            "customer_name": customer.name if customer else None,
+                            "new_outstanding": float(customer.current_outstanding) if customer else None,
+                            "cleared_invoices_count": len(cleared_invoices),
+                            "timestamp": now_ist().isoformat(),
+                            "message": f"UPI/Bank Payment of ₹{amount:,.2f} received (UTR: {bank_utr or 'N/A'})",
+                        },
+                    },
+                )
+            )
+        except Exception as ws_err:
+            decentro_logger.warning(f"Failed to broadcast PAYMENT_RECEIVED WebSocket event: {ws_err}")
 
     return {
         "response_code": "CB_S00000",

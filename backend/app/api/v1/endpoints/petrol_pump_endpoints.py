@@ -8,13 +8,22 @@ import time
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import delete, desc, func, select, update
+from sqlalchemy import case, delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.cache import (
+    get_cached_rates,
+    get_cached_station_profile,
+    invalidate_rates_cache,
+    invalidate_station_cache,
+    set_cached_rates,
+    set_cached_station_profile,
+)
 from app.core.idempotency import verify_idempotency_key
 from app.core.security import get_current_user_optional, require_roles
 from app.core.time import today_ist, now_ist
+from app.core.websocket_manager import ws_manager
 from app.db.session import get_db
 from app.services.thermal_printer import (
     generate_credit_slip_text,
@@ -241,18 +250,22 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
     )
     today_credit_sales = float(credit_res.scalar() or 0.0)
 
-    # Sum today's payment receipts
-    cash_pay_res = await db.execute(
-        select(func.coalesce(func.sum(PaymentReceipt.amount), 0.0))
-        .where(PaymentReceipt.date == today, PaymentReceipt.payment_mode == "CASH")
+    # Sum today's payment receipts in a single conditional SQL aggregation query (#5, #21)
+    receipts_res = await db.execute(
+        select(
+            func.coalesce(
+                func.sum(case((PaymentReceipt.payment_mode == "CASH", PaymentReceipt.amount), else_=0.0)),
+                0.0,
+            ),
+            func.coalesce(
+                func.sum(case((PaymentReceipt.payment_mode != "CASH", PaymentReceipt.amount), else_=0.0)),
+                0.0,
+            ),
+        ).where(PaymentReceipt.date == today)
     )
-    today_cash_receipts = float(cash_pay_res.scalar() or 0.0)
-
-    digital_pay_res = await db.execute(
-        select(func.coalesce(func.sum(PaymentReceipt.amount), 0.0))
-        .where(PaymentReceipt.date == today, PaymentReceipt.payment_mode != "CASH")
-    )
-    today_digital_receipts = float(digital_pay_res.scalar() or 0.0)
+    receipt_row = receipts_res.one()
+    today_cash_receipts = float(receipt_row[0] or 0.0)
+    today_digital_receipts = float(receipt_row[1] or 0.0)
 
     shift_sale = float(latest_shift.total_sale_amount or 0.0) if (latest_shift and latest_shift.date == today) else 0.0
     today_sale = max(shift_sale, today_meter_sales, today_credit_sales)
@@ -327,6 +340,10 @@ class RateUpdateRequest(BaseModel):
 
 @router.get("/rates", summary="List Fuel Products and Rates")
 async def get_rates(db: AsyncSession = Depends(get_db)):
+    cached_rates = get_cached_rates()
+    if cached_rates is not None:
+        return cached_rates
+
     products_res = await db.execute(select(FuelProduct).order_by(FuelProduct.id))
     products = products_res.scalars().all()
 
@@ -346,7 +363,7 @@ async def get_rates(db: AsyncSession = Depends(get_db)):
         for h in history_res.scalars().all()
     ]
 
-    return {
+    result = {
         "products": [
             {
                 "id": p.id,
@@ -360,6 +377,8 @@ async def get_rates(db: AsyncSession = Depends(get_db)):
         ],
         "history": history,
     }
+    set_cached_rates(result, ttl_seconds=600)
+    return result
 
 
 @router.post("/rates", summary="Update Product Rate")
@@ -391,6 +410,10 @@ async def update_rate(
     entry = RateHistory(product_id=product.id, rate=data.rate, effective_date=eff_date)
     db.add(entry)
     await db.commit()
+
+    # Instant TTL cache invalidation (#6, #7)
+    invalidate_rates_cache()
+
     return {"message": "Rate updated successfully", "product": product.name, "new_rate": product.current_rate}
 
 
@@ -430,6 +453,10 @@ async def delete_rate_history(
         product.current_rate = latest_hist.rate
 
     await db.commit()
+
+    # Instant TTL cache invalidation (#6, #7)
+    invalidate_rates_cache()
+
     return {
         "status": "success",
         "message": f"Rate history entry #{history_id} deleted. Current rate for {product.name if product else 'fuel'} restored to ₹{product.current_rate if product else 0:.2f}",
@@ -2084,6 +2111,36 @@ async def create_tank_dip(data: TankDipCreate, db: AsyncSession = Depends(get_db
     await db.commit()
     await db.refresh(entry)
 
+    # Invalidate station forecourt cache
+    invalidate_station_cache()
+
+    # Real-Time WebSocket Broadcast if variance / shortage exceeds statutory tolerance (#54)
+    if variation < tolerance_limit:
+        import asyncio
+        asyncio.create_task(
+            ws_manager.broadcast_to_station(
+                "1",
+                {
+                    "event": "TANK_VARIANCE_ALERT",
+                    "data": {
+                        "tank_id": tank.id,
+                        "tank_name": tank.tank_name,
+                        "date": str(entry.date),
+                        "variation_liters": variation,
+                        "tolerance_limit": tolerance_limit,
+                        "closing_stock": data.closing_stock,
+                        "expected_book_stock": expected_book_stock,
+                        "water_dip_cm": data.water_dip_cm or 0.0,
+                        "observed_density": data.observed_density,
+                        "density_15c": density_15c,
+                        "severity": "CRITICAL",
+                        "timestamp": now_ist().isoformat(),
+                        "message": f"Excess evaporation / shortage alert for {tank.tank_name}: {variation:+.2f} L (Permissible Limit: {tolerance_limit:.2f} L)",
+                    },
+                },
+            )
+        )
+
     return {
         "message": "Tank dip recorded successfully",
         "id": entry.id,
@@ -2667,51 +2724,69 @@ async def delete_purchase(
 # -------------------------------------------------------------
 @router.get("/reports/dsr", summary="Daily Sales Report (DSR) & Tank Stock Register")
 async def get_dsr_report(report_date: Optional[date] = Query(None), db: AsyncSession = Depends(get_db)):
+    """
+    Daily Sales Report & Tank Stock Register.
+    Optimized to eliminate N+1 queries (#5, #21) via constant-factor SQL batch aggregations:
+    1. Tanks with products pre-loaded.
+    2. Inward purchases on target_date aggregated by tank_id.
+    3. Shift meter sales & testing on target_date aggregated by nozzle's tank_id.
+    4. Latest dip entries on or before target_date in a single batch query.
+    """
     target_date = report_date or today_ist()
-    tanks_res = await db.execute(select(Tank).options(selectinload(Tank.product)))
+
+    # 1. Fetch all tanks with product relationship preloaded
+    tanks_res = await db.execute(
+        select(Tank).options(selectinload(Tank.product)).order_by(Tank.id)
+    )
     tanks = tanks_res.scalars().all()
+
+    # 2. Inward purchases on target date grouped by tank_id in a single query
+    purch_res = await db.execute(
+        select(
+            PurchaseEntry.tank_id,
+            func.coalesce(func.sum(PurchaseEntry.qty_liters), 0.0),
+        )
+        .where(PurchaseEntry.date == target_date)
+        .group_by(PurchaseEntry.tank_id)
+    )
+    purchases_by_tank = {row[0]: float(row[1]) for row in purch_res.all()}
+
+    # 3. Meter sale & testing grouped by Nozzle.tank_id on target date in a single query
+    sales_res = await db.execute(
+        select(
+            Nozzle.tank_id,
+            func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
+            func.coalesce(func.sum(ShiftMeterReading.testing_qty), 0.0),
+        )
+        .join(Nozzle, ShiftMeterReading.nozzle_id == Nozzle.id)
+        .join(Shift, ShiftMeterReading.shift_id == Shift.id)
+        .where(Shift.date == target_date)
+        .group_by(Nozzle.tank_id)
+    )
+    sales_by_tank = {row[0]: (float(row[1]), float(row[2])) for row in sales_res.all()}
+
+    # 4. Fetch all dip entries on or before target date in a single query; pick latest per tank
+    dips_res = await db.execute(
+        select(TankDipEntry)
+        .where(TankDipEntry.date <= target_date)
+        .order_by(desc(TankDipEntry.date), desc(TankDipEntry.id))
+    )
+    latest_dip_by_tank = {}
+    for d in dips_res.scalars().all():
+        if d.tank_id not in latest_dip_by_tank:
+            latest_dip_by_tank[d.tank_id] = d
 
     report_data = []
     for t in tanks:
         prod_name = t.product.name if t.product else "Fuel"
-        # 1. Receipts (purchases) for this tank on target date
-        purch_res = await db.execute(
-            select(func.coalesce(func.sum(PurchaseEntry.qty_liters), 0.0))
-            .where(PurchaseEntry.tank_id == t.id, PurchaseEntry.date == target_date)
-        )
-        receipt = float(purch_res.scalar() or 0.0)
+        receipt = purchases_by_tank.get(t.id, 0.0)
 
-        # 2. Meter sale & testing from ShiftMeterReading for nozzles on this tank on target date
-        nozzles_res = await db.execute(select(Nozzle.id).where(Nozzle.tank_id == t.id))
-        nozzle_ids = nozzles_res.scalars().all()
+        sale_tuple = sales_by_tank.get(t.id, (0.0, 0.0))
+        net_sale = round(sale_tuple[0], 2)
+        testing = round(sale_tuple[1], 2)
+        gross_meter_sale = round(net_sale + testing, 2)
 
-        if nozzle_ids:
-            sales_res = await db.execute(
-                select(
-                    func.coalesce(func.sum(ShiftMeterReading.sale_qty), 0.0),
-                    func.coalesce(func.sum(ShiftMeterReading.testing_qty), 0.0),
-                )
-                .join(Shift, ShiftMeterReading.shift_id == Shift.id)
-                .where(ShiftMeterReading.nozzle_id.in_(nozzle_ids), Shift.date == target_date)
-            )
-            sale_row = sales_res.one_or_none()
-            net_sale = round(float(sale_row[0] if sale_row else 0.0), 2)
-            testing = round(float(sale_row[1] if sale_row else 0.0), 2)
-            gross_meter_sale = round(net_sale + testing, 2)
-        else:
-            gross_meter_sale = 0.0
-            net_sale = 0.0
-            testing = 0.0
-
-        # 3. Latest Dip Entry on or before target date
-        dip_res = await db.execute(
-            select(TankDipEntry)
-            .where(TankDipEntry.tank_id == t.id, TankDipEntry.date <= target_date)
-            .order_by(desc(TankDipEntry.date), desc(TankDipEntry.id))
-            .limit(1)
-        )
-        latest_dip = dip_res.scalar_one_or_none()
-
+        latest_dip = latest_dip_by_tank.get(t.id)
         actual_dip = float(latest_dip.closing_stock) if latest_dip else float(t.current_stock)
         open_stock = float(latest_dip.opening_stock) if latest_dip else float(t.current_stock)
         closing_book = round(open_stock + receipt - net_sale, 2)
@@ -3581,12 +3656,26 @@ async def get_customer_statement(customer_id: int, db: AsyncSession = Depends(ge
         for s in sales
     ]
 
-    total_purchase = sum(s.amount for s in sales)
-    pmt_res = await db.execute(
-        select(func.sum(PaymentReceipt.amount)).where(PaymentReceipt.customer_id == customer_id)
+    # SQL-level func.sum() aggregations (#5, #21)
+    totals_res = await db.execute(
+        select(
+            func.coalesce(
+                select(func.sum(CreditSale.amount))
+                .where(CreditSale.customer_id == customer_id)
+                .scalar_subquery(),
+                0.0,
+            ),
+            func.coalesce(
+                select(func.sum(PaymentReceipt.amount))
+                .where(PaymentReceipt.customer_id == customer_id)
+                .scalar_subquery(),
+                0.0,
+            ),
+        )
     )
-    total_paid = pmt_res.scalar() or 0.0
-    paid_period = round(float(total_paid), 2)
+    tot_row = totals_res.one()
+    total_purchase = float(tot_row[0] or 0.0)
+    paid_period = round(float(tot_row[1] or 0.0), 2)
     net_payables = cust.current_outstanding
     prev_dues = max(0.0, net_payables - total_purchase + paid_period)
 
@@ -4035,6 +4124,7 @@ async def create_tank(payload: TankCreate, db: AsyncSession = Depends(get_db)):
     db.add(tank)
     await db.commit()
     await db.refresh(tank)
+    invalidate_station_cache()
     return {
         "status": "success",
         "message": f"Tank '{tank.tank_name}' created successfully",
@@ -4068,6 +4158,7 @@ async def update_tank(tank_id: int, payload: TankUpdate, db: AsyncSession = Depe
         if prod:
             tank.product_id = prod.id
     await db.commit()
+    invalidate_station_cache()
     return {"status": "success", "message": f"Tank '{tank.tank_name}' updated successfully", "id": tank.id}
 
 
@@ -4102,6 +4193,7 @@ async def delete_tank(
     await db.execute(delete(TankCalibrationChart).where(TankCalibrationChart.tank_id == tank_id))
     await db.delete(tank)
     await db.commit()
+    invalidate_station_cache()
     return {"status": "success", "message": f"Tank #{tank_id} deleted successfully"}
 
 
@@ -4171,6 +4263,7 @@ async def create_nozzle(payload: NozzleCreate, db: AsyncSession = Depends(get_db
     db.add(nozzle)
     await db.commit()
     await db.refresh(nozzle)
+    invalidate_station_cache()
     return {
         "status": "success",
         "message": f"Nozzle '{nozzle.nozzle_name}' created successfully",
@@ -4200,6 +4293,7 @@ async def update_nozzle(nozzle_id: int, payload: NozzleUpdate, db: AsyncSession 
     if payload.active is not None:
         nozzle.active = payload.active
     await db.commit()
+    invalidate_station_cache()
     return {"status": "success", "message": f"Nozzle '{nozzle.nozzle_name}' updated successfully", "id": nozzle.id}
 
 
@@ -4223,9 +4317,11 @@ async def delete_nozzle(
     if readings_count > 0:
         nozzle.active = False
         await db.commit()
+        invalidate_station_cache()
         return {"status": "success", "message": f"Nozzle '{nozzle.nozzle_name}' deactivated to preserve audit history.", "id": nozzle_id}
     await db.delete(nozzle)
     await db.commit()
+    invalidate_station_cache()
     return {"status": "success", "message": f"Nozzle #{nozzle_id} deleted successfully", "id": nozzle_id}
 
 
@@ -4813,6 +4909,10 @@ class StationProfilePayload(BaseModel):
 
 @router.get("/station-profile", summary="Get Dealership / Station Profile Settings")
 async def get_station_profile_endpoint(db: AsyncSession = Depends(get_db)):
+    cached_profile = get_cached_station_profile()
+    if cached_profile is not None:
+        return cached_profile
+
     stmt = select(StationProfileSetting).order_by(StationProfileSetting.id.asc()).limit(1)
     res = await db.execute(stmt)
     prof = res.scalar_one_or_none()
@@ -4834,7 +4934,7 @@ async def get_station_profile_endpoint(db: AsyncSession = Depends(get_db)):
         db.add(prof)
         await db.commit()
         await db.refresh(prof)
-    return {
+    result = {
         "station_name": prof.station_name,
         "oil_company": prof.oil_company,
         "dealer_code": prof.dealer_code or "",
@@ -4851,6 +4951,8 @@ async def get_station_profile_endpoint(db: AsyncSession = Depends(get_db)):
         # Never leak manager PIN in public API responses
         "has_manager_pin": bool(prof.manager_pin),
     }
+    set_cached_station_profile(result, ttl_seconds=1800)
+    return result
 
 
 @router.post("/station-profile", summary="Save Dealership / Station Profile Settings")
@@ -4892,6 +4994,10 @@ async def save_station_profile_endpoint(
 
     await db.commit()
     await db.refresh(prof)
+
+    # Instant station configuration cache invalidation (#6, #7)
+    invalidate_station_cache()
+
     return {
         "message": "Station profile updated successfully",
         "station_name": prof.station_name,
@@ -5976,6 +6082,27 @@ async def submit_shift_handover(
         shift.handover_object_key = data.object_key or data.handover_pdf_key
     await db.commit()
     await db.refresh(handover)
+
+    # Real-Time WebSocket Broadcast to connected manager dashboards (#54)
+    import asyncio
+    asyncio.create_task(
+        ws_manager.broadcast_to_station(
+            "1",
+            {
+                "event": "SHIFT_HANDOVER",
+                "data": {
+                    "handover_id": handover.id,
+                    "shift_id": shift.id,
+                    "shift_so": shift.so_number,
+                    "shift_name": handover.shift_name,
+                    "attendant_name": handover.attendant_name,
+                    "date": str(handover.date),
+                    "timestamp": now_ist().isoformat(),
+                    "message": f"Shift handover submitted by {handover.attendant_name} for Shift #{shift.so_number}",
+                },
+            },
+        )
+    )
 
     return {
         "status": "success",

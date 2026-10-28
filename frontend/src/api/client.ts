@@ -69,6 +69,10 @@ export function setManagerToken(token: string | null): void {
   inMemoryManagerToken = token;
 }
 
+export function getManagerToken(): string | null {
+  return inMemoryManagerToken;
+}
+
 export function getAuthHeaders(): Record<string, string> {
   return inMemoryManagerToken ? { Authorization: `Bearer ${inMemoryManagerToken}` } : {};
 }
