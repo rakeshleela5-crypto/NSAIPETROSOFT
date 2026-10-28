@@ -8,8 +8,10 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging_config import decentro_logger
+from app.core.security import require_roles
 from app.db.session import get_db
 from app.models.audit import DeadLetterEvent
+from app.models.petrol_pump import User
 from app.routers.banking import (
     execute_collections_reconciliation,
     execute_payouts_reconciliation,
@@ -59,6 +61,7 @@ class DeadLetterReplayResponse(BaseModel):
 async def replay_dead_letter_event(
     event_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("OWNER", "MANAGER")),
 ):
     """
     Admin Dead Letter Queue Replay Endpoint (#39):
@@ -174,6 +177,7 @@ async def list_dead_letter_events(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("OWNER", "MANAGER")),
 ):
     query = select(DeadLetterEvent)
     if status_filter:
@@ -223,6 +227,7 @@ async def list_dead_letter_events(
 async def get_dead_letter_event_detail(
     event_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("OWNER", "MANAGER")),
 ):
     event = await db.get(DeadLetterEvent, event_id)
     if not event:

@@ -2,9 +2,18 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from sqlalchemy.orm.exc import StaleDataError
+
 from app.api.v1.api import api_router
 from app.api.v1.endpoints.health import router as health_router
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.time import now_ist
 from app.db.session import init_db, AsyncSessionLocal
 
@@ -50,7 +59,39 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS configuration allowing Cloudflare Pages, custom domains, and local development
+# ---------------------------------------------------------------------------
+# Rate Limiting Configuration (#2, #18, #42)
+# ---------------------------------------------------------------------------
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# ---------------------------------------------------------------------------
+# Strict Security Headers Middleware (#18, #43, #44, #45)
+# ---------------------------------------------------------------------------
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Injects mandatory browser security defense headers:
+    - X-Content-Type-Options: nosniff (prevents MIME type sniffing)
+    - X-Frame-Options: DENY (prevents clickjacking attacks)
+    - Referrer-Policy: strict-origin-when-cross-origin
+    - X-XSS-Protection: 1; mode=block
+    - Permissions-Policy: geolocation=(), camera=(), microphone=()
+    """
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ---------------------------------------------------------------------------
+# Strict CORS Configuration (#18)
+# ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -61,15 +102,19 @@ app.add_middleware(
     ],
     allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*nsaipetrosoft\.pages\.dev$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# Decentro HMAC-SHA256 Webhook Security Middleware
+# ---------------------------------------------------------------------------
+# Decentro HMAC-SHA256 Webhook Security Middleware (#17, #36)
+# ---------------------------------------------------------------------------
 from app.core.security_decentro import DecentroWebhookSignatureMiddleware
 app.add_middleware(DecentroWebhookSignatureMiddleware)
 
-# Financial & Concurrency Idempotency Middleware
+# ---------------------------------------------------------------------------
+# Financial & Concurrency Idempotency Middleware (#14, #15, #35)
+# ---------------------------------------------------------------------------
 from app.core.idempotency import IdempotencyMiddleware, IdempotencyCachedResponse
 app.add_middleware(IdempotencyMiddleware)
 
@@ -83,10 +128,6 @@ async def root():
         "environment": settings.ENVIRONMENT,
     }
 
-
-from starlette.requests import Request
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm.exc import StaleDataError
 
 @app.exception_handler(IdempotencyCachedResponse)
 async def idempotency_cached_response_handler(request: Request, exc: IdempotencyCachedResponse):
@@ -112,11 +153,14 @@ async def stale_data_error_handler(request: Request, exc: StaleDataError):
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, RateLimitExceeded):
+        return _rate_limit_exceeded_handler(request, exc)
+
     import traceback
     err_tb = traceback.format_exc()
     print(f"ERROR on {request.method} {request.url.path}: {exc}\n{err_tb}")
-    detail_msg = "An internal server error occurred." if settings.ENVIRONMENT == "production" else str(exc)
+    detail_msg = "An internal server error occurred." if settings.ENVIRONMENT.lower() in ("production", "prod") else str(exc)
     return JSONResponse(
         status_code=500,
         content={"detail": detail_msg, "path": request.url.path},
@@ -126,6 +170,6 @@ async def global_exception_handler(request, exc: Exception):
 app.include_router(health_router)
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-# Also mount Decentro webhooks directly at root (/webhooks/decentro/*)
+# Mount Decentro webhooks directly at root (/webhooks/decentro/*)
 from app.routers.banking import webhooks_router
 app.include_router(webhooks_router)

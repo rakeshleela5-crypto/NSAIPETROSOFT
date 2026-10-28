@@ -1,8 +1,10 @@
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from app.core.security import require_roles
+from app.models.petrol_pump import User
 from app.services.r2_storage import (
     ALLOWED_FOLDERS,
     ALLOWED_MIME_TYPES,
@@ -51,7 +53,10 @@ class DeleteObjectResponse(BaseModel):
     status_code=status.HTTP_200_OK,
     summary="Generate Presigned PUT Upload URL for Direct R2 Client Upload",
 )
-async def generate_presigned_upload(payload: PresignedUploadRequest):
+async def generate_presigned_upload(
+    payload: PresignedUploadRequest,
+    current_user: User = Depends(require_roles("ATTENDANT")),
+):
     """
     Forecourt Client Direct Upload:
     Generates a secure S3v4 presigned PUT URL allowing the frontend browser
@@ -116,6 +121,7 @@ async def generate_presigned_upload(payload: PresignedUploadRequest):
 async def generate_presigned_view(
     object_key: str = Query(..., min_length=3, description="Canonical R2 object key"),
     expires_in: int = Query(default=3600, ge=60, le=86400, description="Signed URL lifespan in seconds"),
+    current_user: User = Depends(require_roles("ATTENDANT")),
 ):
     """
     Secure Private Viewing:
@@ -161,6 +167,7 @@ async def generate_presigned_view(
 )
 async def delete_storage_object(
     object_key: str = Query(..., min_length=3, description="Object key to remove from R2 bucket"),
+    current_user: User = Depends(require_roles("OWNER", "MANAGER")),
 ):
     """
     Deletes an object from Cloudflare R2 when a record (e.g. cancelled voucher or voided dip) is removed.

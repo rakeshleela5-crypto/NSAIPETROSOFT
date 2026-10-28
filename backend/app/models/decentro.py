@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.core.encryption import EncryptedString
 
 DECIMAL_CURRENCY = Numeric(12, 2, asdecimal=False)
 
@@ -80,7 +81,7 @@ class CustomerVirtualAccount(Base):
     bank_name: Mapped[str] = mapped_column(String(100), default="YES BANK")
     upi_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
-    decentro_account_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    decentro_account_id: Mapped[Optional[str]] = mapped_column(EncryptedString, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
     )
@@ -99,7 +100,7 @@ class SupplierPayout(Base):
     reference_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     vendor_name: Mapped[str] = mapped_column(String(150), nullable=False)
-    beneficiary_account: Mapped[str] = mapped_column(String(50), nullable=False)
+    beneficiary_account: Mapped[str] = mapped_column(EncryptedString, nullable=False)
     beneficiary_ifsc: Mapped[str] = mapped_column(String(20), nullable=False)
     amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, nullable=False)
     transfer_type: Mapped[str] = mapped_column(String(20), default="IMPS")  # IMPS, NEFT, RTGS, UPI
@@ -107,7 +108,7 @@ class SupplierPayout(Base):
     status: Mapped[str] = mapped_column(String(50), default="INITIATED", index=True)  # INITIATED, PENDING, SUCCESS, FAILED, REVERSED
     decentro_txn_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
     bank_reference_number: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)  # UTR
-    debit_account: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    debit_account: Mapped[Optional[str]] = mapped_column(EncryptedString, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(

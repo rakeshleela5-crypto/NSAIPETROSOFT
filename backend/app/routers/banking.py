@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.idempotency import verify_idempotency_key
+from app.core.limiter import limiter
 from app.core.logging_config import decentro_logger
+from app.core.security import require_roles
 from app.core.security_decentro import verify_decentro_webhook_signature
 from app.db.session import get_db
 from app.models.audit import DeadLetterEvent
@@ -38,6 +40,7 @@ from app.models.petrol_pump import (
     Nozzle,
     PaymentReceipt,
     Shift,
+    User,
 )
 from app.services.decentro_client import decentro_client
 
@@ -197,7 +200,9 @@ GSTINVerifyRequest = GstinKycRequest
     description="Generates a unique dynamic UPI QR code linked to the station collection virtual account.",
     dependencies=[Depends(verify_idempotency_key)],
 )
+@limiter.limit("20/minute")
 async def create_dynamic_upi_qr(
+    request: Request,
     req: DynamicUpiQrRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -432,9 +437,12 @@ async def stream_upi_qr_status(
     response_model=FleetVirtualAccountResponse,
     summary="Create B2B Dedicated Virtual Account for Fleet Customer",
 )
+@limiter.limit("20/minute")
 async def create_fleet_virtual_account(
+    request: Request,
     req: FleetVirtualAccountCreateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("ACCOUNTANT", "MANAGER")),
 ):
     customer = None
     if req.customer_id:
@@ -967,9 +975,12 @@ async def decentro_collections_webhook(
     description="Disburses high-value RTGS/NEFT/IMPS payments to oil marketing companies with idempotency keys.",
     dependencies=[Depends(verify_idempotency_key)],
 )
+@limiter.limit("20/minute")
 async def create_supplier_payout(
+    request: Request,
     req: SupplierPayoutCreateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("OWNER", "MANAGER")),
 ):
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Supplier payout amount must be greater than zero")
@@ -1276,9 +1287,12 @@ async def decentro_payouts_webhook(
     response_model=GstinKycResponse,
     summary="Validate Fleet / Vendor GSTIN via Decentro KYC Registry",
 )
+@limiter.limit("20/minute")
 async def verify_gstin_kyc(
+    request: Request,
     req: GstinKycRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("ACCOUNTANT", "MANAGER")),
 ):
     clean_gstin = req.gstin.strip().upper()
 

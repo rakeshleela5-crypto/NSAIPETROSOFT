@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.idempotency import verify_idempotency_key
+from app.core.limiter import limiter
 from app.core.logging_config import decentro_logger
-from app.core.security import get_current_user_optional
+from app.core.security import get_current_user_optional, require_roles
 from app.core.security_decentro import verify_decentro_webhook_signature
 from app.db.session import get_db
 from app.models.decentro import (
@@ -50,7 +51,9 @@ router = APIRouter()
     description="Creates a unique collect/intent dynamic UPI QR code bound to an exact amount, fuel lane, or transaction bill.",
     dependencies=[Depends(verify_idempotency_key)],
 )
+@limiter.limit("20/minute")
 async def generate_upi_qr(
+    request: Request,
     req: UpiQrGenerateRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -186,9 +189,12 @@ async def get_upi_status(
     response_model=VirtualAccountResponse,
     summary="Provision Dedicated Virtual Account for Fleet Customer",
 )
+@limiter.limit("20/minute")
 async def create_virtual_account_endpoint(
+    request: Request,
     req: VirtualAccountCreateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("ACCOUNTANT", "MANAGER")),
 ):
     # Verify customer exists in ERP
     customer = await db.get(Customer, req.customer_id)
@@ -380,6 +386,7 @@ async def handle_incoming_decentro_webhook(
     description="Disburses funds to vendor bank accounts via IMPS/NEFT/RTGS. Enforces idempotency keys to strictly prevent duplicate transfers.",
     dependencies=[Depends(verify_idempotency_key)],
 )
+@limiter.limit("20/minute")
 async def initiate_supplier_payout(
     req: SupplierPayoutRequest,
     request: Request,
@@ -393,16 +400,16 @@ async def initiate_supplier_payout(
     if not req.ifsc or len(req.ifsc.strip()) != 11:
         raise HTTPException(status_code=400, detail="Invalid beneficiary IFSC code format")
 
-    # Enforce Manager / Admin role or manager token
+    # Enforce Manager / Owner / Admin role or manager token
     is_authorized = False
-    if current_user and current_user.role in ("admin", "manager"):
+    if current_user and current_user.role.lower() in ("admin", "manager", "owner"):
         is_authorized = True
     else:
         from app.core.security import decode_access_token
         manager_cookie = request.cookies.get("nsai_manager_token")
         if manager_cookie:
             payload = decode_access_token(manager_cookie)
-            if payload and payload.get("role") in ("admin", "manager"):
+            if payload and payload.get("role", "").lower() in ("admin", "manager", "owner"):
                 is_authorized = True
 
     is_test_client = (
@@ -567,9 +574,12 @@ async def get_payout_status(
     summary="Verify Commercial Buyer / Distributor GSTIN Instantly",
     description="Validates 15-character GSTIN format, queries Decentro KYC BaaS API, and optionally auto-updates customer master ledger.",
 )
+@limiter.limit("20/minute")
 async def verify_gstin_endpoint(
+    request: Request,
     req: GstinVerifyRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("ACCOUNTANT", "MANAGER")),
 ):
     clean_gstin = req.gstin.strip().upper()
 

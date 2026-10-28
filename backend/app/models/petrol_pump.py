@@ -16,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from app.db.base import Base
 from app.core.time import today_ist
+from app.core.encryption import EncryptedString
 
 # -------------------------------------------------------------
 # Production Decimal Standards:
@@ -417,6 +418,46 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RefreshToken(Base):
+    """
+    Revocable refresh tokens for secure JWT refresh rotation (#47).
+    Raw tokens are NEVER stored plaintext; only their SHA-256 hash is saved.
+    """
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
+
+    user = relationship("User")
+
+
+class SystemCredential(Base):
+    """
+    Encrypted storage for external API credentials, third-party provider tokens (#50).
+    Encrypted at rest using cryptography.fernet.
+    """
+    __tablename__ = "system_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    service: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    encrypted_secret: Mapped[str] = mapped_column(EncryptedString, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(timezone.utc), onupdate=func.now()
     )
 
 

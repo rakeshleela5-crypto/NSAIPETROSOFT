@@ -7,18 +7,21 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-
+from app.core.limiter import limiter
 from app.core.security import (
     create_access_token,
     get_current_user,
     get_password_hash,
     get_pin_hash,
+    issue_refresh_token,
     require_roles,
+    revoke_refresh_token,
+    rotate_refresh_token,
     verify_password,
     verify_pin,
 )
 from app.db.session import get_db
-from app.models.petrol_pump import User, StationProfileSetting
+from app.models.petrol_pump import StationProfileSetting, User
 
 router = APIRouter()
 
@@ -38,7 +41,6 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "127.0.0.1"
 
 
-
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
@@ -52,6 +54,10 @@ class VerifyPinRequest(BaseModel):
     action_title: Optional[str] = Field(default=None, description="Action requiring authorization")
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: Optional[str] = Field(default=None, description="Raw revocable refresh token")
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -62,6 +68,7 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     user: UserResponse
 
@@ -71,14 +78,16 @@ class CreateUserRequest(BaseModel):
     full_name: str
     password: str
     pin: Optional[str] = "1234"
-    role: str = "cashier"  # admin, manager, cashier, attendant
+    role: str = "cashier"  # owner, manager, accountant, attendant
 
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-@router.post("/login", response_model=TokenResponse, summary="Station User Login")
+@router.post("/login", response_model=TokenResponse, summary="Station User Login (#42, #47)")
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     credentials: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -99,22 +108,101 @@ async def login(
             detail="User account is deactivated. Contact Station Administrator.",
         )
 
-    token = create_access_token(
+    # 1. Create short-lived 30-minute JWT access token (#47)
+    access_token = create_access_token(
         data={"sub": user.username, "role": user.role, "user_id": user.id}
     )
 
-    # Set httpOnly secure cookie for zero-storage browser session authentication
+    # 2. Issue revocable refresh token (#47)
+    refresh_token = await issue_refresh_token(db, user.id)
+
+    # 3. Set httpOnly secure cookies for zero-storage browser session authentication
+    is_secure = settings.ENVIRONMENT.lower() in ("production", "prod")
     response.set_cookie(
         key="nsai_access_token",
-        value=token,
+        value=access_token,
         httponly=True,
-        secure=settings.ENVIRONMENT == "production",
+        secure=is_secure,
         samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
+    response.set_cookie(
+        key="nsai_refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+    )
 
     return {
-        "access_token": token,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "role": user.role,
+            "is_active": user.is_active,
+        },
+    }
+
+
+@router.post("/refresh", response_model=TokenResponse, summary="JWT Access Token Refresh & Rotation (#47)")
+@limiter.limit("5/minute")
+async def refresh_access_token(
+    request: Request,
+    response: Response,
+    payload: Optional[RefreshTokenRequest] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Refresh endpoint implementing revocable refresh token rotation:
+    1. Consumes the provided refresh token and invalidates it immediately.
+    2. Issues a brand-new 30-minute access token and rotated refresh token.
+    3. Re-issues httpOnly cookies.
+    """
+    raw_token = None
+    if payload and payload.refresh_token:
+        raw_token = payload.refresh_token.strip()
+    if not raw_token:
+        raw_token = request.cookies.get("nsai_refresh_token")
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No refresh token provided in request body or cookie",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user, new_refresh_token = await rotate_refresh_token(db, raw_token)
+
+    new_access_token = create_access_token(
+        data={"sub": user.username, "role": user.role, "user_id": user.id}
+    )
+
+    is_secure = settings.ENVIRONMENT.lower() in ("production", "prod")
+    response.set_cookie(
+        key="nsai_access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    response.set_cookie(
+        key="nsai_refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+    )
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer",
         "user": {
             "id": user.id,
@@ -127,6 +215,7 @@ async def login(
 
 
 @router.post("/verify-pin", summary="Manager PIN Verification (Tamper-Proof & Brute-Force Throttled)")
+@limiter.limit("5/minute")
 async def verify_manager_pin(
     payload: VerifyPinRequest,
     request: Request,
@@ -172,7 +261,7 @@ async def verify_manager_pin(
     # 2. Check active managers and administrators in User table
     if not is_authorized:
         stmt = select(User).where(
-            User.role.in_(["admin", "manager"]),
+            User.role.in_(["admin", "manager", "owner"]),
             User.is_active.is_(True),
         )
         result = await db.execute(stmt)
@@ -195,11 +284,12 @@ async def verify_manager_pin(
         temp_token = create_access_token(
             data={"sub": authorized_by, "role": role, "scope": "manager_override"}
         )
+        is_secure = settings.ENVIRONMENT.lower() in ("production", "prod")
         response.set_cookie(
             key="nsai_manager_token",
             value=temp_token,
             httponly=True,
-            secure=settings.ENVIRONMENT == "production",
+            secure=is_secure,
             samesite="lax",
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
@@ -246,7 +336,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 @router.get("/users", response_model=List[UserResponse], summary="List Station Staff Users")
 async def list_users(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_roles("OWNER", "MANAGER")),
 ):
     result = await db.execute(select(User).order_by(desc(User.id)))
     users = result.scalars().all()
@@ -266,7 +356,7 @@ async def list_users(
 async def create_user(
     data: CreateUserRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles("admin")),
+    current_user: User = Depends(require_roles("OWNER")),
 ):
     existing = await db.execute(select(User).where(User.username == data.username.strip()))
     if existing.scalar_one_or_none():
@@ -297,7 +387,20 @@ async def create_user(
 
 
 @router.post("/logout", summary="User Logout & Cookie Invalidation")
-async def logout(response: Response):
+async def logout(
+    request: Request,
+    response: Response,
+    payload: Optional[RefreshTokenRequest] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    # Revoke refresh token if provided
+    raw_token = payload.refresh_token if payload else None
+    if not raw_token:
+        raw_token = request.cookies.get("nsai_refresh_token")
+    if raw_token:
+        await revoke_refresh_token(db, raw_token)
+
     response.delete_cookie(key="nsai_access_token")
+    response.delete_cookie(key="nsai_refresh_token")
     response.delete_cookie(key="nsai_manager_token")
-    return {"message": "Session invalidated successfully"}
+    return {"message": "Session invalidated and refresh token revoked successfully"}

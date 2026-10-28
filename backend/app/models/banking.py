@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from typing import Optional
+from sqlalchemy import Column
 from sqlmodel import Field, SQLModel
+from app.core.encryption import EncryptedString
 
 
 class UpiQrTransaction(SQLModel, table=True):
@@ -79,7 +81,7 @@ class SupplierPayoutOrder(SQLModel, table=True):
     reference_id: str = Field(index=True, unique=True, nullable=False)
     idempotency_key: str = Field(index=True, unique=True, nullable=False)  # Unique DB constraint
     vendor_name: str = Field(nullable=False)
-    account_number: str = Field(nullable=False)
+    account_number: str = Field(sa_column=Column(EncryptedString, nullable=False))
     ifsc: str = Field(nullable=False)
     amount: float = Field(nullable=False)
     transfer_type: str = Field(default="RTGS")  # RTGS, NEFT, IMPS
@@ -215,7 +217,7 @@ class SupplierPayout(SQLModel, table=True):
     supplier_name: str
     supplier_gstin: Optional[str] = Field(default=None)
     invoice_number: str  # e.g., IOCL Tanker Load Invoice
-    beneficiary_account: str
+    beneficiary_account: str = Field(sa_column=Column(EncryptedString, nullable=False))
     beneficiary_ifsc: str
     transfer_type: str  # RTGS, NEFT, IMPS
     amount: float

@@ -32,7 +32,7 @@ async def verify_backup_authorized(
     1. Active session with admin or manager role
     2. Manager PIN override token or query parameter
     """
-    if current_user and current_user.role in ("admin", "manager"):
+    if current_user and current_user.role.lower() in ("admin", "manager", "owner"):
         return True
     
     # Check manager token from cookie
@@ -40,7 +40,7 @@ async def verify_backup_authorized(
     manager_cookie = request.cookies.get("nsai_manager_token")
     if manager_cookie:
         payload = decode_access_token(manager_cookie)
-        if payload and payload.get("role") in ("admin", "manager"):
+        if payload and payload.get("role", "").lower() in ("admin", "manager", "owner"):
             return True
 
     # Check query PIN

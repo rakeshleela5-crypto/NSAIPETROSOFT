@@ -169,14 +169,14 @@ async def check_manager_authorized(
     2. Manager JWT cookie
     3. Valid manager PIN
     """
-    if current_user and current_user.role in ("admin", "manager"):
+    if current_user and current_user.role.lower() in ("admin", "manager", "owner"):
         return True
     if request:
         from app.core.security import decode_access_token
         manager_cookie = request.cookies.get("nsai_manager_token")
         if manager_cookie:
             payload = decode_access_token(manager_cookie)
-            if payload and payload.get("role") in ("admin", "manager"):
+            if payload and payload.get("role", "").lower() in ("admin", "manager", "owner"):
                 return True
     if manager_pin and await verify_manager_pin(manager_pin, db, request):
         return True
