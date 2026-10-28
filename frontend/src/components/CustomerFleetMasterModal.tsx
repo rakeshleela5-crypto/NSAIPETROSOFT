@@ -335,24 +335,26 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
   const allCustomers: CustomerFull[] = useMemo(() => {
     const storeCusts = erpStore.getState().customers || [];
     const custMap = new Map<number, CustomerFull>();
-    for (const c of customers) {
-      custMap.set(c.id, c);
+    for (const c of (customers || [])) {
+      if (c && c.id) {
+        custMap.set(c.id, c);
+      }
     }
     for (const sc of storeCusts) {
-      if (!custMap.has(sc.id)) {
+      if (sc && sc.id && !custMap.has(sc.id)) {
         custMap.set(sc.id, {
           id: sc.id,
           code: sc.code || String(sc.id),
-          name: sc.name,
+          name: sc.name || 'UNNAMED',
           city: sc.city || '',
           mobile: sc.mobile || '',
           pan_no: sc.pan_no || undefined,
           gst_no: sc.gst_no || undefined,
-          credit_limit: sc.credit_limit || 0,
-          current_outstanding: sc.current_outstanding || 0,
+          credit_limit: Number(sc.credit_limit) || 0,
+          current_outstanding: Number(sc.current_outstanding) || 0,
           bill_period: sc.bill_period || '30 day',
-          is_blocked: sc.is_blocked || false,
-          vehicles: sc.vehicles || [],
+          is_blocked: Boolean(sc.is_blocked),
+          vehicles: Array.isArray(sc.vehicles) ? sc.vehicles : [],
         });
       }
     }
@@ -360,15 +362,19 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
   }, [customers, isEditing]);
 
   const filtered = allCustomers.filter((c) => {
+    if (!c) return false;
     if (!masterCustSearch) return true;
     const s = masterCustSearch.toLowerCase();
-    return (
-      c.name.toLowerCase().includes(s) ||
-      (c.city && c.city.toLowerCase().includes(s)) ||
-      (c.mobile && c.mobile.includes(s)) ||
-      (c.gst_no && c.gst_no.toLowerCase().includes(s)) ||
-      (c.vehicles && c.vehicles.some((v) => v.toLowerCase().includes(s)))
-    );
+    const cName = (c.name || '').toLowerCase();
+    const cCity = (c.city || '').toLowerCase();
+    const cMobile = (c.mobile || '').toLowerCase();
+    const cGst = (c.gst_no || '').toLowerCase();
+    const vehMatch = Array.isArray(c.vehicles) && c.vehicles.some((v) => {
+      if (!v) return false;
+      const str = typeof v === 'string' ? v : (v as any).vehicle_no || '';
+      return str.toLowerCase().includes(s);
+    });
+    return cName.includes(s) || cCity.includes(s) || cMobile.includes(s) || cGst.includes(s) || vehMatch;
   });
 
   return (
@@ -458,17 +464,20 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                 </thead>
                 <tbody>
                   {filtered.map((c) => {
-                    const bal = c.current_outstanding || 0;
-                    const isOver = bal > c.credit_limit;
+                    if (!c) return null;
+                    const bal = Number(c.current_outstanding) || 0;
+                    const creditLimit = Number(c.credit_limit) || 0;
+                    const isOver = bal > creditLimit;
+                    const vehCount = Array.isArray(c.vehicles) ? c.vehicles.length : 0;
                     return (
                       <tr
-                        key={c.id}
+                        key={c.id || Math.random()}
                         className={selectedCustId === c.id ? 'win-selected-row' : ''}
                         onClick={() => setSelectedCustId(c.id)}
                       >
-                        <td style={{ fontWeight: 600 }}>{c.code}</td>
+                        <td style={{ fontWeight: 600 }}>{c.code || c.id}</td>
                         <td style={{ color: c.is_blocked ? '#c0392b' : '#0055ea', fontWeight: 600, cursor: 'pointer' }} onClick={() => openCustomerStatement(c.id)}>
-                          {c.name}
+                          {c.name || 'Unnamed'}
                           {c.is_blocked && (
                             <span style={{ marginLeft: '6px', fontSize: '9px', background: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a', padding: '1px 4px', borderRadius: '3px', fontWeight: 700 }}>
                               🚫 BLOCKED
@@ -480,10 +489,10 @@ export const CustomerFleetMasterModal: React.FC<CustomerFleetMasterModalProps> =
                         <td className="text-right" style={{ fontWeight: 700, color: bal > 0 ? (isOver ? '#b71c1c' : '#c0392b') : '#2e7d32' }}>
                           {bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="text-right">{c.credit_limit.toLocaleString('en-IN')}</td>
+                        <td className="text-right">{creditLimit.toLocaleString('en-IN')}</td>
                         <td>
                           <span style={{ fontSize: '10.5px', background: '#eef2f7', padding: '1px 4px', borderRadius: '3px' }}>
-                            {c.vehicles?.length || 0} Veh
+                            {vehCount} Veh
                           </span>
                         </td>
                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>

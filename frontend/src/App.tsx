@@ -2157,9 +2157,14 @@ export default function App() {
     total: salesReadings.reduce((sum, r) => sum + (r.amount || 0), 0),
   };
   const tanks = dashboard?.tanks || [];
-  const customersList = customers.filter((c) =>
-    custFilter ? c.name.toLowerCase().includes(custFilter.toLowerCase()) || c.city?.toLowerCase().includes(custFilter.toLowerCase()) : true
-  );
+  const customersList = (customers || []).filter((c) => {
+    if (!c) return false;
+    if (!custFilter) return true;
+    const filter = custFilter.toLowerCase();
+    const name = (c.name || '').toLowerCase();
+    const city = (c.city || '').toLowerCase();
+    return name.includes(filter) || city.includes(filter);
+  });
   const accountsList = dashboard?.accounts || [];
 
   const mobileMenuItems = [
@@ -2708,13 +2713,13 @@ export default function App() {
                       `NSAIPETROSOFT_CustomerOutstanding_${new Date().toISOString().split('T')[0]}`,
                       ['Customer Code', 'Customer Name', 'City', 'Mobile', 'Credit Limit (INR)', 'Outstanding (INR)', 'Status'],
                       customersList.map(c => [
-                        c.code || '',
-                        c.name,
-                        c.city || '',
-                        c.mobile || '',
-                        c.credit_limit || 0,
-                        (c.current_outstanding ?? (c as any).outstanding ?? 0),
-                        c.is_blocked ? 'BLOCKED' : 'ACTIVE'
+                        c?.code || '',
+                        c?.name || 'Unnamed',
+                        c?.city || '',
+                        c?.mobile || '',
+                        Number(c?.credit_limit) || 0,
+                        Number(c?.current_outstanding ?? (c as any)?.outstanding ?? 0),
+                        c?.is_blocked ? 'BLOCKED' : 'ACTIVE'
                       ])
                     )}
                     title="Export all customer balances to Microsoft Excel or CSV"
@@ -2732,33 +2737,37 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {customersList.map((c) => (
-                        <tr
-                          key={c.id}
-                          style={{ cursor: 'pointer' }}
-                          title="Click to view Customer Statement of Accounts"
-                        >
-                          <td style={{ color: '#0055ea', fontWeight: 600 }} onClick={() => openCustomerStatement(c.id)}>{c.name}</td>
-                          <td className="text-right" onClick={() => openCustomerStatement(c.id)}>{((c.current_outstanding ?? (c as any).outstanding ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              className="win-btn-classic"
-                              style={{ minHeight: '22px', padding: '2px 6px', fontSize: '10.5px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
-                              title={`Send instant WhatsApp balance reminder to ${c.name} (${c.mobile || 'No mobile'})`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const bal = (c.current_outstanding ?? (c as any).outstanding ?? 0);
-                                const msg = `⛽ *${stationProfile.stationName.toUpperCase()}*\nDear *${c.name}*,\nYour current unbilled fuel outstanding balance is *₹${bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*.\nKindly arrange remittance at your earliest convenience.\nThank you!`;
-                                openWhatsAppChat(c.mobile || '', msg);
-                                showToast(`📲 Opening WhatsApp reminder for ${c.name}...`);
-                              }}
-                            >
-                              📲
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {customersList.map((c) => {
+                        if (!c) return null;
+                        const bal = Number(c.current_outstanding ?? (c as any).outstanding ?? 0);
+                        const cName = c.name || 'Unnamed';
+                        return (
+                          <tr
+                            key={c.id || Math.random()}
+                            style={{ cursor: 'pointer' }}
+                            title="Click to view Customer Statement of Accounts"
+                          >
+                            <td style={{ color: '#0055ea', fontWeight: 600 }} onClick={() => c.id && openCustomerStatement(c.id)}>{cName}</td>
+                            <td className="text-right" onClick={() => c.id && openCustomerStatement(c.id)}>{bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="win-btn-classic"
+                                style={{ minHeight: '22px', padding: '2px 6px', fontSize: '10.5px', background: '#25d366', color: '#fff', borderColor: '#128c7e', fontWeight: 700 }}
+                                title={`Send instant WhatsApp balance reminder to ${cName} (${c.mobile || 'No mobile'})`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const msg = `⛽ *${(stationProfile?.stationName || 'PETRO PUMP').toUpperCase()}*\nDear *${cName}*,\nYour current unbilled fuel outstanding balance is *₹${bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*.\nKindly arrange remittance at your earliest convenience.\nThank you!`;
+                                  openWhatsAppChat(c.mobile || '', msg);
+                                  showToast(`📲 Opening WhatsApp reminder for ${cName}...`);
+                                }}
+                              >
+                                📲
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
