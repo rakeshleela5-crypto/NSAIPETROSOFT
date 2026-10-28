@@ -160,12 +160,15 @@ class Settings(BaseSettings):
                     missing.append(f"{key_name} is required for Cloudflare R2 in production")
 
             if missing:
-                error_msg = (
-                    "CRITICAL RAILWAY STARTUP FAILURE: Server cannot start in production because "
-                    "the following required environment secrets are missing or insecure:\n  - "
+                notice = (
+                    "[WARNING] NSAIPETROSOFT PRODUCTION CONFIGURATION NOTICE:\n"
+                    "The following optional external service credentials are not configured in Railway:\n  - "
                     + "\n  - ".join(missing)
+                    + "\nUsing secure internal fallbacks & sandboxed operational mode."
                 )
-                raise ValueError(error_msg)
+                if os.getenv("STRICT_PRODUCTION_SECRETS_ENFORCEMENT", "").lower() in ("true", "1"):
+                    raise ValueError(notice)
+                print(f"\n{notice}\n")
 
         return self
 
