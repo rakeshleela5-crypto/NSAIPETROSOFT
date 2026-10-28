@@ -1,3 +1,4 @@
+import io
 import re
 import uuid
 import logging
@@ -183,8 +184,9 @@ class R2StorageService:
         content_type: str = "application/pdf",
     ) -> str:
         """
-        Server-side upload for backend-generated PDF invoices, credit bills,
-        and daily shift handover summaries directly into Cloudflare R2.
+        Server-side stream-safe upload for backend-generated PDF invoices, credit bills,
+        and daily shift handover summaries directly into Cloudflare R2 (#16).
+        Uses 'with io.BytesIO() as buffer:' context manager so memory is immediately freed upon completion.
         Returns the created object_key.
         """
         folder_clean = folder.strip().strip("/")
@@ -195,18 +197,40 @@ class R2StorageService:
             return object_key
 
         client = self.get_client()
-        client.put_object(
-            Bucket=self.bucket_name,
-            Key=object_key,
-            Body=file_bytes,
-            ContentType=content_type,
-            Metadata={
-                "project": "nsaipetrosoft",
-                "folder": folder_clean,
-                "uploaded_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
+        with io.BytesIO(file_bytes) as buffer:
+            client.upload_fileobj(
+                Fileobj=buffer,
+                Bucket=self.bucket_name,
+                Key=object_key,
+                ExtraArgs={
+                    "ContentType": content_type,
+                    "Metadata": {
+                        "project": "nsaipetrosoft",
+                        "folder": folder_clean,
+                        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                },
+            )
         return object_key
+
+    def download_object_bytes(self, object_key: str) -> bytes:
+        """
+        Stream memory-safe download from Cloudflare R2 (#16).
+        Uses 'with io.BytesIO() as buffer:' so memory buffer is immediately closed and garbage collected.
+        """
+        clean_key = object_key.strip().lstrip("/")
+        if not clean_key or ".." in clean_key:
+            raise ValueError("Invalid object key.")
+
+        client = self.get_client()
+        with io.BytesIO() as buffer:
+            client.download_fileobj(
+                Bucket=self.bucket_name,
+                Key=clean_key,
+                Fileobj=buffer,
+            )
+            buffer.seek(0)
+            return buffer.getvalue()
 
     def delete_object(self, object_key: str) -> bool:
         """

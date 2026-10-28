@@ -1,13 +1,14 @@
 import asyncio
 import json
 import time
+import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -15,6 +16,7 @@ from app.core.idempotency import verify_idempotency_key
 from app.core.logging_config import decentro_logger
 from app.core.security_decentro import verify_decentro_webhook_signature
 from app.db.session import get_db
+from app.models.audit import DeadLetterEvent
 from app.models.banking import (
     CollectionLedgerEntry,
     DecentroWebhookAudit,
@@ -559,36 +561,21 @@ async def create_fleet_virtual_account(
     )
 
 
-# Webhook Collections Endpoint: /api/v1/webhooks/decentro and /api/v1/webhooks/decentro/collections
-@webhooks_router.post(
-    "",
-    summary="Decentro Collection & Inbound RTGS/NEFT Webhook (Root)",
-    dependencies=[Depends(verify_decentro_webhook_signature)],
-)
-@webhooks_router.post(
-    "/",
-    summary="Decentro Collection & Inbound RTGS/NEFT Webhook (Trailing Slash)",
-    dependencies=[Depends(verify_decentro_webhook_signature)],
-)
-@webhooks_router.post(
-    "/collections",
-    summary="Decentro Collection & Inbound RTGS/NEFT Webhook",
-    description="HMAC-verified, idempotent listener that allocates B2B fleet deposits to oldest pending fuel invoices (FIFO).",
-    dependencies=[Depends(verify_decentro_webhook_signature)],
-)
-async def decentro_collections_webhook(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    raw_body = await request.body()
-    raw_str = raw_body.decode("utf-8", errors="replace")
-    signature = request.headers.get("x-decentro-signature") or request.headers.get("X-Decentro-Signature")
-
-    try:
-        payload = json.loads(raw_str)
-    except Exception:
-        payload = {}
-
+async def execute_collections_reconciliation(
+    db: AsyncSession,
+    payload: Dict[str, Any],
+    headers: Optional[Dict[str, str]] = None,
+    signature: Optional[str] = None,
+    raw_str: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Core atomic reconciliation routine for Decentro Collections Webhooks (#36):
+    1. Audits the event.
+    2. Enforces strict UTR and Decentro Txn ID idempotency before mutating any balance.
+    3. Allocates payments via FIFO across oldest pending fuel indents.
+    4. Credits station nodal bank balance and inserts PaymentReceipt.
+    """
+    raw_payload_str = raw_str or json.dumps(payload, default=str)
     decentro_txn_id = (
         payload.get("decentro_txn_id")
         or payload.get("decentroTxnId")
@@ -627,7 +614,7 @@ async def decentro_collections_webhook(
     ).upper()
     reference_id = payload.get("reference_id") or payload.get("referenceId") or ""
 
-    # 1. Audit log
+    # 1. Audit log record
     audit = DecentroWebhookAudit(
         endpoint_type="COLLECTIONS",
         decentro_txn_id=decentro_txn_id,
@@ -635,43 +622,65 @@ async def decentro_collections_webhook(
         signature=signature,
         signature_valid=True,
         status="PROCESSING",
-        payload_json=raw_str,
+        payload_json=raw_payload_str,
     )
     db.add(audit)
     await db.flush()
 
-    # 2. Idempotency Check: Ensure UTR hasn't already been processed
-    if bank_utr:
-        dup_va_log = (
-            await db.execute(
-                select(VirtualAccountWebhookLog).where(VirtualAccountWebhookLog.bank_utr == bank_utr)
-            )
-        ).scalar_one_or_none()
-        dup_ledger = (
-            await db.execute(
-                select(CollectionLedgerEntry).where(CollectionLedgerEntry.bank_reference_number == bank_utr)
-            )
-        ).scalar_one_or_none()
+    # 2. Strict Idempotency Check (#36): Check if Decentro transaction ID / UTR was already processed
+    dup_found = False
+    if bank_utr or decentro_txn_id:
+        conditions_va = []
+        conditions_ledger = []
+        conditions_audit = []
+        conditions_txn = []
+
+        if bank_utr:
+            conditions_va.append(VirtualAccountWebhookLog.bank_utr == bank_utr)
+            conditions_ledger.append(CollectionLedgerEntry.bank_reference_number == bank_utr)
+            conditions_audit.append(DecentroWebhookAudit.bank_reference_number == bank_utr)
+            conditions_txn.append(DecentroTransaction.bank_reference_number == bank_utr)
+
+        if decentro_txn_id:
+            conditions_va.append(VirtualAccountWebhookLog.decentro_txn_id == decentro_txn_id)
+            conditions_ledger.append(CollectionLedgerEntry.decentro_txn_id == decentro_txn_id)
+            conditions_audit.append(DecentroWebhookAudit.decentro_txn_id == decentro_txn_id)
+            conditions_txn.append(DecentroTransaction.decentro_txn_id == decentro_txn_id)
+
+        dup_va_log = (await db.execute(select(VirtualAccountWebhookLog).where(or_(*conditions_va)))).scalar_one_or_none()
+        dup_ledger = (await db.execute(select(CollectionLedgerEntry).where(or_(*conditions_ledger)))).scalar_one_or_none()
         dup_audit = (
             await db.execute(
                 select(DecentroWebhookAudit).where(
-                    DecentroWebhookAudit.bank_reference_number == bank_utr,
+                    or_(*conditions_audit),
                     DecentroWebhookAudit.status.in_(["PROCESSED", "SUCCESS", "DUPLICATE"]),
                     DecentroWebhookAudit.id != audit.id,
                 )
             )
         ).scalars().first()
+        dup_txn = (
+            await db.execute(
+                select(DecentroTransaction).where(
+                    or_(*conditions_txn),
+                    DecentroTransaction.status.in_(["RECONCILED", "SUCCESS"]),
+                )
+            )
+        ).scalars().first()
 
-        if dup_va_log or dup_ledger or dup_audit:
-            audit.status = "DUPLICATE"
-            audit.result_summary = f"Duplicate UTR {bank_utr} ignored idempotently."
-            await db.commit()
-            return {
-                "response_code": "CB_S00000",
-                "status": "ALREADY_PROCESSED",
-                "utr": bank_utr,
-                "message": "Webhook already processed",
-            }
+        if dup_va_log or dup_ledger or dup_audit or dup_txn:
+            dup_found = True
+
+    if dup_found:
+        audit.status = "DUPLICATE"
+        audit.result_summary = f"Duplicate UTR {bank_utr} / Decentro Txn {decentro_txn_id} ignored idempotently."
+        await db.commit()
+        return {
+            "response_code": "CB_S00000",
+            "status": "ALREADY_PROCESSED",
+            "utr": bank_utr,
+            "decentro_txn_id": decentro_txn_id,
+            "message": "Webhook already processed",
+        }
 
     # 3. Check if this matches a Pending Nozzle Dynamic UPI QR Transaction
     nozzle_txn = None
@@ -746,7 +755,7 @@ async def decentro_collections_webhook(
         if fva:
             customer = await db.get(Customer, fva.customer_id)
 
-        # Fallback to customer code extraction
+        # Fallback to customer code extraction from VAN
         if not customer and payee_account.startswith(settings.DECENTRO_VAN_PREFIX):
             van_digits = payee_account.replace(settings.DECENTRO_VAN_PREFIX, "").lstrip("0")
             if van_digits.isdigit():
@@ -755,7 +764,7 @@ async def decentro_collections_webhook(
     cleared_invoices = []
     receipt_no = None
     if customer and amount > 0 and txn_status in ("SUCCESS", "COMPLETED"):
-        # Pessimistic row locking on Customer record (Lock hierarchy: CustomerAccount)
+        # Pessimistic row locking on Customer record (Lock hierarchy: CustomerAccount) (#14)
         lock_cust_stmt = select(Customer).where(Customer.id == customer.id).with_for_update()
         customer = (await db.execute(lock_cust_stmt)).scalar_one_or_none()
         if not customer:
@@ -853,37 +862,99 @@ async def decentro_collections_webhook(
         payer_name=payload.get("payer_name") or payload.get("payerName"),
         payer_account=payload.get("payer_account_number") or payload.get("payerAccountNumber"),
         payer_ifsc=payload.get("payer_account_ifsc") or payload.get("payerIfsc"),
-        raw_payload=raw_str,
+        raw_payload=raw_payload_str,
     )
     db.add(webhook_log)
 
-    try:
-        audit.status = "PROCESSED"
-        audit.result_summary = f"Callback processed: UTR {bank_utr}, Status: {txn_status}"
-        await db.commit()
-    except Exception as exc:
-        await db.rollback()
-        exc_str = str(exc).lower()
-        if "unique" in exc_str or "duplicate" in exc_str or "integrity" in exc_str:
-            return {
-                "response_code": "CB_S00000",
-                "status": "ALREADY_PROCESSED",
-                "utr": bank_utr,
-                "message": "Webhook already processed concurrently",
-            }
-        raise
+    audit.status = "PROCESSED"
+    audit.result_summary = f"Callback processed: UTR {bank_utr}, Status: {txn_status}"
+    await db.commit()
 
-    # Decentro expects CB_S00000 or HTTP 200 to acknowledge callback
     return {
         "response_code": "CB_S00000",
         "status": "SUCCESS",
         "utr": bank_utr,
+        "decentro_txn_id": decentro_txn_id,
         "reconciled": bool(customer or nozzle_txn or upi_txn),
         "customer_id": customer.id if customer else None,
         "receipt_no": receipt_no,
         "cleared_invoices_count": len(cleared_invoices),
         "message": "Callback recorded successfully",
     }
+
+
+# Webhook Collections Endpoint: /api/v1/webhooks/decentro and /api/v1/webhooks/decentro/collections
+@webhooks_router.post(
+    "",
+    summary="Decentro Collection & Inbound RTGS/NEFT Webhook (Root)",
+    dependencies=[Depends(verify_decentro_webhook_signature)],
+)
+@webhooks_router.post(
+    "/",
+    summary="Decentro Collection & Inbound RTGS/NEFT Webhook (Trailing Slash)",
+    dependencies=[Depends(verify_decentro_webhook_signature)],
+)
+@webhooks_router.post(
+    "/collections",
+    summary="Decentro Collection & Inbound RTGS/NEFT Webhook",
+    description="HMAC-verified, idempotent listener that allocates B2B fleet deposits to oldest pending fuel invoices (FIFO).",
+    dependencies=[Depends(verify_decentro_webhook_signature)],
+)
+async def decentro_collections_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    raw_body = await request.body()
+    raw_str = raw_body.decode("utf-8", errors="replace")
+    headers_dict = dict(request.headers)
+    signature = request.headers.get("x-decentro-signature") or request.headers.get("X-Decentro-Signature")
+
+    try:
+        payload = json.loads(raw_str)
+    except Exception:
+        payload = {}
+
+    try:
+        result = await execute_collections_reconciliation(
+            db=db,
+            payload=payload,
+            headers=headers_dict,
+            signature=signature,
+            raw_str=raw_str,
+        )
+        return result
+    except Exception as exc:
+        await db.rollback()
+        err_trace = traceback.format_exc()
+        decentro_logger.error(
+            f"Decentro collections webhook processing failed; routing to DeadLetterEvent (#39): {exc}",
+            extra={"error": str(exc), "traceback": err_trace},
+        )
+        dlq_event = DeadLetterEvent(
+            event_type="DECENTRO_COLLECTIONS_WEBHOOK",
+            payload=payload if isinstance(payload, dict) and payload else {"raw": raw_str},
+            headers=headers_dict,
+            error_message=str(exc),
+            traceback=err_trace,
+            status="PENDING_REPLAY",
+            retry_count=0,
+        )
+        db.add(dlq_event)
+        try:
+            await db.commit()
+            await db.refresh(dlq_event)
+            dlq_id = dlq_event.id
+        except Exception as db_err:
+            await db.rollback()
+            decentro_logger.error(f"Failed to commit DeadLetterEvent: {db_err}")
+            dlq_id = None
+
+        return {
+            "response_code": "CB_S00000",
+            "status": "DEAD_LETTERED",
+            "dlq_event_id": dlq_id,
+            "message": f"Webhook processing error captured in DeadLetterEvent: {str(exc)}",
+        }
 
 
 # =============================================================================
@@ -1016,26 +1087,20 @@ async def create_supplier_payout(
     )
 
 
-# Webhook Payouts Endpoint: /api/v1/webhooks/decentro/payouts
-@webhooks_router.post(
-    "/payouts",
-    summary="Decentro Asynchronous Payout Status Webhook",
-    description="Handles SUCCESS, FAILURE, and REVERSED status callbacks. Automatically restores station bank ledger balance if payout fails.",
-    dependencies=[Depends(verify_decentro_webhook_signature)],
-)
-async def decentro_payouts_webhook(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    raw_body = await request.body()
-    raw_str = raw_body.decode("utf-8", errors="replace")
-    signature = request.headers.get("x-decentro-signature") or request.headers.get("X-Decentro-Signature")
-
-    try:
-        payload = json.loads(raw_str)
-    except Exception:
-        payload = {}
-
+async def execute_payouts_reconciliation(
+    db: AsyncSession,
+    payload: Dict[str, Any],
+    headers: Optional[Dict[str, str]] = None,
+    signature: Optional[str] = None,
+    raw_str: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Core atomic reconciliation routine for Decentro Supplier Payout Status Webhooks (#36):
+    1. Audits the event.
+    2. Enforces strict idempotency checks before updating order states or restoring balances.
+    3. Handles SUCCESS, FAILURE, and REVERSED transitions with automated bank ledger restoration.
+    """
+    raw_json = raw_str or json.dumps(payload, default=str)
     decentro_txn_id = payload.get("decentroTxnId") or payload.get("decentro_txn_id")
     ref_id = payload.get("referenceId") or payload.get("reference_id")
     utr = payload.get("bankReferenceNumber") or payload.get("bank_reference_number")
@@ -1050,12 +1115,34 @@ async def decentro_payouts_webhook(
         signature=signature,
         signature_valid=True,
         status="PROCESSING",
-        payload_json=raw_str,
+        payload_json=raw_json,
     )
     db.add(audit)
     await db.flush()
 
-    # 2. Match SupplierPayout
+    # 2. Strict Idempotency Check (#36): Check if payout status was already applied
+    order = None
+    if decentro_txn_id or ref_id:
+        query = select(SupplierPayoutOrder).where(
+            (SupplierPayoutOrder.decentro_txn_id == decentro_txn_id)
+            if decentro_txn_id
+            else (SupplierPayoutOrder.reference_id == ref_id)
+        )
+        order = (await db.execute(query)).scalar_one_or_none()
+
+    if order and order.status == payout_status and (not utr or order.bank_reference_number == utr):
+        audit.status = "DUPLICATE"
+        audit.result_summary = f"Payout order #{order.id} is already in status {payout_status}. Ignored idempotently."
+        await db.commit()
+        return {
+            "response_code": "CB_S00000",
+            "status": "ALREADY_PROCESSED",
+            "order_id": order.id,
+            "payout_status": payout_status,
+            "message": "Payout status webhook already processed idempotently.",
+        }
+
+    # 3. Match SupplierPayout
     payout = None
     if ref_id:
         payout = (
@@ -1079,14 +1166,7 @@ async def decentro_payouts_webhook(
         payout.updated_at = datetime.now(timezone.utc)
         db.add(payout)
 
-    # 3. Match SupplierPayoutOrder
-    query = select(SupplierPayoutOrder).where(
-        (SupplierPayoutOrder.decentro_txn_id == decentro_txn_id)
-        if decentro_txn_id
-        else (SupplierPayoutOrder.reference_id == ref_id)
-    )
-    order = (await db.execute(query)).scalar_one_or_none()
-
+    # 4. Update SupplierPayoutOrder
     if order:
         old_status = order.status
         order.status = payout_status
@@ -1122,6 +1202,70 @@ async def decentro_payouts_webhook(
         "payout_status": payout_status,
         "message": "Payout status updated",
     }
+
+
+# Webhook Payouts Endpoint: /api/v1/webhooks/decentro/payouts
+@webhooks_router.post(
+    "/payouts",
+    summary="Decentro Asynchronous Payout Status Webhook",
+    description="Handles SUCCESS, FAILURE, and REVERSED status callbacks. Automatically restores station bank ledger balance if payout fails.",
+    dependencies=[Depends(verify_decentro_webhook_signature)],
+)
+async def decentro_payouts_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    raw_body = await request.body()
+    raw_str = raw_body.decode("utf-8", errors="replace")
+    headers_dict = dict(request.headers)
+    signature = request.headers.get("x-decentro-signature") or request.headers.get("X-Decentro-Signature")
+
+    try:
+        payload = json.loads(raw_str)
+    except Exception:
+        payload = {}
+
+    try:
+        result = await execute_payouts_reconciliation(
+            db=db,
+            payload=payload,
+            headers=headers_dict,
+            signature=signature,
+            raw_str=raw_str,
+        )
+        return result
+    except Exception as exc:
+        await db.rollback()
+        err_trace = traceback.format_exc()
+        decentro_logger.error(
+            f"Decentro payouts webhook processing failed; routing to DeadLetterEvent (#39): {exc}",
+            extra={"error": str(exc), "traceback": err_trace},
+        )
+        dlq_event = DeadLetterEvent(
+            event_type="DECENTRO_PAYOUTS_WEBHOOK",
+            payload=payload if isinstance(payload, dict) and payload else {"raw": raw_str},
+            headers=headers_dict,
+            error_message=str(exc),
+            traceback=err_trace,
+            status="PENDING_REPLAY",
+            retry_count=0,
+        )
+        db.add(dlq_event)
+        try:
+            await db.commit()
+            await db.refresh(dlq_event)
+            dlq_id = dlq_event.id
+        except Exception as db_err:
+            await db.rollback()
+            decentro_logger.error(f"Failed to commit DeadLetterEvent: {db_err}")
+            dlq_id = None
+
+        return {
+            "response_code": "CB_S00000",
+            "status": "DEAD_LETTERED",
+            "dlq_event_id": dlq_id,
+            "message": f"Webhook processing error captured in DeadLetterEvent: {str(exc)}",
+        }
 
 
 # =============================================================================

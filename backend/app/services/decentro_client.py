@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import random
 import re
 import time
 import uuid
@@ -55,12 +56,68 @@ def generate_mock_qr_svg(upi_uri: str) -> str:
     return base64.b64encode(svg.encode("utf-8")).decode("utf-8")
 
 
+class DecentroCircuitBreaker:
+    """
+    Lightweight in-memory Circuit Breaker for Decentro Outbound Banking APIs (#13):
+    - Fails fast for 60 seconds if Decentro returns 5 consecutive 5xx failures.
+    - Transitions from OPEN -> HALF_OPEN after cooldown period (60.0s) to probe downstream health.
+    - Resets to CLOSED upon receiving any valid response (status < 500).
+    """
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout_seconds: float = 60.0):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout_seconds = recovery_timeout_seconds
+        self.state: str = "CLOSED"  # "CLOSED", "OPEN", "HALF_OPEN"
+        self.consecutive_5xx_failures: int = 0
+        self.last_failure_time: float = 0.0
+
+    def can_execute(self) -> bool:
+        """Returns True if request should be dispatched, False to fail fast immediately."""
+        if self.state == "OPEN":
+            elapsed = time.monotonic() - self.last_failure_time
+            if elapsed > self.recovery_timeout_seconds:
+                self.state = "HALF_OPEN"
+                decentro_logger.info(
+                    "Decentro circuit breaker entering HALF_OPEN state; probing downstream banking gateway."
+                )
+                return True
+            return False
+        return True
+
+    def record_success(self):
+        """Resets the circuit breaker upon receiving a valid response (< 500)."""
+        if self.consecutive_5xx_failures > 0 or self.state != "CLOSED":
+            decentro_logger.info(
+                f"Decentro circuit breaker reset to CLOSED (was {self.state}, prior failures={self.consecutive_5xx_failures})."
+            )
+        self.consecutive_5xx_failures = 0
+        self.state = "CLOSED"
+
+    def record_failure(self, status_code: int):
+        """Records 5xx server errors and trips breaker if threshold is reached."""
+        if 500 <= status_code <= 599:
+            self.consecutive_5xx_failures += 1
+            self.last_failure_time = time.monotonic()
+            if self.consecutive_5xx_failures >= self.failure_threshold:
+                self.state = "OPEN"
+                decentro_logger.error(
+                    f"Decentro circuit breaker tripped to OPEN! "
+                    f"{self.consecutive_5xx_failures} consecutive 5xx errors recorded. "
+                    f"Failing fast for {self.recovery_timeout_seconds}s."
+                )
+
+
+DECENTRO_DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+
+
 class DecentroClient:
     """
     Enterprise Decentro Banking-as-a-Service Client.
     Features:
-    - HTTP connection pooling via httpx.AsyncClient
-    - Exponential backoff retry strategy for resilient banking API calls
+    - HTTP connection pooling via shared httpx.AsyncClient with explicit timeout (10s read/write, 5s connect) (#10)
+    - Lightweight circuit breaker failing fast for 60s upon 5 consecutive 5xx failures (#13)
+    - Exponential backoff with jitter retry strategy (max 3 attempts) for network timeouts and 502/503/504 (#11)
+    - Strict immutable reference_id preservation for payout idempotency (#12)
     - Structured JSON logging with masked authentication credentials
     - Full sandbox/simulation fallback when in demo/test mode
     """
@@ -71,13 +128,25 @@ class DecentroClient:
         self.client_secret = settings.DECENTRO_CLIENT_SECRET
         self.module_secret = settings.DECENTRO_MODULE_SECRET
         self.provider_secret = settings.DECENTRO_PROVIDER_SECRET
-        self.timeout = settings.DECENTRO_TIMEOUT_SECONDS
-        self.max_retries = settings.DECENTRO_MAX_RETRIES
+        self.timeout = DECENTRO_DEFAULT_TIMEOUT
+        self.max_retries = 3  # Maximum 3 attempts per specification
+        self.circuit_breaker = DecentroCircuitBreaker(failure_threshold=5, recovery_timeout_seconds=60.0)
+        self._shared_client: Optional[httpx.AsyncClient] = None
         self.is_simulation = (
             getattr(settings, "DECENTRO_SIMULATION_MODE", False)
             or not self.client_id
             or "demo" in self.client_id.lower()
         )
+
+    def get_http_client(self) -> httpx.AsyncClient:
+        """Returns or initializes the shared singleton httpx.AsyncClient wrapper (#10)."""
+        if self._shared_client is None or self._shared_client.is_closed:
+            limits = httpx.Limits(max_keepalive_connections=20, max_connections=50, keepalive_expiry=30.0)
+            self._shared_client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=limits,
+            )
+        return self._shared_client
 
     def _headers(self, module_secret: Optional[str] = None, include_provider: bool = False) -> Dict[str, str]:
         headers = {
@@ -92,8 +161,10 @@ class DecentroClient:
         return headers
 
     async def close(self):
-        """Gracefully release client resources during FastAPI lifespan shutdown."""
-        pass
+        """Gracefully release shared client resources during FastAPI lifespan shutdown."""
+        if self._shared_client is not None and not self._shared_client.is_closed:
+            await self._shared_client.aclose()
+            self._shared_client = None
 
     async def _request_with_retry(
         self,
@@ -103,70 +174,110 @@ class DecentroClient:
         headers: Optional[Dict[str, str]] = None,
     ) -> Tuple[int, Dict[str, Any]]:
         """
-        Execute HTTP request with exponential backoff on transient errors.
+        Execute HTTP request with shared client, circuit breaker check, and exponential backoff with jitter (#10, #11, #12, #13).
         """
+        # 1. Circuit Breaker Fast-Fail Check
+        if not self.circuit_breaker.can_execute():
+            cooldown_left = round(
+                self.circuit_breaker.recovery_timeout_seconds - (time.monotonic() - self.circuit_breaker.last_failure_time),
+                1,
+            )
+            decentro_logger.warning(
+                f"Decentro API {method} {endpoint} failed fast: Circuit breaker is OPEN ({cooldown_left}s remaining)."
+            )
+            return 503, {
+                "error": "CIRCUIT_BREAKER_OPEN",
+                "status": "FAILURE",
+                "detail": f"Decentro API circuit breaker is OPEN after 5 consecutive 5xx failures. Failing fast for {cooldown_left}s.",
+            }
+
         url = f"{self.base_url}{endpoint}"
         req_headers = headers or self._headers()
+        client = self.get_http_client()
         attempt = 0
-        backoff_delay = 1.0
 
-        while attempt <= self.max_retries:
+        while attempt < self.max_retries:
             attempt += 1
             start_time = time.monotonic()
+            ref_id_label = payload.get("reference_id") if payload else "N/A"
+
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    decentro_logger.info(
-                        f"Decentro API {method} {endpoint} - Attempt {attempt}",
-                        extra={
-                            "method": method,
-                            "url": url,
-                            "attempt": attempt,
-                            "payload": sanitize_dict(payload),
-                        },
-                    )
+                decentro_logger.info(
+                    f"Decentro API {method} {endpoint} - Attempt {attempt}/{self.max_retries} [ref_id={ref_id_label}]",
+                    extra={
+                        "method": method,
+                        "url": url,
+                        "attempt": attempt,
+                        "payload": sanitize_dict(payload),
+                    },
+                )
 
-                    response = await client.request(
-                        method=method,
-                        url=url,
-                        headers=req_headers,
-                        json=payload if payload else None,
-                    )
+                response = await client.request(
+                    method=method,
+                    url=url,
+                    headers=req_headers,
+                    json=payload if payload else None,
+                )
 
-                    duration_ms = round((time.monotonic() - start_time) * 1000, 2)
-                    status_code = response.status_code
-
-                    decentro_logger.info(
-                        f"Decentro API {method} {endpoint} responded {status_code} in {duration_ms}ms",
-                        extra={
-                            "method": method,
-                            "url": url,
-                            "status_code": status_code,
-                            "duration_ms": duration_ms,
-                        },
-                    )
-
-                    if status_code < 500:
-                        try:
-                            return status_code, response.json()
-                        except Exception:
-                            return status_code, {"raw": response.text}
-
-                    if attempt > self.max_retries:
-                        return status_code, {"error": "MAX_RETRIES_EXCEEDED", "detail": response.text}
-
-            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
                 duration_ms = round((time.monotonic() - start_time) * 1000, 2)
+                status_code = response.status_code
+
+                decentro_logger.info(
+                    f"Decentro API {method} {endpoint} responded {status_code} in {duration_ms}ms (Attempt {attempt})",
+                    extra={
+                        "method": method,
+                        "url": url,
+                        "status_code": status_code,
+                        "duration_ms": duration_ms,
+                    },
+                )
+
+                # Successful or non-server-error response
+                if status_code < 500:
+                    self.circuit_breaker.record_success()
+                    try:
+                        return status_code, response.json()
+                    except Exception:
+                        return status_code, {"raw": response.text}
+
+                # 5xx responses: record failure in circuit breaker
+                self.circuit_breaker.record_failure(status_code)
+
+                # Only 502, 503, 504 are eligible for retry with backoff and jitter
+                if status_code in (502, 503, 504) and attempt < self.max_retries:
+                    backoff = min(10.0, (2.0 ** (attempt - 1))) + random.uniform(0.0, 0.5)
+                    decentro_logger.warning(
+                        f"Decentro API returned {status_code}; retrying attempt {attempt + 1}/{self.max_retries} in {backoff:.2f}s..."
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+
+                # Max retries reached or non-retryable 5xx (e.g. 500 Internal Error)
+                try:
+                    return status_code, response.json()
+                except Exception:
+                    return status_code, {"error": "SERVER_ERROR", "status_code": status_code, "detail": response.text}
+
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout, httpx.NetworkError) as exc:
+                duration_ms = round((time.monotonic() - start_time) * 1000, 2)
+                self.circuit_breaker.record_failure(504)
                 decentro_logger.warning(
-                    f"Decentro API network error on attempt {attempt}: {str(exc)}",
+                    f"Decentro API network error on attempt {attempt}/{self.max_retries}: {str(exc)}",
                     extra={"error": str(exc), "attempt": attempt, "duration_ms": duration_ms},
                 )
-                if attempt > self.max_retries:
-                    return 503, {"error": "NETWORK_UNAVAILABLE", "detail": str(exc)}
 
-            await asyncio.sleep(backoff_delay)
-            backoff_delay *= 2.0
+                if attempt < self.max_retries:
+                    backoff = min(10.0, (2.0 ** (attempt - 1))) + random.uniform(0.0, 0.5)
+                    await asyncio.sleep(backoff)
+                    continue
 
-        return 500, {"error": "UNKNOWN_ERROR", "detail": "Request failed after retries"}
+                return 503, {
+                    "error": "NETWORK_UNAVAILABLE",
+                    "status": "FAILURE",
+                    "detail": f"Decentro API request timed out after {self.max_retries} attempts: {str(exc)}",
+                }
+
+        return 500, {"error": "UNKNOWN_ERROR", "detail": "Request failed after maximum retry attempts"}
 
     # =========================================================================
     # Workflow 1: Dynamic UPI QR Code Generation
@@ -339,7 +450,11 @@ class DecentroClient:
         purpose_message: Optional[str] = None,
         req: Any = None,
     ) -> Dict[str, Any]:
-        """Disburses funds to vendor/oil company via Decentro /v2/banking/transfer."""
+        """Disburses funds to vendor/oil company via Decentro /v2/banking/transfer with locked reference_id (#12)."""
+        clean_ref_id = str(reference_id or "").strip()
+        if not clean_ref_id:
+            raise ValueError("Locked reference_id is strictly required for payout idempotency.")
+
         v_name = vendor_name or (getattr(req, "supplier_name", None) or getattr(req, "vendor_name", "Supplier"))
         acc_num = account_number or (getattr(req, "beneficiary_account", None) or getattr(req, "account_number", ""))
         ifsc_code = ifsc or (getattr(req, "beneficiary_ifsc", None) or getattr(req, "ifsc", "YESB0CMSNOC"))
@@ -362,8 +477,8 @@ class DecentroClient:
                 "data": {
                     "decentroTxnId": decentro_txn_id,
                     "decentro_txn_id": decentro_txn_id,
-                    "referenceId": reference_id,
-                    "reference_id": reference_id,
+                    "referenceId": clean_ref_id,
+                    "reference_id": clean_ref_id,
                     "status": "SUCCESS",
                     "bankReferenceNumber": utr,
                     "bank_reference_number": utr,
@@ -375,8 +490,9 @@ class DecentroClient:
             }
 
         endpoint = "/v2/banking/transfer"
+        # Crucial (#12): Payout retries always pass the exact same reference_id so double payouts can never occur
         payload = {
-            "reference_id": reference_id,
+            "reference_id": clean_ref_id,
             "purpose_message": purpose[:35],
             "from_account": settings.STATION_MASTER_VA_NUMBER or settings.DECENTRO_MASTER_ACCOUNT,
             "to_account": acc_num,

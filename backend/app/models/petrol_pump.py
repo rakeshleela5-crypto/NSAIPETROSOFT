@@ -268,7 +268,7 @@ class PaymentReceipt(Base):
     bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     receiving_account: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     cheque_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    reference_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    reference_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     tcs_percent: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     tcs_amount: Mapped[float] = mapped_column(DECIMAL_CURRENCY, default=0.0)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

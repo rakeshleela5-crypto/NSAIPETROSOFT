@@ -325,15 +325,49 @@ async def handle_incoming_decentro_webhook(
         },
     )
 
-    result = await process_decentro_webhook_event(
-        session=db,
-        payload=payload,
-        raw_payload_str=raw_payload_str,
-        headers_dict=headers_dict,
-        signature=signature,
-        signature_valid=True,
-    )
-    return result
+    try:
+        result = await process_decentro_webhook_event(
+            session=db,
+            payload=payload,
+            raw_payload_str=raw_payload_str,
+            headers_dict=headers_dict,
+            signature=signature,
+            signature_valid=True,
+        )
+        return result
+    except Exception as exc:
+        await db.rollback()
+        import traceback
+        from app.models.audit import DeadLetterEvent
+        err_trace = traceback.format_exc()
+        decentro_logger.error(
+            f"Decentro webhook processing failed; routing to DeadLetterEvent (#39): {exc}",
+            extra={"error": str(exc), "traceback": err_trace},
+        )
+        dlq_event = DeadLetterEvent(
+            event_type="DECENTRO_WEBHOOK",
+            payload=payload.model_dump() if hasattr(payload, "model_dump") else dict(payload),
+            headers=headers_dict,
+            error_message=str(exc),
+            traceback=err_trace,
+            status="PENDING_REPLAY",
+            retry_count=0,
+        )
+        db.add(dlq_event)
+        try:
+            await db.commit()
+            await db.refresh(dlq_event)
+        except Exception as db_err:
+            await db.rollback()
+            decentro_logger.error(f"Failed to commit DeadLetterEvent: {db_err}")
+
+        return WebhookReconciliationResponse(
+            status="DEAD_LETTERED",
+            decentro_txn_id=payload.decentroTxnId,
+            utr=payload.bankReferenceNumber,
+            reconciled=False,
+            message=f"Webhook processing failure captured in DeadLetterEvent table: {str(exc)}",
+        )
 
 
 # =============================================================================

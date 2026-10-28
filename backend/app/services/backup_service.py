@@ -121,16 +121,20 @@ class R2StorageService:
         if not client:
             raise RuntimeError("Cloudflare R2 is not configured.")
 
-        client.put_object(
-            Bucket=self.bucket_name,
-            Key=key,
-            Body=file_bytes,
-            ContentType=content_type,
-            Metadata={
-                "project": "nsaipetrosoft",
-                "uploaded_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
+        # Stream memory safety: with io.BytesIO() context manager (#16)
+        with io.BytesIO(file_bytes) as buffer:
+            client.upload_fileobj(
+                Fileobj=buffer,
+                Bucket=self.bucket_name,
+                Key=key,
+                ExtraArgs={
+                    "ContentType": content_type,
+                    "Metadata": {
+                        "project": "nsaipetrosoft",
+                        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                },
+            )
         return {
             "bucket": self.bucket_name,
             "key": key,
@@ -167,8 +171,15 @@ class R2StorageService:
         if not client:
             return None
         try:
-            resp = client.get_object(Bucket=self.bucket_name, Key=key)
-            return resp["Body"].read()
+            # Stream memory safety: with io.BytesIO() context manager (#16)
+            with io.BytesIO() as buffer:
+                client.download_fileobj(
+                    Bucket=self.bucket_name,
+                    Key=key,
+                    Fileobj=buffer,
+                )
+                buffer.seek(0)
+                return buffer.getvalue()
         except Exception as e:
             logger.error(f"Error fetching R2 backup {key}: {e}")
             return None
@@ -293,8 +304,11 @@ async def generate_database_snapshot(db: AsyncSession) -> Tuple[str, bytes, Dict
     raw_json = json.dumps(payload, default=_json_serial, indent=2).encode("utf-8")
     raw_size = len(raw_json)
 
-    # Compress with standard gzip
-    compressed_bytes = gzip.compress(raw_json, compresslevel=9)
+    # Compress with standard gzip via stream memory-safe BytesIO context manager (#16)
+    with io.BytesIO() as comp_buffer:
+        with gzip.GzipFile(fileobj=comp_buffer, mode="wb", compresslevel=9) as gz:
+            gz.write(raw_json)
+        compressed_bytes = comp_buffer.getvalue()
     compressed_size = len(compressed_bytes)
 
     sha256 = hashlib.sha256(compressed_bytes).hexdigest()
@@ -750,10 +764,10 @@ async def generate_excel_workbook(db: AsyncSession) -> Tuple[str, bytes]:
     if default_sheet in wb.worksheets:
         wb.remove(default_sheet)
 
-    # Save to buffer
-    excel_buffer = io.BytesIO()
-    wb.save(excel_buffer)
-    excel_bytes = excel_buffer.getvalue()
+    # Save to buffer using context manager for stream memory safety (#16)
+    with io.BytesIO() as excel_buffer:
+        wb.save(excel_buffer)
+        excel_bytes = excel_buffer.getvalue()
 
     return filename, excel_bytes
 
