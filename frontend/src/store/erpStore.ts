@@ -1450,8 +1450,8 @@ class ErpStore {
     }
 
     const newCust: CustomerFull = {
-      id: Date.now(),
-      code: `CUST-${(this.state.customers.length + 1).toString().padStart(3, '0')}`,
+      id: customer.id || Date.now(),
+      code: customer.code || `CUST-${(this.state.customers.length + 1).toString().padStart(3, '0')}`,
       name: customer.name.toUpperCase().trim(),
       mobile: customer.mobile || '',
       city: customer.city || this.state.stationProfile.city,
