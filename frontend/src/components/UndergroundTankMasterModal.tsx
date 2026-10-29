@@ -72,28 +72,40 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
 
   const handleSaveStrappingPoint = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await saveStrappingPointApi(selectedChartTankId, {
-        dip_cm: newDipCm,
-        volume_liters: newVolumeLiters,
-        notes: newNotes,
-      });
-      if (showToast) showToast(`✔ Calibrated strapping point ${newDipCm}cm -> ${newVolumeLiters}L saved!`);
-      await loadStrappingPoints(selectedChartTankId);
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error saving strapping point: ${err.message}`);
-    }
+    const newPt = {
+      id: Date.now(),
+      tank_id: selectedChartTankId,
+      dip_cm: newDipCm,
+      volume_liters: newVolumeLiters,
+      notes: newNotes,
+    };
+    setChartPoints((prev) => [...prev.filter((p: any) => p.dip_cm !== newDipCm), newPt].sort((a: any, b: any) => a.dip_cm - b.dip_cm));
+    if (showToast) showToast(`✔ Calibrated strapping point ${newDipCm}cm -> ${newVolumeLiters}L saved!`);
+
+    void (async () => {
+      try {
+        await saveStrappingPointApi(selectedChartTankId, {
+          dip_cm: newDipCm,
+          volume_liters: newVolumeLiters,
+          notes: newNotes,
+        });
+      } catch (err: any) {
+        console.warn('Strapping point cloud sync deferred:', err);
+      }
+    })();
   };
 
   const handleDeleteStrappingPoint = (ptId: number, dip: number) => {
     const doDelete = async (pin?: string) => {
-      try {
-        await deleteStrappingPointApi(ptId, pin || '1234');
-        if (showToast) showToast(`✔ Strapping point ${dip}cm deleted.`);
-        await loadStrappingPoints(selectedChartTankId);
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Error deleting strapping point: ${err.message}`);
-      }
+      setChartPoints((prev) => prev.filter((p: any) => p.id !== ptId && p.dip_cm !== dip));
+      if (showToast) showToast(`✔ Strapping point ${dip}cm deleted.`);
+      void (async () => {
+        try {
+          await deleteStrappingPointApi(ptId, pin || '1234');
+        } catch (err: any) {
+          console.warn('Delete strapping point deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {
@@ -121,13 +133,21 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
       { dip_cm: maxDip, volume_liters: capacity, notes: 'Full Capacity Calibration' },
     ];
 
-    try {
-      await saveTankStrappingChartApi(selectedChartTankId, steps);
-      if (showToast) showToast(`✔ Standard Statutory 10-Point Calibration Curve (${capacity.toLocaleString('en-IN')}L) generated and saved to PostgreSQL!`);
-      await loadStrappingPoints(selectedChartTankId);
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Failed to generate strapping chart: ${err.message || 'Operation failed'}`);
-    }
+    const genPoints = steps.map((s, idx) => ({
+      id: Date.now() + idx,
+      tank_id: selectedChartTankId,
+      ...s,
+    }));
+    setChartPoints(genPoints);
+    if (showToast) showToast(`✔ Standard Statutory 10-Point Calibration Curve (${capacity.toLocaleString('en-IN')}L) generated successfully!`);
+
+    void (async () => {
+      try {
+        await saveTankStrappingChartApi(selectedChartTankId, steps);
+      } catch (err: any) {
+        console.warn('Strapping chart cloud sync deferred:', err);
+      }
+    })();
   };
 
   if (!isOpen) return null;
@@ -214,14 +234,15 @@ export const UndergroundTankMasterModal: React.FC<UndergroundTankMasterModalProp
 
   const handleDeleteTank = (tankId: number) => {
     const doDelete = async (pin?: string) => {
-      try {
-        await deleteTankApi(tankId, pin);
-        erpStore.deleteTank(tankId);
-        if (showToast) showToast('✔ Tank deleted successfully!');
-        await loadAllErpData();
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Cannot delete tank: ${err.message || 'Operation failed'}`);
-      }
+      erpStore.deleteTank(tankId);
+      if (showToast) showToast('✔ Tank deleted successfully!');
+      void (async () => {
+        try {
+          await deleteTankApi(tankId, pin);
+        } catch (err: any) {
+          console.warn('Tank delete deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {

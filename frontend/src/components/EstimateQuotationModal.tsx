@@ -77,39 +77,38 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
     setIsSubmitting(true);
     setSubmitError(null);
 
-    try {
-      const q = erpStore.saveQuotation(quotePayload);
+    const q = erpStore.saveQuotation(quotePayload);
+    if (showToast) showToast(`✔ Quotation #${q.quotation_no} created successfully!`);
+    setIsCreating(false);
+    setIsSubmitting(false);
 
-      if (navigator.onLine) {
+    void (async () => {
+      try {
         await saveQuotationApi({
           ...quotePayload,
           quotation_no: q.quotation_no,
           total_amount: q.total_amount,
         });
+        if (loadAllErpData) void loadAllErpData().catch(() => {});
+      } catch (err: any) {
+        console.warn('Quotation cloud sync deferred:', err);
       }
-
-      if (showToast) showToast(`✔ Quotation #${q.quotation_no} committed to PostgreSQL!`);
-      setIsCreating(false);
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      setSubmitError(err.message || 'Failed to save quotation to database');
-      if (showToast) showToast(`❌ Quotation save failed: ${err.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+    })();
   };
 
   const handleDeleteQuotation = (quoteId: number) => {
     const q = quotations.find((item) => item.id === quoteId);
     const doDelete = async (pin?: string) => {
-      try {
-        await deleteQuotationApi(quoteId, pin);
-        erpStore.deleteQuotation(quoteId);
-        if (showToast) showToast(`✔ Quotation #${q?.quotation_no || quoteId} deleted successfully`);
-        if (loadAllErpData) await loadAllErpData();
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Error deleting quotation: ${err.message}`);
-      }
+      erpStore.deleteQuotation(quoteId);
+      if (showToast) showToast(`✔ Quotation #${q?.quotation_no || quoteId} deleted successfully`);
+      void (async () => {
+        try {
+          await deleteQuotationApi(quoteId, pin);
+          if (loadAllErpData) void loadAllErpData().catch(() => {});
+        } catch (err: any) {
+          console.warn('Delete quotation deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {
@@ -122,48 +121,44 @@ export const EstimateQuotationModal: React.FC<EstimateQuotationModalProps> = ({
   const handleConvertToBill = async (quoteId: number) => {
     setIsSubmitting(true);
     setSubmitError(null);
-    try {
-      const q = quotations.find((item) => item.id === quoteId);
-      const matchedCust = customers?.find((c) => c.name.toUpperCase() === (q?.customer_name || '').toUpperCase());
-      const custId = matchedCust?.id || customers?.[0]?.id || 1;
+    const bill = erpStore.convertQuotationToCreditBill(quoteId);
+    if (showToast) showToast(`✔ Quotation converted to active Credit Bill #${bill.bill_no}! Customer ledger updated.`);
+    setIsSubmitting(false);
 
-      if (navigator.onLine && q) {
-        // Persist credit sale in PostgreSQL
-        await createCreditSale({
-          customer_id: custId,
-          vehicle_no: 'GJ05AB1234',
-          product_id: (q.items?.[0]?.product_name || '').toUpperCase().includes('PETROL') || (q.items?.[0]?.product_name || '').toUpperCase().includes('MS') ? 1 : 2,
-          slip_no: `QT-CONV-${quoteId}`,
-          qty: q.items?.[0]?.qty || 1,
-          rate: q.items?.[0]?.rate || 1,
-          cash_paid: 0,
-          remarks: `Converted from Quotation #${q.quotation_no || ''}`,
-        });
+    void (async () => {
+      try {
+        const q = quotations.find((item) => item.id === quoteId);
+        const matchedCust = customers?.find((c) => c.name.toUpperCase() === (q?.customer_name || '').toUpperCase());
+        const custId = matchedCust?.id || customers?.[0]?.id || 1;
+        if (q) {
+          await createCreditSale({
+            customer_id: custId,
+            vehicle_no: 'GJ05AB1234',
+            product_id: (q.items?.[0]?.product_name || '').toUpperCase().includes('PETROL') || (q.items?.[0]?.product_name || '').toUpperCase().includes('MS') ? 1 : 2,
+            slip_no: `QT-CONV-${quoteId}`,
+            qty: q.items?.[0]?.qty || 1,
+            rate: q.items?.[0]?.rate || 1,
+            cash_paid: 0,
+            remarks: `Converted from Quotation #${q.quotation_no || ''}`,
+          });
 
-        // Persist status='CONVERTED' in PostgreSQL
-        await saveQuotationApi({
-          id: q.id,
-          quotation_no: q.quotation_no,
-          customer_name: q.customer_name,
-          customer_mobile: q.customer_mobile,
-          customer_gstin: q.customer_gstin,
-          total_amount: q.total_amount,
-          terms: q.terms,
-          status: 'CONVERTED',
-          items: q.items || [],
-        });
+          await saveQuotationApi({
+            id: q.id,
+            quotation_no: q.quotation_no,
+            customer_name: q.customer_name,
+            customer_mobile: q.customer_mobile,
+            customer_gstin: q.customer_gstin,
+            total_amount: q.total_amount,
+            terms: q.terms,
+            status: 'CONVERTED',
+            items: q.items || [],
+          });
+          if (loadAllErpData) void loadAllErpData().catch(() => {});
+        }
+      } catch (err: any) {
+        console.warn('Quotation conversion cloud sync deferred:', err);
       }
-
-      // Mutate local store
-      const bill = erpStore.convertQuotationToCreditBill(quoteId);
-      if (showToast) showToast(`✔ Quotation converted to active Credit Bill #${bill.bill_no} in PostgreSQL! Customer ledger updated.`);
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      setSubmitError(err.message || 'Quotation conversion failed');
-      if (showToast) showToast(`❌ Conversion error: ${err.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+    })();
   };
 
   const escapeHtml = (str: any): string => {

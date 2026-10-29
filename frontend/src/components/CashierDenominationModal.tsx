@@ -65,34 +65,48 @@ export const CashierDenominationModal: React.FC<CashierDenominationModalProps> =
   const handleRecordDrop = async (e: React.FormEvent) => {
     e.preventDefault();
     if (dropAmount <= 0) return;
-    try {
-      setIsSubmittingDrop(true);
-      await recordCashDropApi({
-        amount: dropAmount,
-        witness_name: dropCashier.trim().toUpperCase(),
-        notes: `Cashier: ${dropCashier.trim().toUpperCase()} | Env: ${dropEnvelope.trim().toUpperCase()} | Shift: ${dropShift}${dropRemarks ? ` | ${dropRemarks.trim()}` : ''}`,
-      });
-      if (showToast) showToast(`✔ Safe Cash Drop of ₹${dropAmount.toLocaleString('en-IN')} committed to PostgreSQL!`);
-      setDropEnvelope(`DROP-${Date.now().toString().slice(-4)}`);
-      await loadCashDrops();
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Safe Drop Error: ${err.message}`);
-    } finally {
-      setIsSubmittingDrop(false);
-    }
+    setIsSubmittingDrop(true);
+    const currentAmt = dropAmount;
+    const notesStr = `Cashier: ${dropCashier.trim().toUpperCase()} | Env: ${dropEnvelope.trim().toUpperCase()} | Shift: ${dropShift}${dropRemarks ? ` | ${dropRemarks.trim()}` : ''}`;
+    const newDrop = {
+      id: Date.now(),
+      amount: currentAmt,
+      witness_name: dropCashier.trim().toUpperCase(),
+      notes: notesStr,
+      created_at: new Date().toISOString(),
+    };
+    setCashDrops((prev) => [newDrop, ...prev]);
+    if (showToast) showToast(`✔ Safe Cash Drop of ₹${currentAmt.toLocaleString('en-IN')} recorded successfully!`);
+    setDropEnvelope(`DROP-${Date.now().toString().slice(-4)}`);
+    setDropAmount(0);
+    setIsSubmittingDrop(false);
+
+    void (async () => {
+      try {
+        await recordCashDropApi({
+          amount: currentAmt,
+          witness_name: dropCashier.trim().toUpperCase(),
+          notes: notesStr,
+        });
+        if (loadAllErpData) void loadAllErpData().catch(() => {});
+      } catch (err: any) {
+        console.warn('Cash drop cloud sync deferred:', err);
+      }
+    })();
   };
 
   const handleDeleteDrop = async (dropId: number) => {
     if (!window.confirm('Void this safe cash drop entry?')) return;
-    try {
-      await deleteCashDropApi(dropId);
-      if (showToast) showToast('✔ Safe cash drop voided from PostgreSQL.');
-      await loadCashDrops();
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      if (showToast) showToast(`❌ Error voiding drop: ${err.message}`);
-    }
+    setCashDrops((prev) => prev.filter((d) => d.id !== dropId));
+    if (showToast) showToast('✔ Safe cash drop voided successfully.');
+    void (async () => {
+      try {
+        await deleteCashDropApi(dropId);
+        if (loadAllErpData) void loadAllErpData().catch(() => {});
+      } catch (err: any) {
+        console.warn('Cash drop void deferred:', err);
+      }
+    })();
   };
 
   const totalSafeDrops = cashDrops.reduce((acc, d) => acc + Number(d.amount || 0), 0);

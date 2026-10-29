@@ -174,6 +174,7 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
       } else {
         // Persist to PostgreSQL backend via ACID transaction
         await createPurchase(purchasePayload);
+        if (loadAllErpData) void loadAllErpData().catch(() => {});
 
         // Mutate store ONLY after PostgreSQL confirms row commitment
         erpStore.recordPurchaseDecantation({
@@ -635,24 +636,26 @@ export const PurchaseEntryModal: React.FC<PurchaseEntryModalProps> = ({
                               onClick={() => {
                                 const purKey = p.id ?? p.inv ?? p.inv_no ?? p.po ?? p.po_no;
                                 requestManagerAuthorization(`Delete Purchase Inward #${p.inv || p.inv_no || p.po || p.po_no} (${p.dealer} - ₹${Number(p.amount || 0).toFixed(2)})`, async (pin?: string) => {
-                                  try {
-                                    if (p.id) {
-                                      await deletePurchase(p.id, pin);
-                                    } else {
-                                      const latest = await fetchPurchases();
-                                      const found = latest.find((x) => x.invoice_no === (p.inv || p.inv_no));
-                                      if (found && found.id) {
-                                        await deletePurchase(found.id, pin);
-                                      }
-                                    }
-                                    if (purKey !== undefined) {
-                                      erpStore.deletePurchase(purKey);
-                                    }
-                                    showToast(`✔ Purchase decanting #${p.inv || p.inv_no || p.po || p.po_no} deleted & tank stock reversed!`);
-                                    await loadAllErpData();
-                                  } catch (err: any) {
-                                    showToast(`❌ Error deleting purchase: ${err.message || 'Database error'}`);
+                                  if (purKey !== undefined) {
+                                    erpStore.deletePurchase(purKey);
                                   }
+                                  showToast(`✔ Purchase decanting #${p.inv || p.inv_no || p.po || p.po_no} deleted & tank stock reversed!`);
+                                  void (async () => {
+                                    try {
+                                      if (p.id) {
+                                        await deletePurchase(p.id, pin);
+                                      } else {
+                                        const latest = await fetchPurchases();
+                                        const found = latest.find((x) => x.invoice_no === (p.inv || p.inv_no));
+                                        if (found && found.id) {
+                                          await deletePurchase(found.id, pin);
+                                        }
+                                      }
+                                      if (loadAllErpData) void loadAllErpData().catch(() => {});
+                                    } catch (err: any) {
+                                      console.warn('Purchase deletion cloud sync deferred:', err);
+                                    }
+                                  })();
                                 });
                               }}
                             >

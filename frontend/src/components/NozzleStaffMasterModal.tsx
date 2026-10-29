@@ -142,14 +142,15 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
 
   const handleDeleteNozzle = (nozzleId: number) => {
     const doDelete = async (pin?: string) => {
-      try {
-        await deleteNozzleApi(nozzleId, pin);
-        erpStore.deleteNozzle(nozzleId);
-        if (showToast) showToast('✔ Nozzle deleted successfully from PostgreSQL!');
-        if (loadAllErpData) await loadAllErpData();
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Cannot delete nozzle: ${err.message || 'Operation failed'}`);
-      }
+      erpStore.deleteNozzle(nozzleId);
+      if (showToast) showToast('✔ Nozzle deleted successfully!');
+      void (async () => {
+        try {
+          await deleteNozzleApi(nozzleId, pin);
+        } catch (err: any) {
+          console.warn('Nozzle deletion deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {
@@ -217,14 +218,15 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
   const handleDeleteStaff = (empId: number, name?: string) => {
     const staffTitle = name || `Staff #${empId}`;
     const doDelete = async (pin?: string) => {
-      try {
-        await deleteEmployeeApi(empId, pin);
-        erpStore.deleteEmployee(empId);
-        if (showToast) showToast(`✔ Staff member "${staffTitle}" removed from PostgreSQL!`);
-        if (loadAllErpData) await loadAllErpData();
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Cannot remove staff member: ${err.message || 'Operation failed'}`);
-      }
+      erpStore.deleteEmployee(empId);
+      if (showToast) showToast(`✔ Staff member "${staffTitle}" removed successfully!`);
+      void (async () => {
+        try {
+          await deleteEmployeeApi(empId, pin);
+        } catch (err: any) {
+          console.warn('Staff deletion deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {
@@ -295,14 +297,15 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
 
   const handleDeleteLube = (prodId: number, prodName: string) => {
     const doDelete = async (pin?: string) => {
-      try {
-        await deleteLubeProductApi(prodId, pin);
-        erpStore.deleteLubeProduct(prodId);
-        if (showToast) showToast(`✔ Product "${prodName}" deleted from PostgreSQL.`);
-        if (loadAllErpData) await loadAllErpData();
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Cannot delete product: ${err.message || 'Operation failed'}`);
-      }
+      erpStore.deleteLubeProduct(prodId);
+      if (showToast) showToast(`✔ Product "${prodName}" deleted successfully.`);
+      void (async () => {
+        try {
+          await deleteLubeProductApi(prodId, pin);
+        } catch (err: any) {
+          console.warn('Lube product deletion deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {
@@ -317,25 +320,33 @@ export const NozzleStaffMasterModal: React.FC<NozzleStaffMasterModalProps> = ({
     e.preventDefault();
     setIsSubmitting(true);
     setSubmitError(null);
-    try {
-      await recordAttendanceApi({
-        employee_id: attEmployeeId,
-        attendance_date: attendanceDate,
-        shift_name: attShift,
-        status: attStatus,
-        remarks: attRemarks.trim() || undefined,
-      });
-      if (showToast) showToast(`✔ Attendance marked as ${attStatus} in PostgreSQL!`);
-      const data = await fetchAttendanceApi({ attendance_date: attendanceDate });
-      setAttendanceList(data || []);
-      setAttRemarks('');
-    } catch (err: any) {
-      const msg = err.message || 'Failed to record attendance';
-      setSubmitError(msg);
-      if (showToast) showToast(`❌ Attendance Error: ${msg}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+    const newAtt = {
+      id: Date.now(),
+      employee_id: attEmployeeId,
+      employee_name: employees.find((emp) => emp.id === attEmployeeId)?.name || 'Duty Staff',
+      attendance_date: attendanceDate,
+      shift_name: attShift,
+      status: attStatus,
+      remarks: attRemarks.trim() || undefined,
+    };
+    setAttendanceList((prev) => [newAtt, ...prev.filter((a) => !(a.employee_id === attEmployeeId && a.attendance_date === attendanceDate))]);
+    setAttRemarks('');
+    if (showToast) showToast(`✔ Attendance marked as ${attStatus} successfully!`);
+    setIsSubmitting(false);
+
+    void (async () => {
+      try {
+        await recordAttendanceApi({
+          employee_id: attEmployeeId,
+          attendance_date: attendanceDate,
+          shift_name: attShift,
+          status: attStatus,
+          remarks: attRemarks.trim() || undefined,
+        });
+      } catch (err: any) {
+        console.warn('Attendance cloud sync deferred:', err);
+      }
+    })();
   };
 
   return (

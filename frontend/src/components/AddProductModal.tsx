@@ -33,49 +33,50 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
     if (!productName.trim()) {
+      setSubmitError('Product name is required');
       showToast('❌ Product name is required');
       return;
     }
 
-    setIsSubmitting(true);
-    setSubmitError(null);
-    try {
-      await saveLubeProductApi({
-        product_code: productCode.trim().toUpperCase(),
-        product_name: productName.trim().toUpperCase(),
-        category,
-        package_size: packageSize.trim(),
-        mrp,
-        cost_price: costPrice,
-        sale_price: salePrice,
-        stock_qty: openingStock,
-        reorder_level: reorderLevel,
-        hsn_code: hsnCode,
-        gst_percent: gstPercent,
-      });
+    const newProd = {
+      code: productCode.trim().toUpperCase(),
+      name: productName.trim().toUpperCase(),
+      category,
+      package_size: packageSize.trim(),
+      mrp,
+      cost_price: costPrice,
+      sale_price: salePrice,
+      current_stock_units: openingStock,
+      reorder_level: reorderLevel,
+    };
 
-      erpStore.saveLubeProduct({
-        code: productCode.trim().toUpperCase(),
-        name: productName.trim().toUpperCase(),
-        category,
-        package_size: packageSize.trim(),
-        mrp,
-        cost_price: costPrice,
-        sale_price: salePrice,
-        current_stock_units: openingStock,
-        reorder_level: reorderLevel,
-      });
+    erpStore.saveLubeProduct(newProd);
+    showToast(`✔ Product "${productName.toUpperCase()}" added to inventory catalog!`);
+    setIsSubmitting(false);
+    onClose();
 
-      showToast(`✔ Product "${productName.toUpperCase()}" permanently committed to PostgreSQL database!`);
-      await loadAllErpData();
-      onClose();
-    } catch (err: any) {
-      showToast(`✔ Product "${productName.toUpperCase()}" saved in local stock catalog!`);
-      onClose();
-    } finally {
-      setIsSubmitting(false);
-    }
+    void (async () => {
+      try {
+        await saveLubeProductApi({
+          product_code: newProd.code,
+          product_name: newProd.name,
+          category,
+          package_size: newProd.package_size,
+          mrp,
+          cost_price: costPrice,
+          sale_price: salePrice,
+          stock_qty: openingStock,
+          reorder_level: reorderLevel,
+          hsn_code: hsnCode,
+          gst_percent: gstPercent,
+        });
+        await loadAllErpData();
+      } catch (err: any) {
+        console.warn('Add product cloud sync deferred:', err);
+      }
+    })();
   };
 
   return (

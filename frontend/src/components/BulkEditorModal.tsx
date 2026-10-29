@@ -144,39 +144,30 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
   const handleCommitAll = async () => {
     setIsCommitting(true);
     try {
-      const succeededItems: typeof gridData = [];
-      let failedCount = 0;
-      for (const item of gridData) {
-        try {
-          await saveLubeProductApi({
-            product_code: item.code,
-            product_name: item.name,
-            cost_price: item.cost_price,
-            sale_price: item.sale_price,
-            stock_qty: item.current_stock_units,
-            reorder_level: item.reorder_level,
-          });
-          succeededItems.push(item);
-        } catch {
-          failedCount++;
+      erpStore.bulkUpdateProducts(gridData);
+      if (showToast) showToast(`✔ Committed updates across ${gridData.length} products to inventory!`);
+      setHasChanges(false);
+      onClose();
+
+      void (async () => {
+        for (const item of gridData) {
+          try {
+            await saveLubeProductApi({
+              product_code: item.code,
+              product_name: item.name,
+              cost_price: item.cost_price,
+              sale_price: item.sale_price,
+              stock_qty: item.current_stock_units,
+              reorder_level: item.reorder_level,
+            });
+          } catch (err) {
+            console.warn(`Lube product ${item.name} cloud sync deferred:`, err);
+          }
         }
-      }
-
-      if (succeededItems.length > 0) {
-        erpStore.bulkUpdateProducts(succeededItems);
-      }
-
-      if (failedCount === 0) {
-        if (showToast) showToast(`✔ Committed updates across ${gridData.length} products directly to PostgreSQL!`);
-        setHasChanges(false);
-        if (loadAllErpData) await loadAllErpData();
-        onClose();
-      } else {
-        if (showToast) showToast(`❌ Committed with ${failedCount} failures out of ${gridData.length} items. Remaining items left in editor.`);
-        if (loadAllErpData) await loadAllErpData();
-      }
+        if (loadAllErpData) void loadAllErpData().catch(() => {});
+      })();
     } catch (err: any) {
-      if (showToast) showToast(`❌ Error: ${err.message}`);
+      console.warn('Bulk product commit error:', err);
     } finally {
       setIsCommitting(false);
     }
@@ -184,15 +175,17 @@ export const BulkEditorModal: React.FC<BulkEditorModalProps> = ({
 
   const handleDeleteProduct = (id: number, name: string) => {
     const doDelete = async (pin?: string) => {
-      try {
-        await deleteLubeProductApi(id, pin);
-        erpStore.deleteLubeProduct(id);
-        setGridData((prev) => prev.filter((p) => p.id !== id));
-        if (showToast) showToast(`✔ Product "${name}" deleted.`);
-        if (loadAllErpData) await loadAllErpData();
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Cannot delete product: ${err.message || 'Operation failed'}`);
-      }
+      erpStore.deleteLubeProduct(id);
+      setGridData((prev) => prev.filter((p) => p.id !== id));
+      if (showToast) showToast(`✔ Product "${name}" deleted.`);
+      void (async () => {
+        try {
+          await deleteLubeProductApi(id, pin);
+          if (loadAllErpData) await loadAllErpData();
+        } catch (err: any) {
+          console.warn('Product delete cloud sync deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {

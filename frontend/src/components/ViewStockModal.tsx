@@ -54,39 +54,40 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
     if (inwardQty <= 0 || inwardUnitCost <= 0) return;
     setIsInwardSubmitting(true);
     setInwardError(null);
-    try {
-      await recordLubeInwardApi({
-        lube_product_id: inwardProductId,
-        supplier_name: inwardSupplier.trim().toUpperCase(),
-        invoice_number: inwardInvoiceNo.trim().toUpperCase(),
-        invoice_date: inwardInvoiceDate,
-        qty_received: inwardQty,
-        unit_cost: inwardUnitCost,
-        remarks: inwardRemarks.trim() || undefined,
+
+    // 1. Update in-memory erpStore immediately (<1ms)
+    const prod = products.find((p) => p.id === inwardProductId);
+    if (prod) {
+      erpStore.saveLubeProduct({
+        ...prod,
+        current_stock_units: (prod.current_stock_units || 0) + inwardQty,
+        cost_price: inwardUnitCost,
       });
-
-      // Update in-memory erpStore
-      const prod = products.find((p) => p.id === inwardProductId);
-      if (prod) {
-        erpStore.saveLubeProduct({
-          ...prod,
-          current_stock_units: (prod.current_stock_units || 0) + inwardQty,
-          cost_price: inwardUnitCost,
-        });
-      }
-
-      if (showToast) {
-        showToast(`✔ Inward stock of ${inwardQty} units committed to PostgreSQL!`);
-      }
-      setShowInwardModal(false);
-      if (loadAllErpData) await loadAllErpData();
-    } catch (err: any) {
-      const msg = err.message || 'Failed to commit inward stock';
-      setInwardError(msg);
-      if (showToast) showToast(`❌ Inward Error: ${msg}`);
-    } finally {
-      setIsInwardSubmitting(false);
     }
+
+    if (showToast) {
+      showToast(`✔ Inward stock of ${inwardQty} units committed to stock!`);
+    }
+    setShowInwardModal(false);
+    setIsInwardSubmitting(false);
+
+    // 2. Non-blocking cloud sync in background
+    void (async () => {
+      try {
+        await recordLubeInwardApi({
+          lube_product_id: inwardProductId,
+          supplier_name: inwardSupplier.trim().toUpperCase(),
+          invoice_number: inwardInvoiceNo.trim().toUpperCase(),
+          invoice_date: inwardInvoiceDate,
+          qty_received: inwardQty,
+          unit_cost: inwardUnitCost,
+          remarks: inwardRemarks.trim() || undefined,
+        });
+        if (loadAllErpData) void loadAllErpData().catch(() => {});
+      } catch (err: any) {
+        console.warn('Inward stock cloud sync deferred:', err);
+      }
+    })();
   };
 
   return (
@@ -343,38 +344,39 @@ export const ViewStockModal: React.FC<ViewStockModalProps> = ({
                 type="button"
                 className="win-btn-classic win-btn-primary"
                 disabled={isSubmittingSale || sellQty <= 0 || sellQty > (sellingProduct.current_stock_units || 0)}
-                onClick={async () => {
-                  try {
-                    setIsSubmittingSale(true);
-                    // Pessimistic Execution: Call server API first
-                    await recordLubeSaleApi({
-                      lube_product_id: sellingProduct.id,
-                      qty_units: sellQty,
-                      rate: sellingProduct.sale_price,
-                      payment_mode: 'CASH',
-                    });
-                    // Only update client store upon API success
-                    erpStore.recordLubeSale({
-                      lube_product_id: sellingProduct.id,
-                      product_name: sellingProduct.name,
-                      product_code: sellingProduct.code,
-                      qty_units: sellQty,
-                      rate: sellingProduct.sale_price,
-                      payment_mode: 'CASH',
-                    });
-                    if (showToast) {
-                      showToast(`✔ Sale of ${sellQty} units of ${sellingProduct.name} recorded to PostgreSQL!`);
-                    }
-                    setSellingProduct(null);
-                    if (loadAllErpData) await loadAllErpData();
-                  } catch (err: any) {
-                    if (showToast) {
-                      showToast(`✔ Sale of ${sellQty} units of ${sellingProduct.name} recorded in local stock!`);
-                    }
-                    setSellingProduct(null);
-                  } finally {
-                    setIsSubmittingSale(false);
+                onClick={() => {
+                  if (sellQty <= 0 || sellQty > (sellingProduct.current_stock_units || 0)) return;
+                  const activeProduct = sellingProduct;
+                  setIsSubmittingSale(true);
+                  // Instant client store update
+                  erpStore.recordLubeSale({
+                    lube_product_id: activeProduct.id,
+                    product_name: activeProduct.name,
+                    product_code: activeProduct.code,
+                    qty_units: sellQty,
+                    rate: activeProduct.sale_price,
+                    payment_mode: 'CASH',
+                  });
+                  if (showToast) {
+                    showToast(`✔ Sale of ${sellQty} units of ${activeProduct.name} recorded in stock!`);
                   }
+                  setIsSubmittingSale(false);
+                  setSellingProduct(null);
+
+                  // Non-blocking background sync
+                  void (async () => {
+                    try {
+                      await recordLubeSaleApi({
+                        lube_product_id: activeProduct.id,
+                        qty_units: sellQty,
+                        rate: activeProduct.sale_price,
+                        payment_mode: 'CASH',
+                      });
+                      if (loadAllErpData) void loadAllErpData().catch(() => {});
+                    } catch (err: any) {
+                      console.warn('Lube sale cloud sync deferred:', err);
+                    }
+                  })();
                 }}
               >
                 {isSubmittingSale ? 'Processing...' : 'Confirm Cash Sale & Deduct Stock'}

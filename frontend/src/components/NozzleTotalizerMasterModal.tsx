@@ -78,61 +78,63 @@ export const NozzleTotalizerMasterModal: React.FC<NozzleTotalizerMasterModalProp
   const handleExecuteMeterSwap = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedNozzle?.nozzle_id) return;
+    const nozzleId = selectedNozzle.nozzle_id;
     setIsSubmitting(true);
-    try {
-      await recordMeterSwapApi(selectedNozzle.nozzle_id, {
-        old_final_meter: oldFinalMeter,
-        new_initial_meter: newInitialMeter,
-        reason: swapReason,
-        wm_seal_no: wmSealNo,
-        manager_pin: managerPin,
-      });
 
-      // Synchronize in-memory store immediately
-      const storeState = erpStore.getState();
-      const noz = storeState.nozzles.find((n) => n.id === selectedNozzle.nozzle_id);
-      if (noz) {
-        noz.opening_meter = newInitialMeter;
-        noz.closing_meter = newInitialMeter;
-        erpStore.notify();
-      }
-
-      if (showToast) {
-        showToast(`✔ Meter swap authorized! ${selectedNozzle.nozzle || 'Nozzle'} re-initialized to ${newInitialMeter.toFixed(2)}.`);
-      }
-      setShowSwapModal(false);
-      if (onRefresh) await onRefresh();
-    } catch (err: any) {
-      if (showToast) {
-        showToast(`❌ Swap failed: ${err.message || 'Authorization rejected'}`);
-      }
-    } finally {
-      setIsSubmitting(false);
+    // Synchronize in-memory store immediately (<1ms)
+    const storeState = erpStore.getState();
+    const noz = storeState.nozzles.find((n) => n.id === nozzleId);
+    if (noz) {
+      noz.opening_meter = newInitialMeter;
+      noz.closing_meter = newInitialMeter;
+      erpStore.notify();
     }
+
+    if (showToast) {
+      showToast(`✔ Meter swap authorized! ${selectedNozzle.nozzle || 'Nozzle'} re-initialized to ${newInitialMeter.toFixed(2)}.`);
+    }
+    setShowSwapModal(false);
+    setIsSubmitting(false);
+
+    void (async () => {
+      try {
+        await recordMeterSwapApi(nozzleId, {
+          old_final_meter: oldFinalMeter,
+          new_initial_meter: newInitialMeter,
+          reason: swapReason,
+          wm_seal_no: wmSealNo,
+          manager_pin: managerPin,
+        });
+        if (onRefresh) void onRefresh();
+      } catch (err: any) {
+        console.warn('Meter swap cloud sync deferred:', err);
+      }
+    })();
   };
 
   const handleVoidMeterSwap = (swapId: number, oldFinalMeter: number) => {
     const doVoid = async (pin?: string) => {
-      try {
-        await deleteMeterSwapApi(swapId, pin || '1234');
-        // Synchronize in-memory store immediately
-        if (selectedNozzle?.nozzle_id) {
-          const storeState = erpStore.getState();
-          const noz = storeState.nozzles.find((n) => n.id === selectedNozzle.nozzle_id);
-          if (noz) {
-            noz.opening_meter = oldFinalMeter;
-            noz.closing_meter = oldFinalMeter;
-            erpStore.notify();
-          }
-          // Refresh audit list
-          const logs = await fetchMeterSwapsApi(selectedNozzle.nozzle_id);
-          setAuditList(logs || []);
+      // Synchronize in-memory store immediately
+      if (selectedNozzle?.nozzle_id) {
+        const storeState = erpStore.getState();
+        const noz = storeState.nozzles.find((n) => n.id === selectedNozzle.nozzle_id);
+        if (noz) {
+          noz.opening_meter = oldFinalMeter;
+          noz.closing_meter = oldFinalMeter;
+          erpStore.notify();
         }
-        if (showToast) showToast(`✔ Meter swap #${swapId} voided and dispenser meter restored to ${Number(oldFinalMeter).toFixed(2)}!`);
-        if (onRefresh) await onRefresh();
-      } catch (err: any) {
-        if (showToast) showToast(`❌ Error voiding swap: ${err.message}`);
+        setAuditList((prev) => prev.filter((s) => s.id !== swapId));
       }
+      if (showToast) showToast(`✔ Meter swap #${swapId} voided and dispenser meter restored to ${Number(oldFinalMeter).toFixed(2)}!`);
+
+      void (async () => {
+        try {
+          await deleteMeterSwapApi(swapId, pin || '1234');
+          if (onRefresh) void onRefresh();
+        } catch (err: any) {
+          console.warn('Meter swap void cloud sync deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {

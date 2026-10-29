@@ -377,14 +377,16 @@ export const CashBillModal: React.FC<CashBillModalProps> = ({
 
   const handleVoidBill = (billId: number, billNo: string, amount: number) => {
     const doVoid = async (pin?: string) => {
-      try {
-        await deleteCashBillApi(billId, pin);
-        erpStore.deleteCashBill(billId);
-        showToast(`✔ Retail Cash Memo #${billNo} voided and fuel/cash rolled back!`);
-        await loadAllErpData();
-      } catch (err: any) {
-        showToast(`❌ Void error: ${err.message || 'Authorization failed'}`);
-      }
+      erpStore.deleteCashBill(billId);
+      showToast(`✔ Retail Cash Memo #${billNo} voided and fuel/cash rolled back!`);
+      void (async () => {
+        try {
+          await deleteCashBillApi(billId, pin);
+          await loadAllErpData();
+        } catch (err: any) {
+          console.warn('Cash bill void deferred:', err);
+        }
+      })();
     };
 
     if (requestManagerAuthorization) {

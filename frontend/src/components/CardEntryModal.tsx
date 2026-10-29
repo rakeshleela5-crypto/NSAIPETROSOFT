@@ -130,34 +130,54 @@ export const CardEntryModal: React.FC<CardEntryModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {cardSettlements.map((c, i) => {
-                    const rowKey = c.id ?? c.batch ?? c.batch_no ?? i;
-                    const machineName = c.machine || c.machine_name || 'EDC POS';
-                    const batchKey = c.id ?? c.batch ?? c.batch_no ?? '';
-                    return (
-                      <tr key={rowKey}>
-                        <td style={{ fontWeight: 600 }}>{machineName}</td>
-                        <td>{c.batch || c.batch_no || '001'}</td>
-                        <td>{c.slips ?? c.slip_count ?? 1}</td>
-                        <td className="text-right" style={{ fontWeight: 700 }}>₹ {c.amount.toFixed(2)}</td>
-                        <td><span style={{ color: '#27ae60', fontWeight: 700 }}>{c.status || 'SETTLED'}</span></td>
-                        <td style={{ textAlign: 'center' }}>
-                          {onDeleteCardSettlement && (
-                            <button
-                              type="button"
-                              className="win-btn-classic"
-                              style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
-                              onClick={() => onDeleteCardSettlement(batchKey, machineName, c.amount)}
-                              title="Void this POS EDC batch settlement"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {cardSettlements.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '16px', color: '#7f8c8d' }}>
+                        No EDC batch settlements recorded yet. Click "Save Batch Settlement" to record one.
+                      </td>
+                    </tr>
+                  ) : (
+                    cardSettlements.map((c, i) => {
+                      const rowKey = c.id ?? c.batch ?? c.batch_no ?? i;
+                      const machineName = c.machine || c.machine_name || 'EDC POS';
+                      const batchKey = c.id ?? c.batch ?? c.batch_no ?? '';
+                      const amt = Number(c.amount || 0);
+                      return (
+                        <tr key={rowKey}>
+                          <td style={{ fontWeight: 600 }}>{machineName}</td>
+                          <td>{c.batch || c.batch_no || '001'}</td>
+                          <td>{c.slips ?? c.slip_count ?? 1}</td>
+                          <td className="text-right" style={{ fontWeight: 700 }}>₹ {amt.toFixed(2)}</td>
+                          <td><span style={{ color: '#27ae60', fontWeight: 700 }}>{c.status || 'SETTLED'}</span></td>
+                          <td style={{ textAlign: 'center' }}>
+                            {onDeleteCardSettlement && (
+                              <button
+                                type="button"
+                                className="win-btn-classic"
+                                style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 700 }}
+                                onClick={() => onDeleteCardSettlement(batchKey, machineName, amt)}
+                                title="Void this POS EDC batch settlement"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
+                {cardSettlements.length > 0 && (
+                  <tfoot>
+                    <tr style={{ background: '#f5f7fa', fontWeight: 700, borderTop: '2px solid #7f9db9' }}>
+                      <td colSpan={3} style={{ color: '#2c3e50' }}>Total EDC Settled:</td>
+                      <td className="text-right" style={{ color: '#1b5e20' }}>
+                        ₹ {cardSettlements.reduce((sum, c) => sum + Number(c.amount || 0), 0).toFixed(2)}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>

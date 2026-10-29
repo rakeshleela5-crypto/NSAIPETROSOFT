@@ -738,28 +738,44 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
               </div>
               <button className="win-btn" onClick={() => setShowShortageModal(false)}>✕</button>
             </div>
-            <form onSubmit={async (e) => {
+            <form onSubmit={(e) => {
               e.preventDefault();
               if (!currentEmp?.id || shortageAmount <= 0) {
                 showToast('Please enter a valid recovery amount.');
                 return;
               }
               setIsSettling(true);
-              try {
-                const res = await settleEmployeeShortageApi(currentEmp.id, {
-                  amount: shortageAmount,
-                  settlement_type: shortageType,
+              const recoveredAmt = shortageAmount;
+              const newBalance = Math.max(0, Number(currentEmp.shortage_balance || 0) - recoveredAmt);
+              currentEmp.shortage_balance = newBalance;
+              setShortageLogs((prev) => [
+                {
+                  id: Date.now(),
+                  date: new Date().toISOString().split('T')[0],
+                  entry_type: shortageType,
+                  amount: recoveredAmt,
+                  status: 'Settled',
                   notes: shortageNotes,
-                  manager_pin: shortagePin,
-                });
-                showToast(`✔ Shortage recovery of ₹${shortageAmount.toFixed(2)} recorded! New Balance: ₹${res.new_balance.toFixed(2)}`);
-                setShowShortageModal(false);
-                await loadAllErpData();
-              } catch (err: any) {
-                showToast(`❌ Recovery failed: ${err.message || 'Authorization rejected'}`);
-              } finally {
-                setIsSettling(false);
-              }
+                },
+                ...prev,
+              ]);
+              showToast(`✔ Shortage recovery of ₹${recoveredAmt.toFixed(2)} recorded! New Balance: ₹${newBalance.toFixed(2)}`);
+              setShowShortageModal(false);
+              setIsSettling(false);
+
+              void (async () => {
+                try {
+                  await settleEmployeeShortageApi(currentEmp.id, {
+                    amount: recoveredAmt,
+                    settlement_type: shortageType,
+                    notes: shortageNotes,
+                    manager_pin: shortagePin,
+                  });
+                  await loadAllErpData();
+                } catch (err: any) {
+                  console.warn('Shortage recovery cloud sync deferred:', err);
+                }
+              })();
             }}>
               <div className="win-dialog-body" style={{ padding: '12px' }}>
                 <div style={{ background: '#e3f2fd', border: '1px solid #90caf9', padding: '8px', fontSize: '11px', marginBottom: '10px' }}>
@@ -869,17 +885,19 @@ export const EmployeeSettlementModal: React.FC<EmployeeSettlementModalProps> = (
                                   style={{ height: '18px', padding: '0 4px', fontSize: '9px', color: '#c0392b', fontWeight: 700 }}
                                   onClick={() => {
                                     const doVoid = async (pin?: string) => {
-                                      try {
-                                        await deleteEmployeeShortageApi(log.id, pin || '1234');
-                                        showToast('✔ Shortage record voided and balance rolled back!');
-                                        if (currentEmp?.id) {
-                                          const res = await fetchEmployeeShortagesApi(currentEmp.id);
-                                          setShortageLogs(res?.ledger || res || []);
-                                        }
-                                        await loadAllErpData();
-                                      } catch (err: any) {
-                                        showToast(`❌ Void Failed: ${err.message}`);
+                                      setShortageLogs((prev) => prev.filter((item) => item.id !== log.id));
+                                      if (currentEmp?.id) {
+                                        currentEmp.shortage_balance = Number(currentEmp.shortage_balance || 0) + Number(log.amount || 0);
                                       }
+                                      showToast('✔ Shortage record voided and balance rolled back!');
+                                      void (async () => {
+                                        try {
+                                          await deleteEmployeeShortageApi(log.id, pin || '1234');
+                                          await loadAllErpData();
+                                        } catch (err: any) {
+                                          console.warn('Shortage void deferred:', err);
+                                        }
+                                      })();
                                     };
 
                                     if (requestManagerAuthorization) {

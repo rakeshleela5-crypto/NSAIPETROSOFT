@@ -281,6 +281,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                     void (async () => {
                       try {
                         await createPaymentReceipt(pmtPayload);
+                        if (loadAllErpData) void loadAllErpData().catch(() => {});
                       } catch (backendErr: any) {
                         enqueueOfflineRecord('PAYMENT_RECEIPT', pmtPayload);
                         console.warn('Payment receipt sync buffered:', backendErr);
@@ -368,22 +369,24 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                             style={{ height: '18px', padding: '0 4px', fontSize: '10px', color: '#c0392b', fontWeight: 600 }}
                             onClick={() => {
                               requestManagerAuthorization(`Delete Payment Receipt #${h.receipt_no || h.id || (i + 1)} (${custName} - ₹${amountVal.toFixed(2)})`, async (pin?: string) => {
-                                try {
-                                  if (h.id) {
-                                    await deletePaymentReceipt(h.id, pin);
-                                  } else {
-                                    const latest = await fetchPayments();
-                                    const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === custName && x.amount === amountVal));
-                                    if (found && found.id) {
-                                      await deletePaymentReceipt(found.id, pin);
+                                erpStore.deletePaymentReceipt(h.id || h.receipt_no || (i + 1));
+                                showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
+                                void (async () => {
+                                  try {
+                                    if (h.id) {
+                                      await deletePaymentReceipt(h.id, pin);
+                                    } else {
+                                      const latest = await fetchPayments();
+                                      const found = latest.find((x) => x.receipt_no === h.receipt_no || (x.customer === custName && x.amount === amountVal));
+                                      if (found && found.id) {
+                                        await deletePaymentReceipt(found.id, pin);
+                                      }
                                     }
+                                    if (loadAllErpData) void loadAllErpData().catch(() => {});
+                                  } catch (err: any) {
+                                    console.warn('Payment receipt deletion cloud sync deferred:', err);
                                   }
-                                  erpStore.deletePaymentReceipt(h.id || h.receipt_no || (i + 1));
-                                  showToast(`✔ Payment receipt permanently deleted & customer balance restored!`);
-                                  await loadAllErpData();
-                                } catch (err: any) {
-                                  showToast(`❌ Error deleting payment receipt: ${err.message || 'Database error'}`);
-                                }
+                                })();
                               });
                             }}
                           >
