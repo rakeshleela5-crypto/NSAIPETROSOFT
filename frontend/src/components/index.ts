@@ -25,3 +25,4 @@ export { BuildMisModal } from './BuildMisModal';
 export { NozzleStaffMasterModal } from './NozzleStaffMasterModal';
 export { ShiftClosingWizardModal } from './ShiftClosingWizardModal';
 export { ForecourtAutomationModal } from './ForecourtAutomationModal';
+export { ErrorBoundary } from './ErrorBoundary';

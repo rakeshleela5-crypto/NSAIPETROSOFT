@@ -114,6 +114,7 @@ import {
   ViewStockModal,
   ShiftClosingWizardModal,
   ForecourtAutomationModal,
+  ErrorBoundary,
 } from './components';
 import { erpStore } from './store/erpStore';
 
@@ -310,20 +311,30 @@ export default function App() {
   const [salesDate, setSalesDate] = useState<string>(getTodayErpDate());
   const [salesReadings, setSalesReadings] = useState<any[]>(() => {
     const s = erpStore.getState();
-    return s.nozzles.map((n) => {
-      const net = Math.max(0, n.closing_meter - n.opening_meter - (n.testing || 0));
+    const defaultEmpName = s.employees?.[0]?.name || 'Duty Staff';
+    return (s.nozzles || []).map((n) => {
+      const open = Number(n.opening_meter || 0);
+      const close = Number(n.closing_meter || open);
+      const test = Number(n.testing || 0);
+      const net = Math.max(0, close - open - test);
+      const rate = Number(n.rate || (n.product_code === 'MS' ? 96.72 : 89.62));
+      const amt = Math.round(net * rate * 100) / 100;
+      const vatPct = Number(n.vat_percent || (n.product_code === 'MS' ? 13.7 : 20.2));
+      const vat = Math.round(((amt * vatPct) / (100 + vatPct)) * 100) / 100;
       return {
         nozzle_id: n.id,
-        emp: s.employees[0]?.name || 'Duty Staff',
-        nozzle: n.name,
+        emp: defaultEmpName,
+        nozzle: n.name || `Nozzle ${n.id}`,
         item: n.product_name || (n.product_code === 'MS' ? 'Petrol' : 'Diesel'),
-        open: n.opening_meter,
-        close: n.closing_meter,
-        test: n.testing || 0,
+        open: open,
+        close: close,
+        test: test,
         net: net,
-        rate: n.rate,
-        amount: Math.round(net * n.rate * 100) / 100,
-        vat: 0,
+        qty: net,
+        rate: rate,
+        amount: amt,
+        vat: vat,
+        lube: 0,
       };
     });
   });
@@ -1273,18 +1284,24 @@ export default function App() {
         if (shiftData.nozzles && shiftData.nozzles.length > 0) {
           setSalesReadings(
             shiftData.nozzles.map((n) => {
-              const qty = calculateNetMeterQty(n.opening_meter, n.closing_meter, n.testing);
-              const amount = Math.round(qty * n.rate * 100) / 100;
-              const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
+              const open = Number(n.opening_meter || 0);
+              const close = Number(n.closing_meter || open);
+              const test = Number(n.testing || 0);
+              const qty = calculateNetMeterQty(open, close, test);
+              const rate = Number(n.rate || 90);
+              const amount = Math.round(qty * rate * 100) / 100;
+              const vatPct = Number(n.vat_percent || 14);
+              const vat = Math.round(((amount * vatPct) / (100 + vatPct)) * 100) / 100;
               return {
-                emp: shiftData.employees?.[0]?.code || 'EMP01',
-                nozzle: n.nozzle_name,
-                item: n.product_name,
-                open: n.opening_meter,
-                close: n.closing_meter,
-                test: n.testing,
+                emp: shiftData.employees?.[0]?.name || shiftData.employees?.[0]?.code || 'Duty Staff',
+                nozzle: n.nozzle_name || `Nozzle ${n.nozzle_id || 1}`,
+                item: n.product_name || 'Fuel',
+                open: open,
+                close: close,
+                test: test,
                 qty: qty,
-                rate: n.rate,
+                net: qty,
+                rate: rate,
                 amount: amount,
                 vat: vat,
                 lube: 0,
@@ -1312,18 +1329,24 @@ export default function App() {
         if (shiftData.nozzles && shiftData.nozzles.length > 0) {
           setSalesReadings(
             shiftData.nozzles.map((n) => {
-              const qty = calculateNetMeterQty(n.opening_meter, n.closing_meter, n.testing);
-              const amount = Math.round(qty * n.rate * 100) / 100;
-              const vat = Math.round(((amount * n.vat_percent) / (100 + n.vat_percent)) * 100) / 100;
+              const open = Number(n.opening_meter || 0);
+              const close = Number(n.closing_meter || open);
+              const test = Number(n.testing || 0);
+              const qty = calculateNetMeterQty(open, close, test);
+              const rate = Number(n.rate || 90);
+              const amount = Math.round(qty * rate * 100) / 100;
+              const vatPct = Number(n.vat_percent || 14);
+              const vat = Math.round(((amount * vatPct) / (100 + vatPct)) * 100) / 100;
               return {
-                emp: shiftData.employees?.[0]?.code || 'EMP01',
-                nozzle: n.nozzle_name,
-                item: n.product_name,
-                open: n.opening_meter,
-                close: n.closing_meter,
-                test: n.testing,
+                emp: shiftData.employees?.[0]?.name || shiftData.employees?.[0]?.code || 'Duty Staff',
+                nozzle: n.nozzle_name || `Nozzle ${n.nozzle_id || 1}`,
+                item: n.product_name || 'Fuel',
+                open: open,
+                close: close,
+                test: test,
                 qty: qty,
-                rate: n.rate,
+                net: qty,
+                rate: rate,
                 amount: amount,
                 vat: vat,
                 lube: 0,
@@ -2883,8 +2906,9 @@ export default function App() {
       {/* =============================================================
        * MODULAR WINDOWS MODALS (Components Decoupled from App.tsx)
        * ============================================================= */}
-      <Suspense fallback={null}>
-      <ShiftSalesModal
+      <ErrorBoundary fallbackTitle="NSAI PETROSOFT - Forecourt Dialog Recovery" onDismiss={() => setActiveDialog(null)}>
+        <Suspense fallback={null}>
+        <ShiftSalesModal
         isOpen={activeDialog === 'sales'}
         onClose={() => setActiveDialog(null)}
         salesDate={salesDate}
@@ -3548,7 +3572,8 @@ export default function App() {
           </div>
         </div>
       )}
-      </Suspense>
+        </Suspense>
+      </ErrorBoundary>
 
     </div>
   );

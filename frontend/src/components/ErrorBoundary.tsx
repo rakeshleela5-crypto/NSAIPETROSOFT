@@ -3,6 +3,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 interface Props {
   children: ReactNode;
   fallbackTitle?: string;
+  onDismiss?: () => void;
 }
 
 interface State {
@@ -28,6 +29,11 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('[NSaiPetroSoft ErrorBoundary Caught]:', error, errorInfo);
     this.setState({ errorInfo });
   }
+
+  private handleDismiss = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+    this.props.onDismiss?.();
+  };
 
   private handleReload = () => {
     window.location.reload();
@@ -119,7 +125,28 @@ export class ErrorBoundary extends Component<Props, State> {
               }}
             >
               <span>{this.props.fallbackTitle || 'NSaiPetroSoft - Application Recovery'}</span>
-              <span style={{ fontSize: '11px', opacity: 0.8 }}>Fault Tolerant Recovery</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', opacity: 0.8 }}>Fault Tolerant Recovery</span>
+                {this.props.onDismiss && (
+                  <button
+                    type="button"
+                    onClick={this.handleDismiss}
+                    style={{
+                      background: 'rgba(255,255,255,0.2)',
+                      border: '1px solid rgba(255,255,255,0.4)',
+                      color: '#ffffff',
+                      borderRadius: '3px',
+                      padding: '1px 6px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                    }}
+                    title="Close Dialog"
+                  >
+                    ✕ Close
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Dialog Body */}
@@ -132,13 +159,33 @@ export class ErrorBoundary extends Component<Props, State> {
                   </h3>
                   <p style={{ margin: '0', fontSize: '13px', color: '#333333', lineHeight: 1.4 }}>
                     A component encountered an unexpected error. Your offline transaction records and database data
-                    remain secure. You can safely export raw data and reset.
+                    remain secure. You can safely return to the main forecourt window.
                   </p>
                 </div>
               </div>
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '20px' }}>
+                {this.props.onDismiss && (
+                  <button
+                    type="button"
+                    onClick={this.handleDismiss}
+                    style={{
+                      backgroundColor: '#d9534f',
+                      color: '#ffffff',
+                      border: '1px solid #c9302c',
+                      borderRadius: '3px',
+                      padding: '8px 16px',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      boxShadow: 'inset 1px 1px #f5a9a8, inset -1px -1px #c9302c',
+                    }}
+                  >
+                    ✕ Close & Return to Forecourt
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={this.handleReload}

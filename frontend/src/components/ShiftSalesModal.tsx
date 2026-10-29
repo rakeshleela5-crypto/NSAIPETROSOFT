@@ -120,13 +120,16 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                 className="win-btn-classic"
                 style={{ fontSize: '11px', padding: '2px 8px', background: '#eff6ff', borderColor: '#93c5fd', color: '#1d4ed8', fontWeight: 700 }}
                 onClick={() => {
-                  const copy = salesReadings.map((row) => {
+                  const copy = (salesReadings || []).map((row) => {
                     const testVal = 5.0;
-                    const qty = calculateNetMeterQty(row.open, row.close, testVal);
-                    const amt = Math.round(qty * row.rate * 100) / 100;
+                    const op = Number(row.open ?? 0);
+                    const cl = Number(row.close ?? op);
+                    const rt = Number(row.rate ?? 0);
+                    const qty = calculateNetMeterQty(op, cl, testVal);
+                    const amt = Math.round(qty * rt * 100) / 100;
                     const vatPct = row.vat_percent || (row.item?.includes('Petrol') || row.item?.includes('MS') ? 13.7 : 20.2);
                     const vat = ((amt * vatPct) / (100 + vatPct)).toFixed(2);
-                    return { ...row, test: testVal, qty, amount: amt, vat };
+                    return { ...row, test: testVal, qty, net: qty, amount: amt, vat };
                   });
                   setSalesReadings(copy);
                   showToast('✔ 5.0 L daily calibration test applied to all nozzles.');
@@ -140,12 +143,15 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                 className="win-btn-classic"
                 style={{ fontSize: '11px', padding: '2px 6px' }}
                 onClick={() => {
-                  const copy = salesReadings.map((row) => {
-                    const qty = calculateNetMeterQty(row.open, row.close, 0.0);
-                    const amt = Math.round(qty * row.rate * 100) / 100;
+                  const copy = (salesReadings || []).map((row) => {
+                    const op = Number(row.open ?? 0);
+                    const cl = Number(row.close ?? op);
+                    const rt = Number(row.rate ?? 0);
+                    const qty = calculateNetMeterQty(op, cl, 0.0);
+                    const amt = Math.round(qty * rt * 100) / 100;
                     const vatPct = row.vat_percent || (row.item?.includes('Petrol') || row.item?.includes('MS') ? 13.7 : 20.2);
                     const vat = ((amt * vatPct) / (100 + vatPct)).toFixed(2);
-                    return { ...row, test: 0.0, qty, amount: amt, vat };
+                    return { ...row, test: 0.0, qty, net: qty, amount: amt, vat };
                   });
                   setSalesReadings(copy);
                   showToast('✔ Testing quantities reset to 0.');
@@ -185,36 +191,46 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {salesReadings.map((r, i) => {
-                  const isRollover = r.close < r.open && r.open > 0;
+                {(salesReadings || []).map((r, i) => {
+                  const openVal = Number(r.open ?? r.opening ?? 0);
+                  const closeVal = Number(r.close ?? r.closing ?? openVal);
+                  const testVal = Number(r.test ?? r.testing ?? 0);
+                  const qtyVal = Number(r.qty ?? r.net ?? Math.max(0, closeVal - openVal - testVal));
+                  const rateVal = Number(r.rate || 0);
+                  const amountVal = Number(r.amount ?? Math.round(qtyVal * rateVal * 100) / 100);
+                  const isRollover = closeVal < openVal && openVal > 0;
                   return (
                     <tr key={i}>
                       <td>
                         <select
                           className="win-select"
                           style={{ fontSize: '11px', padding: '1px 2px' }}
-                          value={r.emp}
+                          value={r.emp || (employeesList?.[0]?.name || 'Duty Staff')}
                           onChange={(e) => {
                             const copy = [...salesReadings];
                             copy[i].emp = e.target.value;
                             setSalesReadings(copy);
                           }}
                         >
-                          {employeesList.map((emp) => (
-                            <option key={emp.id} value={emp.name}>{emp.name}</option>
-                          ))}
+                          {employeesList && employeesList.length > 0 ? (
+                            employeesList.map((emp) => (
+                              <option key={emp.id} value={emp.name}>{emp.name}</option>
+                            ))
+                          ) : (
+                            <option value={r.emp || 'Duty Staff'}>{r.emp || 'Duty Staff'}</option>
+                          )}
                         </select>
                       </td>
-                      <td style={{ fontWeight: 700 }}>{r.nozzle}</td>
-                      <td>{r.item}</td>
-                      <td>{r.open.toFixed(3)}</td>
+                      <td style={{ fontWeight: 700 }}>{r.nozzle || `Nozzle ${i + 1}`}</td>
+                      <td>{r.item || 'Fuel'}</td>
+                      <td>{openVal.toFixed(3)}</td>
                       <td>
                         <input
                           id={`closing_meter_${i}`}
                           type="number"
                           className="win-input"
                           style={{ width: '75px', fontWeight: 600 }}
-                          value={r.close}
+                          value={r.close ?? closeVal}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
@@ -229,13 +245,17 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                             const val = parseFloat(e.target.value) || 0;
                             const copy = [...salesReadings];
                             copy[i].close = val;
-                            copy[i].qty = calculateNetMeterQty(copy[i].open, val, copy[i].test);
+                            const op = Number(copy[i].open ?? 0);
+                            const tst = Number(copy[i].test ?? 0);
+                            const rt = Number(copy[i].rate ?? 0);
+                            copy[i].qty = calculateNetMeterQty(op, val, tst);
+                            copy[i].net = copy[i].qty;
                             if (copy[i].split_closing && copy[i].split_rate) {
-                              const q1 = Math.max(0, copy[i].split_closing - copy[i].open);
-                              const q2 = Math.max(0, val - copy[i].split_closing - copy[i].test);
-                              copy[i].amount = (q1 * copy[i].split_rate) + (q2 * copy[i].rate);
+                              const q1 = Math.max(0, Number(copy[i].split_closing) - op);
+                              const q2 = Math.max(0, val - Number(copy[i].split_closing) - tst);
+                              copy[i].amount = (q1 * Number(copy[i].split_rate)) + (q2 * rt);
                             } else {
-                              copy[i].amount = copy[i].qty * copy[i].rate;
+                              copy[i].amount = copy[i].qty * rt;
                             }
                             const vatPct = copy[i].vat_percent != null && copy[i].vat_percent > 0
                               ? copy[i].vat_percent
@@ -271,13 +291,17 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                           step="0.1"
                           className="win-input"
                           style={{ width: '45px' }}
-                          value={r.test}
+                          value={r.test ?? testVal}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const copy = [...salesReadings];
                             copy[i].test = val;
-                            copy[i].qty = calculateNetMeterQty(copy[i].open, copy[i].close, val);
-                            copy[i].amount = copy[i].qty * copy[i].rate;
+                            const op = Number(copy[i].open ?? 0);
+                            const cl = Number(copy[i].close ?? op);
+                            const rt = Number(copy[i].rate ?? 0);
+                            copy[i].qty = calculateNetMeterQty(op, cl, val);
+                            copy[i].net = copy[i].qty;
+                            copy[i].amount = copy[i].qty * rt;
                             const vatPct = copy[i].vat_percent != null && copy[i].vat_percent > 0
                               ? copy[i].vat_percent
                               : (copy[i].item?.includes('Petrol') || copy[i].item?.includes('MS') ? 13.7 : 20.2);
@@ -286,9 +310,9 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                           }}
                         />
                       </td>
-                      <td style={{ fontWeight: 700, color: '#1565c0' }}>{r.qty.toFixed(2)}</td>
-                      <td>{r.rate}</td>
-                      <td style={{ fontWeight: 700 }}>₹ {r.amount.toFixed(2)}</td>
+                      <td style={{ fontWeight: 700, color: '#1565c0' }}>{qtyVal.toFixed(2)}</td>
+                      <td>{rateVal.toFixed(2)}</td>
+                      <td style={{ fontWeight: 700 }}>₹ {amountVal.toFixed(2)}</td>
                       <td>
                         <input
                           type="number"
@@ -301,11 +325,15 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                             const val = parseFloat(e.target.value) || 0;
                             const copy = [...salesReadings];
                             copy[i].split_closing = val;
-                            if (val > copy[i].open) {
-                              const q1 = Math.max(0, val - copy[i].open);
-                              const q2 = Math.max(0, copy[i].close - val - copy[i].test);
-                              const splitR = copy[i].split_rate || copy[i].rate;
-                              copy[i].amount = (q1 * splitR) + (q2 * copy[i].rate);
+                            const op = Number(copy[i].open ?? 0);
+                            const cl = Number(copy[i].close ?? op);
+                            const tst = Number(copy[i].test ?? 0);
+                            const rt = Number(copy[i].rate ?? 0);
+                            if (val > op) {
+                              const q1 = Math.max(0, val - op);
+                              const q2 = Math.max(0, cl - val - tst);
+                              const splitR = Number(copy[i].split_rate || rt);
+                              copy[i].amount = (q1 * splitR) + (q2 * rt);
                             }
                             setSalesReadings(copy);
                           }}
@@ -367,7 +395,7 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                   type="text"
                   className="win-input"
                   readOnly
-                  value={`₹ ${salesReadings.reduce((acc, curr) => acc + curr.amount, 0).toFixed(2)}`}
+                  value={`₹ ${(salesReadings || []).reduce((acc, curr) => acc + Number(curr.amount || 0), 0).toFixed(2)}`}
                   style={{ fontWeight: 700 }}
                 />
               </div>
@@ -377,7 +405,7 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
                   type="text"
                   className="win-input"
                   readOnly
-                  value={`${salesReadings.reduce((acc, curr) => acc + curr.qty, 0).toFixed(2)} Liters`}
+                  value={`${(salesReadings || []).reduce((acc, curr) => acc + Number(curr.qty ?? curr.net ?? 0), 0).toFixed(2)} Liters`}
                 />
               </div>
               <div className="win-actions-row" style={{ marginTop: '6px' }}>
@@ -408,7 +436,16 @@ export const ShiftSalesModal: React.FC<ShiftSalesModalProps> = ({
               onClick={() => exportToCsv(
                 `NSAIPETROSOFT_ShiftReadings_${new Date().toISOString().split('T')[0]}`,
                 ['Nozzle Name', 'Product', 'Opening Meter', 'Closing Meter', 'Testing (Ltrs)', 'Sale Qty (Ltrs)', 'Rate (INR)', 'Total Amount (INR)'],
-                salesReadings.map(s => [s.nozzle || s.nozzle_name, s.item || s.product, s.open ?? s.opening, s.close ?? s.closing, s.test ?? s.testing, s.qty, s.rate, s.amount])
+                (salesReadings || []).map(s => [
+                  s.nozzle || s.nozzle_name || 'Nozzle',
+                  s.item || s.product || 'Fuel',
+                  Number(s.open ?? s.opening ?? 0),
+                  Number(s.close ?? s.closing ?? 0),
+                  Number(s.test ?? s.testing ?? 0),
+                  Number(s.qty ?? s.net ?? 0),
+                  Number(s.rate || 0),
+                  Number(s.amount || 0),
+                ])
               )}
               title="Export nozzle meter readings to Microsoft Excel or CSV"
             >
